@@ -5,11 +5,11 @@
 | 문서 ID | SRS-001 |
 | 문서명 | CAN 기반 UDS over ISO-TP Secure OTA 파이프라인 요구사항 명세서 |
 | 프로젝트명 | Dual ECU 라인트레이싱 차량 Secure OTA 시스템 |
-| 버전 | 1.4 |
+| 버전 | 1.6 |
 | 작성일 | 2026-05-16 |
 | 작성 목적 | Dual ECU 라인트레이싱 차량 Secure OTA 시스템 소프트웨어 요구사항 정의 |
 | 주요 대상 | Raspberry Pi 5 Gateway, STM32F446RE ECU 2대, CAN Bus, Custom Bootloader, 라인트레이싱 차량 |
-| 범위 변경 | 1.3 대비 ISO-TP 전송 계층 추가, SAD-001/SDD-001 필수 문서 추가(필수 문서 7종 확장), 산출물 요구사항 간소화, Drive ECU v1/v2 조작변인 구체화(ON/OFF → 비례 제어), Sensor ECU v1/v2 임계값 구체화(15cm → 25cm), HC-SR04 확정 |
+| 범위 변경 | 1.5 대비 CAN ID 테이블 추가, 프로토콜 파라미터 수치화, 키 관리 요구사항 추가, Watchdog/Safe State 명세, SWE.4 산출물 추가 |
 
 ---
 
@@ -79,6 +79,7 @@
 17. 요구사항-설계-구현-테스트 간 추적성 매트릭스 작성
 18. 계측기 기반 트러블슈팅 사례 수집 및 리포트 작성
 19. ST-LINK 디버거 기반 Bootloader/App 실행 흐름 검증
+20. Jenkins 기반 CI/CD 파이프라인 구현 (크로스컴파일, 정적 분석, 바이너리 크기 검사, 서명, OTA 자동 배포)
 
 ### 2.2 Out of Scope
 
@@ -95,6 +96,7 @@
 | 실제 차량 주행 제어 | 축소형 라인트레이싱 차량 플랫폼에서만 실증 |
 | ASPICE 완전 준수/공식 평가 | 개인 프로젝트 범위이므로 공식 ASPICE 심사나 조직 프로세스 수준의 준수는 제외 |
 | 상용 요구사항 관리 도구 필수 사용 | Polarion, DOORS 등 상용 도구 대신 Markdown/Spreadsheet 기반 추적성 관리로 대체 |
+| UN R156 SUMS 인증 | UNECE WP.29 UN R156 기반 Software Update Management System 공식 인증은 본 프로젝트 범위 제외. 개인 프로젝트 규모에서 인증 기관 심사는 불가 |
 
 ---
 
@@ -103,17 +105,23 @@
 ### 3.1 전체 시스템 구성
 
 ```text
-[Update Package / 개발 PC]
+[개발자 PC]
         |
-        | 파일 복사 또는 내부 네트워크
+        | Git Push (로컬 네트워크)
         v
-[Raspberry Pi 5: OTA Gateway]
-- Update Package 관리
-- Manifest 파싱 및 1차 검증
-- CAN 전송 제어
-- ECU Inventory 수집
-- Update Campaign 상태 관리
-- 공격자 시나리오 실행
+[Raspberry Pi 5: Jenkins CI/CD 서버 + OTA Gateway]
+  ┌─ CI/CD 파이프라인 (Jenkins) ──────────────────┐
+  │  Stage 1: 크로스컴파일 (arm-none-eabi-gcc)    │
+  │  Stage 2: 정적 분석 (cppcheck)                │
+  │  Stage 3: 바이너리 크기 검사 (≤ 128KB)        │
+  │  Stage 4: ECDSA 서명 + Manifest 생성          │
+  │  Stage 5: OTA 배포 스크립트 실행              │
+  └───────────────────────────────────────────────┘
+  ┌─ OTA Gateway ─────────────────────────────────┐
+  │  - ECU Inventory 수집                          │
+  │  - Update Campaign 상태 관리                   │
+  │  - 공격자 시나리오 실행                        │
+  └───────────────────────────────────────────────┘
         |
         | CAN Bus
         v
@@ -131,7 +139,7 @@
 
 | 구성 요소 | 역할 |
 |---|---|
-| Raspberry Pi 5 | OTA Gateway, Update Manager, CAN 송수신, 로그 수집, 공격자 시나리오 실행 |
+| Raspberry Pi 5 | Jenkins CI/CD 서버, OTA Gateway, Update Manager, CAN 송수신, 로그 수집, 공격자 시나리오 실행 |
 | STM32F446RE #1 | Drive ECU: 라인트레이싱, 모터 제어, OTA 대상 ECU |
 | STM32F446RE #2 | Sensor/Body ECU: 거리센서, 장애물 감지, 상태 메시지 송신, OTA 대상 ECU |
 | CAN Transceiver | STM32와 CAN Bus 간 물리 계층 연결 |
@@ -214,6 +222,15 @@
 - ECU(STM32F446RE)는 ISO-TP 수신 상태 머신을 소프트웨어로 구현한다.
 - CAN 버스 속도는 500Kbps로 운용한다.
 - CAN Bus 부하, 전송 시간, STmin 타이밍, Timeout 정책을 고려한다.
+- ISO-TP 운용 파라미터는 다음 값을 기준으로 한다.
+
+| ISO-TP 파라미터 | 값 | 설명 |
+|---|---|---|
+| STmin | 0x00 (0ms) | CF 프레임 간 최소 간격 없음. Gateway가 최대 속도로 전송 |
+| BlockSize | 0x00 | FC 없이 모든 CF를 연속 수신. ECU 처리 속도가 충분한 경우 적용 |
+| N_Bs Timeout | 1000ms | FF 송신 후 FC 수신 대기 최대 시간 |
+| N_Cr Timeout | 1000ms | CF 수신 대기 최대 시간. 초과 시 세션 abort |
+| Transfer Data Chunk | 256 bytes | Transfer Data 1회당 전송 데이터 크기. 128KB 이미지 기준 512회 전송 |
 
 ### 6.3 프로젝트 범위 제약
 
@@ -253,8 +270,9 @@
 | FR-BL-008 | Bootloader는 Firmware Version을 확인하고 다운그레이드를 차단해야 한다. | Must | 현재 Confirmed Version보다 낮은 버전은 거부해야 한다. |
 | FR-BL-009 | Bootloader는 Target ECU ID/HW ID를 확인해야 한다. | Must | 다른 ECU용 이미지 설치를 거부해야 한다. |
 | FR-BL-010 | Bootloader는 업데이트 후 첫 부팅에서 Self-test 결과를 확인해야 한다. | Must | Self-test 실패 시 이전 Confirmed Slot으로 rollback해야 한다. |
-| FR-BL-011 | Bootloader는 Boot Metadata 손상 시 안전한 기본 정책을 적용해야 한다. | Should | Metadata 오류 시 기존 Confirmed Slot 또는 Safe Mode로 진입해야 한다. |
-| FR-BL-012 | Bootloader는 Watchdog 또는 Timeout 기반 업데이트 중단 처리를 지원해야 한다. | Should | 일정 시간 Transfer Data가 없으면 업데이트를 중단하고 기존 App을 유지해야 한다. |
+| FR-BL-011 | Bootloader는 Boot Metadata 손상 시 안전한 기본 정책을 적용해야 한다. | Should | Metadata CRC 오류 시 기존 Confirmed Slot 또는 Safe Mode로 진입해야 한다. |
+| FR-BL-012 | Bootloader는 IWDG(Independent Watchdog)를 사용하여 MCU 무응답 상태를 감지해야 한다. | Must | IWDG 타임아웃은 8000ms로 설정하며, Flash erase/write 구간에서 주기적으로 피딩하여 의도치 않은 리셋을 방지해야 한다. Transfer Data 미수신 5000ms 초과 시 소프트웨어적으로 세션을 abort하고 기존 App을 유지해야 한다. |
+| FR-BL-013 | Bootloader Flash 영역은 STM32 WRP(Write Protection)로 보호되어야 한다. | Should | Bootloader 섹터(0x08000000~0x0801FFFF, Sector 0~4)에 WRP가 설정된 상태에서 해당 영역 write 시도가 거부되어야 한다. |
 
 ### 7.3 A/B Slot 및 Rollback 요구사항
 
@@ -266,7 +284,7 @@
 | FR-AB-004 | 새 App은 부팅 후 Self-test를 통과해야 Confirmed 처리되어야 한다. | Must | Self-test 실패 App은 다음 부팅에서 rollback되어야 한다. |
 | FR-AB-005 | 업데이트 중 전원 차단이 발생해도 기존 Confirmed App은 유지되어야 한다. | Must | 전원 차단 테스트 후 기존 App으로 정상 부팅해야 한다. |
 | FR-AB-006 | Boot Metadata는 active, pending, confirmed, version, attempt count를 관리해야 한다. | Should | Metadata dump 또는 로그에서 상태 확인이 가능해야 한다. |
-| FR-AB-007 | Boot attempt count를 초과하면 이전 Slot으로 복구해야 한다. | Should | 지정 횟수 내 Confirmed 되지 않은 App은 실패 처리되어야 한다. |
+| FR-AB-007 | Boot attempt count가 3회를 초과하면 이전 Confirmed Slot으로 복구해야 한다. | Should | 3회 부팅 내 Confirmed 처리되지 않은 App은 실패 처리되고 이전 Slot으로 rollback되어야 한다. |
 
 ### 7.4 CAN / ISO-TP / UDS 프로토콜 요구사항
 
@@ -279,15 +297,15 @@
 | FR-CAN-005 | ECU는 FF 수신 후 ISO-TP FC(Flow Control) 프레임을 송신해야 한다. | Must | FC 프레임의 FlowStatus, BlockSize, STmin 필드가 정확히 설정되어야 한다. |
 | FR-CAN-006 | ECU는 ISO-TP STmin 타이밍을 준수해야 한다. | Must | CF 프레임 간 수신 간격이 STmin 이하일 경우 오류 처리해야 한다. |
 | FR-CAN-007 | Gateway는 SocketCAN ISO-TP 인터페이스를 통해 UDS 메시지를 송수신해야 한다. | Must | Python socket(AF_CAN, SOCK_DGRAM, CAN_ISOTP) 기반으로 전송되어야 한다. |
-| FR-CAN-008 | 명령 구조는 UDS 리프로그래밍 절차를 준수해야 한다. | Must | 0x10, 0x27, 0x34, 0x36, 0x37, 0x31, 0x11에 대응하는 명령이 정의되어야 한다. |
+| FR-CAN-008 | 명령 구조는 UDS 리프로그래밍 절차를 따르며, FR-CAN-009~015가 이를 구성하는 개별 요구사항이다. | Must | FR-CAN-009~015 요구사항이 모두 구현되어야 한다. |
 | FR-CAN-009 | Diagnostic Session Control 명령을 지원해야 한다. | Must | Default Session과 Programming Session 상태를 구분해야 한다. |
-| FR-CAN-010 | Security Access 명령을 지원해야 한다. | Must | 인증되지 않은 상태에서는 다운로드 명령을 거부해야 한다. |
+| FR-CAN-010 | Security Access 명령을 지원해야 한다. | Must | ECU가 4바이트 랜덤 Seed를 생성하고, Gateway가 HMAC-SHA256(Seed \|\| PreSharedKey)의 앞 4바이트를 Key로 응답하면 인증이 성공해야 한다. 연속 3회 Key 오류 시 NRC 0x36(Exceeded Number of Attempts)을 반환하고 10초간 Security Access를 잠금해야 한다. |
 | FR-CAN-011 | Request Download 명령을 지원해야 한다. | Must | Image size, target slot, target ECU ID를 확인해야 한다. |
 | FR-CAN-012 | Transfer Data 명령을 지원해야 한다. | Must | Sequence Number와 Chunk 길이를 확인해야 한다. |
 | FR-CAN-013 | Request Transfer Exit 명령을 지원해야 한다. | Must | 모든 Chunk 수신 후 검증 단계로 진입해야 한다. |
 | FR-CAN-014 | Routine Control - Verify Image 명령을 지원해야 한다. | Must | Hash/Signature/Version/ECU ID 검증 결과를 반환해야 한다. |
 | FR-CAN-015 | ECU Reset 명령을 지원해야 한다. | Must | 검증 성공 후 Reset을 통해 새 Slot 부팅을 시도해야 한다. |
-| FR-CAN-016 | Negative Response Code를 정의해야 한다. | Should | 잘못된 세션, 보안 실패, 길이 오류, 순서 오류, 인증 실패 등을 구분해야 한다. |
+| FR-CAN-016 | Negative Response Code를 정의해야 한다. | Must | 잘못된 세션, 보안 실패, 길이 오류, 순서 오류, 인증 실패 등을 구분해야 한다. |
 | FR-CAN-017 | Replay 방어를 위한 Session ID 또는 Freshness Counter를 사용해야 한다. | Should | 이전 세션의 Transfer Data 재전송이 거부되어야 한다. |
 
 ### 7.5 Drive ECU Application 요구사항
@@ -307,9 +325,26 @@
 |---|---|---:|---|
 | FR-SEN-001 | Sensor ECU는 HC-SR04 초음파 거리센서 입력을 읽어야 한다. | Must | Trigger/Echo GPIO 방식으로 거리값을 주기적으로 측정할 수 있어야 한다. |
 | FR-SEN-002 | Sensor ECU App v1은 장애물 감지 임계값 15cm를 사용해야 한다. | Must | 측정 거리가 15cm 이하일 때 obstacle_detected 상태를 CAN으로 송신해야 한다. |
-| FR-SEN-003 | Sensor ECU는 Alive/Heartbeat 메시지를 송신해야 한다. | Should | Drive ECU 또는 Gateway가 Sensor ECU 생존 상태를 확인할 수 있어야 한다. |
+| FR-SEN-003 | Sensor ECU는 100ms 주기로 Alive/Heartbeat 메시지를 CAN으로 송신해야 한다. | Should | Drive ECU 또는 Gateway가 300ms 이내 Heartbeat를 수신하지 못하면 Sensor ECU를 dead로 간주할 수 있어야 한다. |
 | FR-SEN-004 | Sensor ECU App v2는 장애물 감지 임계값을 25cm로 변경해야 한다. | Should | OTA 업데이트 후 측정 거리가 25cm 이하일 때 obstacle_detected 상태를 송신하여 v1(15cm) 대비 조기 감지가 확인되어야 한다. |
 | FR-SEN-005 | Sensor ECU는 현재 App Version과 Slot 정보를 CAN으로 보고해야 한다. | Must | Gateway의 Inventory 요청에 응답해야 한다. |
+
+### 7.7 CI/CD 파이프라인 요구사항
+
+Jenkins 기반 CI/CD 파이프라인은 Raspberry Pi 5에서 운용되며, Git push 이벤트를 트리거로 펌웨어 빌드부터 ECU OTA 배포까지 자동 수행한다.
+
+| ID | 요구사항 | 우선순위 | 수용 기준 |
+|---|---|---:|---|
+| FR-CICD-001 | Jenkins 서버는 Raspberry Pi 5에 설치되어 운용되어야 한다. | Must | Jenkins 웹 UI에 접근 가능하고 파이프라인 실행 이력이 기록되어야 한다. |
+| FR-CICD-002 | Git 저장소에 push 이벤트 발생 시 Jenkins 파이프라인이 자동으로 트리거되어야 한다. | Must | 소스코드 커밋 후 수동 개입 없이 파이프라인이 시작되어야 한다. |
+| FR-CICD-003 | Stage 1에서 arm-none-eabi-gcc를 통해 Drive ECU 및 Sensor ECU 펌웨어를 크로스컴파일해야 한다. | Must | 빌드 오류 발생 시 이후 Stage가 실행되지 않고 파이프라인이 중단되어야 한다. |
+| FR-CICD-004 | Stage 2에서 cppcheck를 통해 펌웨어 소스코드 정적 분석을 수행해야 한다. | Should | error 등급 이상의 결함 검출 시 파이프라인이 중단되고 결함 목록이 로그에 기록되어야 한다. |
+| FR-CICD-005 | Stage 3에서 빌드된 펌웨어 바이너리 크기가 App Slot 크기(128KB)를 초과하는지 검사해야 한다. | Must | 초과 시 파이프라인이 중단되고 실제 크기와 한계 크기가 로그에 기록되어야 한다. |
+| FR-CICD-006 | Stage 4에서 ECDSA 개인키로 펌웨어에 서명하고 Manifest를 생성해야 한다. | Must | 서명된 펌웨어 바이너리와 Manifest 파일이 Jenkins 아티팩트로 저장되어야 한다. |
+| FR-CICD-007 | Stage 5에서 OTA 배포 스크립트를 실행하기 전 대상 ECU가 주행 중이 아닌지 확인해야 한다. | Must | ECU Status 메시지(CAN ID 0x100/0x200)로 주행 상태를 확인하고, 주행 중인 경우 배포를 중단해야 한다. 주행 중이 아닌 경우 UDS over ISO-TP 절차로 ECU 플래시를 완료하고 Self-test 결과가 로그에 기록되어야 한다. |
+| FR-CICD-008 | 각 Stage의 실행 결과와 로그가 Jenkins 빌드 이력에 기록되어야 한다. | Must | 성공/실패 여부, 실패 원인, 각 Stage 소요 시간이 Jenkins UI에서 확인 가능해야 한다. |
+| FR-CICD-009 | ECDSA 개인키는 Jenkins Credentials로 관리되어야 하며 Jenkinsfile에 평문 노출되지 않아야 한다. | Must | Jenkinsfile 소스코드에 키 값이 존재하지 않아야 한다. |
+| FR-CICD-010 | Stage 5 OTA 배포 실패 시 Jenkins 빌드를 FAILURE로 표시하고 실패 원인을 로그에 기록해야 한다. | Must | ECU 플래시 실패, Self-test 실패, Rollback 발생 중 어느 경우에도 Jenkins 빌드 상태가 FAILURE로 기록되어야 한다. 재시도는 수동으로만 수행한다. |
 
 ---
 
@@ -348,11 +383,20 @@
 | SR-ATK-003 | Downgrade Attack | Anti-rollback | 낮은 version image가 거부되어야 한다. |
 | SR-ATK-004 | ECU Mismatch | target_ecu_id 검증 | 다른 ECU용 image가 거부되어야 한다. |
 | SR-ATK-005 | Replay Attack | session_id, sequence number, freshness counter | 이전 Transfer Data 재전송이 거부되어야 한다. |
-| SR-ATK-006 | Unauthorized Update Start | Security Access | 인증되지 않은 update command가 거부되어야 한다. |
+| SR-ATK-006 | Unauthorized Update Start / Brute Force | Security Access, 시도 횟수 제한 | 인증되지 않은 update command가 거부되어야 하며, 연속 3회 Key 오류 시 10초간 Security Access가 잠금되어야 한다. |
 | SR-ATK-007 | Endless Data Attack | image_size, chunk_count 제한 | Manifest size 초과 수신 시 세션이 종료되어야 한다. |
 | SR-ATK-008 | CAN Flood / DoS | timeout, abort, rollback | 업데이트 중단 후 기존 App으로 복구되어야 한다. |
 | SR-ATK-009 | Fake Complete | ECU 내부 검증 결과 기반 commit | Gateway의 fake complete 명령만으로 Confirmed 되지 않아야 한다. |
 | SR-ATK-010 | Partial Bundle Installation | campaign result 추적 | 한 ECU만 업데이트 성공 시 Campaign 상태가 partial/fail로 기록되어야 한다. |
+
+### 8.4 키 관리 요구사항
+
+| ID | 요구사항 | 우선순위 | 수용 기준 |
+|---|---|---:|---|
+| SR-KEY-001 | ECDSA 공개키는 Bootloader Flash 영역(Sector 0~4)에 하드코딩되어야 한다. | Must | 공개키가 App Slot 또는 Metadata 영역에 저장되지 않고 Bootloader 이미지 내에 포함되어야 한다. |
+| SR-KEY-002 | ECDSA 개인키는 개발 PC 또는 Jenkins Credentials에만 존재해야 하며 ECU에 저장되지 않아야 한다. | Must | ECU Flash 어느 영역에도 개인키가 존재하지 않아야 한다. |
+| SR-KEY-003 | Security Access에 사용하는 PreSharedKey는 Bootloader Flash 영역에 저장되어야 한다. | Must | PreSharedKey가 App Slot에 포함되지 않아야 한다. WRP가 적용된 Bootloader 영역에 위치해야 한다. |
+| SR-KEY-004 | 공개키 및 PreSharedKey의 갱신은 Bootloader 재플래싱을 통해서만 가능해야 한다. | Should | ST-LINK 또는 전용 플래싱 도구를 통한 Bootloader 재기록으로만 키를 변경할 수 있어야 한다. |
 
 ---
 
@@ -405,7 +449,7 @@
 |---|---|---:|---|
 | NFR-PERF-001 | CAN 전송은 Chunk 단위로 안정적으로 수행되어야 한다. | Must | 전체 이미지 전송 중 sequence 오류 없이 완료되어야 한다. |
 | NFR-PERF-002 | 업데이트 시간은 측정되어야 한다. | Should | 이미지 크기, chunk 수, 전송 시간, 평균 throughput이 로그에 남아야 한다. |
-| NFR-PERF-003 | 라인트레이싱 제어 루프는 정상 주행에 충분한 주기로 실행되어야 한다. | Should | 센서 읽기와 PWM 제어가 눈에 띄는 지연 없이 수행되어야 한다. |
+| NFR-PERF-003 | 라인트레이싱 제어 루프는 10ms 이하의 주기로 실행되어야 한다. | Should | 센서 읽기, 편차 계산, PWM 출력까지 전체 제어 루프가 10ms 이내에 완료되어야 한다. |
 
 ### 10.3 유지보수성 요구사항
 
@@ -423,6 +467,7 @@
 | NFR-SAFE-001 | 라인트레이싱 차량은 업데이트 중 주행하지 않아야 한다. | Must | 업데이트 세션 진입 시 모터 출력이 차단되어야 한다. |
 | NFR-SAFE-002 | 장애물 감지 시 Drive ECU는 정지 또는 감속해야 한다. | Should | 지정 거리 이하에서 모터 출력이 제한되어야 한다. |
 | NFR-SAFE-003 | Bootloader 상태에서는 모터가 구동되지 않아야 한다. | Must | Bootloader 실행 중 PWM 출력이 비활성화되어야 한다. |
+| NFR-SAFE-004 | 시스템 Safe State는 "모터 정지 + Bootloader 대기 + 기존 Confirmed Slot 유지"로 정의한다. | Must | 업데이트 실패, 검증 오류, 통신 중단, Watchdog 리셋 등 비정상 상황 발생 시 Safe State로 진입하고 기존 Confirmed App이 유지되어야 한다. |
 
 ---
 
@@ -545,7 +590,29 @@ TSR-001에는 각 문제에 대해 다음 항목을 포함한다.
 }
 ```
 
-### 13.2 Boot Metadata 요구 필드
+### 13.2 CAN ID 할당 테이블
+
+본 프로젝트에서 사용하는 CAN ID는 11-bit Standard CAN ID 기반으로 다음과 같이 할당한다.
+
+#### UDS 진단 메시지 (Physical Addressing)
+
+| CAN ID | 방향 | 용도 | 비고 |
+|---:|---|---|---|
+| 0x7DF | Gateway → 전체 ECU | UDS Functional Request (ECU Inventory 조회 등) | Broadcast |
+| 0x7E0 | Gateway → Drive ECU | UDS Physical Request (OTA 명령) | 1:1 |
+| 0x7E8 | Drive ECU → Gateway | UDS Response | 0x7E0 + 8 |
+| 0x7E1 | Gateway → Sensor ECU | UDS Physical Request (OTA 명령) | 1:1 |
+| 0x7E9 | Sensor ECU → Gateway | UDS Response | 0x7E1 + 8 |
+
+#### Application 메시지
+
+| CAN ID | 방향 | 용도 | 주기/이벤트 | 페이로드 크기 |
+|---:|---|---|---|---|
+| 0x100 | Drive ECU → CAN Bus | 상태 보고 (App Version, Slot, 주행 상태) | 200ms 주기 | 8 bytes |
+| 0x200 | Sensor ECU → CAN Bus | 장애물 감지 상태 (obstacle_detected) | 이벤트 발생 시 | 4 bytes |
+| 0x201 | Sensor ECU → CAN Bus | Heartbeat (Alive 신호) | 100ms 주기 | 2 bytes |
+
+### 13.3 Boot Metadata 요구 필드
 
 | 필드 | 설명 |
 |---|---|
@@ -560,7 +627,7 @@ TSR-001에는 각 문제에 대해 다음 항목을 포함한다.
 | last_error | 마지막 업데이트/부팅 실패 원인 |
 | metadata_crc | Metadata 손상 검출용 CRC |
 
-### 13.3 UDS-style 명령 요구사항
+### 13.4 UDS-style 명령 요구사항
 
 | SID | 명령명 | 용도 |
 |---:|---|---|
@@ -574,7 +641,7 @@ TSR-001에는 각 문제에 대해 다음 항목을 포함한다.
 | 0x22 | Read Data By Identifier | ECU ID, Version, Slot 상태 조회 |
 | 0x7F | Negative Response | 오류 응답 |
 
-### 13.4 주요 Negative Response Code 예시
+### 13.5 주요 Negative Response Code 예시
 
 | NRC | 의미 |
 |---:|---|
@@ -589,6 +656,16 @@ TSR-001에는 각 문제에 대해 다음 항목을 포함한다.
 | 0x36 | Exceeded Number Of Attempts |
 | 0x72 | General Programming Failure |
 | 0x73 | Wrong Block Sequence Counter |
+
+### 13.6 Security Access 파라미터
+
+| 파라미터 | 값 | 설명 |
+|---|---|---|
+| Seed 크기 | 4 bytes | ECU가 STM32 RNG 또는 소프트웨어 LFSR로 생성하는 랜덤 값 |
+| Key 계산 방식 | HMAC-SHA256(Seed \|\| PreSharedKey)[0:4] | HMAC-SHA256 결과의 앞 4바이트를 Key로 사용 |
+| PreSharedKey 크기 | 32 bytes | Bootloader Flash에 저장. ECU-Gateway 공유 비밀값 |
+| 최대 시도 횟수 | 3회 | 연속 3회 Key 오류 시 NRC 0x36 반환 |
+| 잠금 지속 시간 | 10,000ms | 잠금 해제는 ECU Reset 또는 잠금 시간 경과 후 자동 해제 |
 
 ---
 
@@ -626,7 +703,7 @@ TSR-001에는 각 문제에 대해 다음 항목을 포함한다.
 
 ## 15. 테스트 요구사항
 
-### 15.1 정상 기능 테스트
+### 15.1 정상 기능 테스트 (SWE.6 — 시스템 수준)
 
 | 테스트 ID | 관련 요구사항 | 테스트 내용 | 기대 결과 |
 |---|---|---|---|
@@ -635,10 +712,10 @@ TSR-001에는 각 문제에 대해 다음 항목을 포함한다.
 | TC-NOR-003 | FR-CAN-002~009 | UDS-style 업데이트 전체 절차 수행 | 새 Slot에 이미지 설치 |
 | TC-NOR-004 | FR-AB-004 | 새 App Self-test 및 Confirm | 새 Slot confirmed 처리 |
 | TC-NOR-005 | FR-DRV-003 | Drive ECU App v1 ON/OFF 라인트레이싱 | 직선 주행 가능, 곡선 구간에서 진동/사행 주행 관찰 |
-| TC-NOR-006 | FR-DRV-004 | OTA 후 App v2 비례 제어 주행 확인 | 동일 코스에서 곡선 추종이 v1 대비 부드러워짐 확인 |
+| TC-NOR-006 | FR-DRV-004 | OTA 후 App v2 비례 제어 주행 확인 | 동일 코스 3회 반복 주행에서 v1 대비 곡선 이탈 횟수가 감소하거나 랩타임이 단축되어야 한다. |
 | TC-NOR-007 | FR-SEN-002, FR-SEN-004 | Sensor ECU v1(15cm)/v2(25cm) 임계값 동작 확인 | v1: 15cm 이하 감지, v2: OTA 후 25cm 이하 감지, Drive ECU 정지/감속 반영 |
 
-### 15.2 실패 복구 테스트
+### 15.2 실패 복구 테스트 (SWE.6 — 시스템 수준)
 
 | 테스트 ID | 관련 요구사항 | 테스트 내용 | 기대 결과 |
 |---|---|---|---|
@@ -648,7 +725,7 @@ TSR-001에는 각 문제에 대해 다음 항목을 포함한다.
 | TC-FAIL-004 | FR-AB-004 | 새 App Self-test 실패 | 이전 Slot rollback |
 | TC-FAIL-005 | FR-FL-004 | Slot 크기 초과 이미지 전송 | Request Out Of Range 또는 Programming Failure |
 
-### 15.3 보안 공격 테스트
+### 15.3 보안 공격 테스트 (SWE.6 — 시스템 수준)
 
 | 테스트 ID | 관련 요구사항 | 공격 시나리오 | 기대 결과 |
 |---|---|---|---|
@@ -663,7 +740,7 @@ TSR-001에는 각 문제에 대해 다음 항목을 포함한다.
 | TC-SEC-009 | SR-ATK-009 | Fake complete 명령 전송 | ECU 내부 검증 실패 시 commit 거부 |
 | TC-SEC-010 | SR-ATK-010 | 한 ECU만 업데이트 성공 | Campaign partial/fail 기록 |
 
-### 15.4 개발 프로세스 및 디버깅 검증
+### 15.4 개발 프로세스 및 디버깅 검증 (SWE.4/SWE.5 — 단위/통합 수준)
 
 | 테스트 ID | 관련 요구사항 | 검증 내용 | 기대 결과 |
 |---|---|---|---|
@@ -673,6 +750,14 @@ TSR-001에는 각 문제에 대해 다음 항목을 포함한다.
 | TC-DBG-002 | DBG-003 | App jump 문제 사례 문서화 | ST-LINK 기반 MSP/VTOR/Reset Handler 확인 기록 |
 | TC-DBG-003 | DBG-004 | Flash write 문제 사례 문서화 | Flash error flag 또는 sector boundary 분석 기록 |
 | TC-DBG-004 | DBG-006 | 보안 검증 실패 로그 일관성 확인 | 실패 원인과 입력 조건이 문서/로그에 일치함 |
+
+### 15.5 CI/CD 파이프라인 테스트 (SWE.5 — 통합 수준)
+
+| 테스트 ID | 관련 요구사항 | 테스트 내용 | 기대 결과 |
+|---|---|---|---|
+| TC-CICD-001 | FR-CICD-003, FR-CICD-005 | 빌드 오류 또는 128KB 초과 바이너리 push | 해당 Stage에서 파이프라인 중단 및 오류 로그 기록 |
+| TC-CICD-002 | FR-CICD-006, FR-CICD-009 | 정상 빌드 후 서명 및 Manifest 생성 확인 | 아티팩트 저장 확인, Jenkinsfile에 키 평문 없음 확인 |
+| TC-CICD-003 | FR-CICD-007, FR-CICD-008 | 전체 파이프라인 실행 후 ECU OTA 완료 확인 | Jenkins 빌드 로그에 ECU Self-test 성공 기록 |
 
 ---
 
@@ -693,6 +778,7 @@ TSR-001에는 각 문제에 대해 다음 항목을 포함한다.
 | 개발 프로세스 | PRC-001 ~ PRC-007 | TC-PRC-001, TC-PRC-002 |
 | 추적성 관리 | RTM-001 ~ RTM-005 | TC-PRC-001, TC-PRC-002 |
 | 계측/디버깅 | DBG-001 ~ DBG-006 | TC-DBG-001 ~ TC-DBG-004 |
+| CI/CD 파이프라인 | FR-CICD-001 ~ FR-CICD-009 | TC-CICD-001 ~ TC-CICD-003 |
 
 ---
 
@@ -705,7 +791,7 @@ TSR-001에는 각 문제에 대해 다음 항목을 포함한다.
 | 산출물 ID | 산출물 | 형식 | 목적 |
 |---|---|---|---|
 | DEL-001 | 프로젝트 발표 PPT | PPT | 시스템 목적, 구조, 구현 결과, 검증 결과 요약 |
-| DEL-002 | 소스코드 저장소 | GitHub | 구현 코드, 빌드 방법, 필수 문서 7종 포함 |
+| DEL-002 | 소스코드 저장소 | GitHub | 구현 코드, 빌드 방법, Jenkinsfile, 필수 문서 7종 포함 |
 | DEL-003 | 시연 동영상 | 동영상 | OTA 동작, 공격 시나리오 방어, rollback 결과 실증 |
 | DEL-004 | 작품소개서 | 문서 | 시스템 개요, 핵심 기능, 보안 설계, 검증 결과 요약 |
 | DEL-005 | 개발 작품 하드웨어 | 실물 | 차체, Dual ECU, Gateway, CAN Bus 결합 실물 |
@@ -719,6 +805,7 @@ TSR-001에는 각 문제에 대해 다음 항목을 포함한다.
 | 필수 | SRS-001 | Software Requirements Specification | SWE.1 | 프로젝트 범위, 기능/비기능/보안/검증/산출물 요구사항 정의 |
 | 필수 | SAD-001 | Software Architectural Design | SWE.2 | 전체 시스템 아키텍처, ECU 역할 분담, 컴포넌트 간 인터페이스, 소프트웨어 레이어 구조 정의 |
 | 필수 | SDD-001 | Software Detailed Design | SWE.3 | Bootloader 상태 전이, Flash 파티션, ISO-TP 상태 머신, UDS 서비스별 처리 함수, CAN ID 할당 상세 정의 |
+| 필수 | UVR-001 | Unit Verification Report | SWE.4 | cppcheck 정적 분석 결과, 단위 함수 테스트 결과, 코드 리뷰 체크리스트 정리 |
 | 필수 | RTM-001 | Requirements Traceability Matrix | SWE.1~6 | 요구사항-설계-구현-테스트-결과 양방향 연결 관리 |
 | 필수 | TP-001 | Test Plan | SWE.5/6 | 정상/실패/보안/디버깅 테스트 계획 정의 |
 | 필수 | TR-001 | Test Report | SWE.5/6 | 테스트 실행 결과, PASS/FAIL, 로그, 사진/영상 증빙 정리 |
@@ -822,6 +909,57 @@ TSR-001  (SUP.9)
 
 ---
 
+## 21. 개발 일정
+
+### 21.1 전체 일정 요약
+
+| 주차 | 기간 | 주요 목표 | 완료 마일스톤 |
+|---|---|---|---|
+| 1주차 | 2026-05-16 ~ 2026-05-22 | 개발 환경, Jenkins CI/CD 기반, Custom Bootloader | Bootloader → App jump 성공 |
+| 2주차 | 2026-05-23 ~ 2026-05-29 | CAN/ISO-TP/UDS OTA 파이프라인, Secure OTA | 전체 OTA 흐름 동작 (Gateway → ECU 플래시 → 재부팅) |
+| 3주차 | 2026-05-30 ~ 2026-06-06 | App v1/v2 구현, 보안 테스트, Jenkins 완성, 문서화 | 전체 시스템 통합 및 필수 문서 7종 완성 |
+
+### 21.2 주차별 상세 일정
+
+#### 1주차: 개발 환경 + Bootloader (2026-05-16 ~ 2026-05-22)
+
+| 날짜 | 작업 내용 | 산출물 |
+|---|---|---|
+| 05/16 ~ 05/17 | Jenkins RPi5 설치, arm-none-eabi-gcc 크로스컴파일 Stage 구성 (FR-CICD-001~003) | Jenkinsfile Stage 1~3 동작 |
+| 05/18 ~ 05/19 | STM32 Flash 파티션 설계, Linker Script 작성, 메모리맵 확정 (FR-FL-001~002) | 파티션 레이아웃 확정 |
+| 05/20 ~ 05/22 | Custom Bootloader 구현: App jump, Vector Table 재배치, Boot Metadata R/W (FR-BL-001~006) | Bootloader → App jump 성공 |
+
+#### 2주차: OTA 파이프라인 + Secure OTA (2026-05-23 ~ 2026-05-29)
+
+| 날짜 | 작업 내용 | 산출물 |
+|---|---|---|
+| 05/23 ~ 05/24 | CAN 드라이버 + ISO-TP SF/FF/CF/FC 수신 상태머신 (FR-CAN-002~007) | ISO-TP 수신 동작 확인 |
+| 05/25 ~ 05/26 | UDS 명령 처리 구현 (0x10, 0x27, 0x34, 0x36, 0x37, 0x31, 0x11) (FR-CAN-008~015) | UDS 전체 세션 흐름 동작 |
+| 05/27 ~ 05/28 | SHA-256 무결성 검증, ECDSA 서명 검증, Anti-rollback 구현 (SR-FW-001~003) | 변조 이미지 거부, 서명 검증 통과 |
+| 05/29 | A/B Slot 전환 및 Rollback 동작 검증, 전원 차단 복구 테스트 (FR-AB-001~007) | TC-FAIL-001, TC-FAIL-004 PASS |
+
+#### 3주차: App 구현 + 통합 + 문서화 (2026-05-30 ~ 2026-06-06)
+
+| 날짜 | 작업 내용 | 산출물 |
+|---|---|---|
+| 05/30 ~ 05/31 | Drive ECU App v1(bang-bang) + Sensor ECU App v1(15cm 임계값) (FR-DRV-003, FR-SEN-002) | v1 라인트레이싱 및 장애물 감지 동작 |
+| 06/01 | OTA로 App v2 배포 및 주행/감지 차이 실증 (FR-DRV-004, FR-SEN-004) | TC-NOR-005~007 PASS |
+| 06/02 ~ 06/03 | 보안 공격 시나리오 테스트 10종 수행 (SR-ATK-001~010) | TC-SEC-001~010 PASS |
+| 06/04 | Jenkins Stage 4~5 완성 (서명 자동화 + OTA 자동 배포) (FR-CICD-006~009) | TC-CICD-001~003 PASS |
+| 06/05 ~ 06/06 | 필수 문서 7종 완성 (SAD, SDD, RTM, TP, TR, TSR) + 최종 검토 | 필수 문서 7종 완료 |
+
+### 21.3 마일스톤 요약
+
+| 마일스톤 ID | 날짜 | 내용 |
+|---|---|---|
+| MS-001 | 2026-05-22 | Bootloader에서 App jump 성공, Jenkins 빌드 파이프라인 동작 |
+| MS-002 | 2026-05-29 | 전체 OTA 흐름 성공 (SHA-256/ECDSA 검증 포함), Rollback 동작 확인 |
+| MS-003 | 2026-06-01 | App v1/v2 OTA 실증 완료 (라인트레이싱 + 장애물 감지 차이 확인) |
+| MS-004 | 2026-06-04 | 보안 공격 시나리오 10종 통과, Jenkins 전체 파이프라인 완성 |
+| MS-005 | 2026-06-06 | 필수 문서 7종 완성, 프로젝트 1차 완료 |
+
+---
+
 ## 22. 용어 정의
 
 | 용어 | 정의 |
@@ -858,4 +996,6 @@ TSR-001  (SUP.9)
 | 1.2 | 2026-05-15 | ASPICE-inspired 개발 관리, 요구사항 추적성, 계측기 기반 트러블슈팅, 디버깅 검증 요구사항 반영 |
 | 1.3 | 2026-05-15 | 최종 제출 산출물 5종과 필수 문서 산출물 5종(SRS, RTM, TP, TR, TSR) 요구사항 반영 |
 | 1.4 | 2026-05-16 | ISO-TP 전송 계층 추가, SAD-001/SDD-001 필수 문서 추가(필수 문서 7종 확장), 산출물 요구사항 간소화, Drive ECU v1/v2 조작변인 구체화(ON/OFF → 비례 제어), Sensor ECU v1/v2 임계값 구체화(15cm → 25cm), HC-SR04 확정 |
+| 1.5 | 2026-05-16 | Jenkins 기반 CI/CD 파이프라인 요구사항 추가(FR-CICD-001~009), 시스템 구성 다이어그램 업데이트, CI/CD 테스트 케이스 추가(TC-CICD-001~003), RTM 업데이트, Section 21 개발 일정 신규 추가(3주 일정, 마일스톤 5종) |
+| 1.6 | 2026-05-16 | CAN ID 테이블 추가(Section 13.2), ISO-TP/Security Access 파라미터 수치화(Section 6.2, 13.6), 키 관리 요구사항 추가(SR-KEY-001~004), IWDG 8000ms/WRP(FR-BL-012~013), Safe State 정의(NFR-SAFE-004), NFR-PERF-003 ≤10ms 수치화, UVR-001(SWE.4) 필수 문서 추가, TC SWE 레벨 구분, UN R156 Out of Scope 명시 |
 
