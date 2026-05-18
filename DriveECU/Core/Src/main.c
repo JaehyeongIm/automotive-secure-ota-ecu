@@ -132,7 +132,7 @@ int main(void)
   tx_header.DLC   = 8;
 
   HAL_TIM_Base_Start_IT(&htim2);
-  printf("[DriveECU] CAN Loopback Test Start\r\n");
+  printf("[DriveECU] Start\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -405,7 +405,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
     printf("[RX] ID:0x%03lX DLC:%lu Data:%02X %02X %02X %02X cnt:%lu\r\n",
            rx_header.StdId, rx_header.DLC,
            rx_data[0], rx_data[1], rx_data[2], rx_data[3],
-           (uint32_t)(rx_data[4] << 24 | rx_data[5] << 16 | rx_data[6] << 8 | rx_data[7]));
+           (uint32_t)(rx_data[1] << 24 | rx_data[2] << 16 | rx_data[3] << 8 | rx_data[4]));
 }
 /* USER CODE END 4 */
 
