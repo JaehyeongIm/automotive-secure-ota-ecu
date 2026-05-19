@@ -46,6 +46,7 @@ jenkins_workspace/
 *.ioc
 Debug/
 Release/
+SlotB/
 *.launch
 .cproject
 .project
