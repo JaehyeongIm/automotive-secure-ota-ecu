@@ -207,8 +207,9 @@ SCB->VTOR = 0x08010000U;
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-  __enable_irq();           /* 부트로더 __disable_irq() 복원 */
-  SCB->VTOR = 0x08010000U; /* 디버거 startup 건너뜀 대비 VTOR 명시 설정 */
+  extern uint32_t g_pfnVectors;
+  __enable_irq();                              /* 부트로더 __disable_irq() 복원 */
+  SCB->VTOR = (uint32_t)&g_pfnVectors;        /* 링커 심볼로 슬롯 무관 자동 설정 */
   /* USER CODE END 1 */
 
   HAL_Init();
@@ -221,10 +222,66 @@ int main(void)
 
 **슬롯별 VTOR / VECT_TAB_OFFSET 대응:**
 
-| 빌드 대상 | 링커 스크립트 | SCB->VTOR | VECT_TAB_OFFSET |
+| 빌드 대상 | 링커 스크립트 | VECT_TAB_OFFSET | SCB->VTOR (g_pfnVectors) |
 |---|---|---|---|
-| Slot A (개발/디버그) | `STM32F446RETX_FLASH.ld` | `0x08010000U` | `0x00010000U` |
-| Slot B (OTA 업로드용) | `STM32F446RETX_FLASH_SlotB.ld` | `0x08040000U` | `0x00040000U` |
+| Slot A (개발/디버그) | `STM32F446RETX_FLASH.ld` | `0x00010000U` | 링커가 `0x08010000`으로 배치 |
+| Slot B (OTA 업로드용) | `STM32F446RETX_FLASH_SlotB.ld` | `0x00040000U` | 링커가 `0x08040000`으로 배치 |
+
+`g_pfnVectors`는 startup 파일이 `.isr_vector` 섹션 시작에 선언하는 전역 심볼로, 링커가 ORIGIN 주소에 배치한다. 주소를 하드코딩하지 않으므로 Slot A/B 링커 스크립트 전환 시 소스 수정 불필요.
+
+---
+
+## Phase 4.5 — OTA 새 펌웨어 부팅 시 VTOR/링커스크립트 불일치
+
+**날짜:** 2026-05-19
+**상태:** ✅ 해결됨
+**증상:** OTA 업로드 후 Slot B 부팅 시도 중 CAN 통신 불능 재발
+
+---
+
+### 현상
+
+Phase 4에서 CAN 통신을 복구한 뒤, OTA E2E 테스트를 위해 Slot B 빌드로 전환하는 과정에서 CAN 통신이 다시 망가졌다.
+
+- CubeIDE 링커 스크립트를 `STM32F446RETX_FLASH_SlotB.ld`로 변경
+- `system_stm32f4xx.c`의 `VECT_TAB_OFFSET`을 `0x00040000U`로 변경
+- `main.c`의 `SCB->VTOR`은 `0x08010000U`로 하드코딩된 상태 유지 → **불일치 발생**
+
+결과적으로 바이너리는 Slot B(0x08040000)에 링크되었으나 VTOR는 Slot A(0x08010000)를 가리켜 인터럽트 벡터가 엉뚱한 위치를 참조함. 수정을 반복하다 혼란이 가중되어 Slot A로 롤백했다.
+
+---
+
+### 근본 원인 — 슬롯 주소 하드코딩
+
+`SCB->VTOR = 0x08010000U` 방식은 Slot A 주소를 소스에 직접 기록하므로, 링커 스크립트만 Slot B로 바꾸면 VTOR와 실제 바이너리 배치 주소가 불일치한다. 슬롯을 전환할 때마다 세 군데(링커 스크립트, VECT_TAB_OFFSET, SCB->VTOR)를 동시에 맞춰야 하므로 실수가 발생하기 쉽다.
+
+```
+Slot B 링커 스크립트 변경 시 수정이 필요한 위치:
+  1. CubeIDE Linker Script     STM32F446RETX_FLASH_SlotB.ld
+  2. system_stm32f4xx.c        VECT_TAB_OFFSET = 0x00040000U
+  3. main.c                    SCB->VTOR = 0x08040000U   ← 자주 누락됨
+```
+
+---
+
+### 해결 — `g_pfnVectors` 링커 심볼 활용
+
+하드코딩 대신 startup 파일의 벡터 테이블 심볼 주소를 직접 사용.
+
+```c
+/* DriveECU/Core/Src/main.c  USER CODE BEGIN 1 */
+extern uint32_t g_pfnVectors;
+__enable_irq();
+SCB->VTOR = (uint32_t)&g_pfnVectors;
+```
+
+`g_pfnVectors`는 `startup_stm32f446retx.s`에서 `.isr_vector` 섹션 첫 주소로 선언된 심볼이다. 링커가 해당 섹션을 링커 스크립트의 ORIGIN에 배치하므로, 슬롯을 전환해도 소스 코드를 건드릴 필요 없이 VTOR가 자동으로 맞는 주소를 얻는다.
+
+**OTA 빌드 절차 (이 수정 이후):**
+1. Slot A 빌드: `STM32F446RETX_FLASH.ld` + `VECT_TAB_OFFSET=0x00010000U` → MCU 플래시 (현재 실행)
+2. Slot B 빌드: `STM32F446RETX_FLASH_SlotB.ld` + `VECT_TAB_OFFSET=0x00040000U` → `.bin` 파일만 추출
+3. `ota_client.py`로 Slot B `.bin` 전송
+4. 부트로더 재부팅 → Slot B 선택 → VTOR 자동 `0x08040000` 설정 → 정상 동작
 
 ---
 
