@@ -46,6 +46,10 @@ jenkins_workspace/
 *.ioc
 Debug/
 Release/
+*.launch
+.cproject
+.project
+.settings/
 
 # Compiler toolchain cache
 *.dep

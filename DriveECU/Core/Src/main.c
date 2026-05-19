@@ -88,7 +88,8 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-  SCB->VTOR = 0x08040000U;
+  __enable_irq();           /* 부트로더가 __disable_irq() 후 점프하므로 재활성화 */
+  SCB->VTOR = 0x08010000U;
 
   /* USER CODE END 1 */
 
@@ -111,7 +112,7 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_CAN1_Init();
-  // MX_IWDG_Init();
+  MX_IWDG_Init();
   MX_USART2_UART_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
