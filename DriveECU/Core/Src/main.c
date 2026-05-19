@@ -23,6 +23,8 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
+#include "isotp.h"
+#include "uds.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -86,6 +88,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+  SCB->VTOR = 0x08040000U;
 
   /* USER CODE END 1 */
 
@@ -108,7 +111,7 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_CAN1_Init();
-  MX_IWDG_Init();
+  // MX_IWDG_Init();
   MX_USART2_UART_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
@@ -132,7 +135,11 @@ int main(void)
   tx_header.DLC   = 8;
 
   HAL_TIM_Base_Start_IT(&htim2);
-  printf("[DriveECU] Start\r\n");
+  isotp_init(uds_on_isotp_rx);
+  uds_init();
+  // printf("[DriveECU] Start\r\n");
+  printf("[DriveECU v2] Start\r\n");
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -143,6 +150,7 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     HAL_IWDG_Refresh(&hiwdg);
+    uds_process();
   }
   /* USER CODE END 3 */
 }
@@ -402,6 +410,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
 {
     HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &rx_header, rx_data);
+
+    if (rx_header.StdId == ISOTP_RX_CAN_ID) {
+        isotp_can_rx(rx_data, (uint8_t)rx_header.DLC);
+        return;
+    }
+
     printf("[RX] ID:0x%03lX DLC:%lu Data:%02X %02X %02X %02X cnt:%lu\r\n",
            rx_header.StdId, rx_header.DLC,
            rx_data[0], rx_data[1], rx_data[2], rx_data[3],
