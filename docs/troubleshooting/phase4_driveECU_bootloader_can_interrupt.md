@@ -81,17 +81,28 @@ TIM2 인터럽트가 발생했는데 DriveECU의 `TIM2_IRQHandler` 대신 부트
 
 ### 근본 원인 (총 3개, 순서대로 발견)
 
-#### 원인 1 — VTOR 미설정 (CubeIDE 디버거가 startup 건너뜀)
+#### 원인 1 — VTOR 오설정 (VECT_TAB_OFFSET = 0x00000000 기본값)
 
-CubeIDE 디버거가 `main()`으로 직접 PC를 설정할 때 `Reset_Handler → SystemInit()`을 건너뛴다. `SystemInit()`이 실행되지 않으면 `SCB->VTOR`이 기본값(0x00000000)에 머물고, 이는 메모리 맵에서 0x08000000(부트로더)으로 aliasing된다.
+CubeIDE Debug Configuration의 "Default start address"는 앱의 `Reset_Handler`부터 실행한다 (부트로더를 건너뜀). 따라서 `Reset_Handler → SystemInit()`은 정상 실행된다.
+
+문제는 STM32CubeMX가 생성한 `system_stm32f4xx.c`의 `VECT_TAB_OFFSET` 기본값이 `0x00000000U`이었다는 것이다. `SystemInit()`이 이 값으로 VTOR을 설정하면:
 
 ```
-디버거 직접 점프 경로:
-  MCU 리셋 → 부트로더 → 앱 Reset_Handler → SystemInit() → main()
-                                              ↑ 디버거가 여기를 건너뜀
-  → VTOR = 0x00000000 (= 부트로더 벡터 테이블)
-  → 모든 인터럽트 → 부트로더 핸들러 실행
+SystemInit():
+  SCB->VTOR = FLASH_BASE | VECT_TAB_OFFSET
+            = 0x08000000 | 0x00000000
+            = 0x08000000   ← 부트로더 벡터 테이블!
 ```
+
+```
+CubeIDE 디버거 실행 경로:
+  앱 Reset_Handler → SystemInit() → VTOR = 0x08000000 → main()
+                      ↑ 실행됨, 그러나 VECT_TAB_OFFSET=0 이라 VTOR이 틀림
+  → 모든 인터럽트 → 부트로더 핸들러 실행 (TIM2 → 0x8000D18)
+```
+
+확인: git 히스토리에서 최초 커밋의 `VECT_TAB_OFFSET = 0x00000000U` 확인 (`1a9b846` 커밋).
+물리적 리셋 경로에서는 부트로더가 `SCB->VTOR = addr`로 올바르게 설정하고 점프하므로 이 문제는 나타나지 않는다.
 
 이 시점에 CubeIDE는 **Slot B 링커 스크립트**(`STM32F446RETX_FLASH_SlotB.ld`, ORIGIN=0x8040000)로 빌드된 바이너리를 Slot B에 플래시하고 있었다. (콜스택의 `main() at 0x80408fc`가 Slot B 주소 범위임으로 확인)
 
