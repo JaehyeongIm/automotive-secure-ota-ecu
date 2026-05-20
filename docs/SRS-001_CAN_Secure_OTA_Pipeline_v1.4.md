@@ -5,11 +5,11 @@
 | 문서 ID | SRS-001 |
 | 문서명 | CAN 기반 UDS over ISO-TP Secure OTA 파이프라인 요구사항 명세서 |
 | 프로젝트명 | Dual ECU 라인트레이싱 차량 Secure OTA 시스템 |
-| 버전 | 1.6 |
-| 작성일 | 2026-05-16 |
+| 버전 | 1.7 |
+| 작성일 | 2026-05-21 |
 | 작성 목적 | Dual ECU 라인트레이싱 차량 Secure OTA 시스템 소프트웨어 요구사항 정의 |
 | 주요 대상 | Raspberry Pi 5 Gateway, STM32F446RE ECU 2대, CAN Bus, Custom Bootloader, 라인트레이싱 차량 |
-| 범위 변경 | 1.5 대비 CAN ID 테이블 추가, 프로토콜 파라미터 수치화, 키 관리 요구사항 추가, Watchdog/Safe State 명세, SWE.4 산출물 추가 |
+| 범위 변경 | 1.6 대비 Flash 파티션 실제 구현값 반영(Section 14.2), ECDSA 서명 포맷 구현 방식 확정(Section 13.7), A/B OTA 구현 완료 반영 |
 
 ---
 
@@ -678,16 +678,23 @@ TSR-001에는 각 문제에 대해 다음 항목을 포함한다.
 - 현재 Confirmed App Slot은 새 이미지 검증이 완료될 때까지 유지한다.
 - Metadata는 App 영역과 분리하여 관리한다.
 
-### 14.2 초기 파티션 제안
+### 14.2 확정 파티션 레이아웃
 
-아래 파티션은 초기 제안이며, 최종 주소는 실제 Linker Script, Bootloader 크기, App 크기 측정 후 확정한다.
+STM32F446RE Linker Script 및 실제 구현 기준으로 확정된 파티션.
 
 ```text
-0x08000000  Bootloader Area       128KB  섹터 0~4
-0x08020000  App Slot A            128KB  섹터 5
-0x08040000  App Slot B            128KB  섹터 6
-0x08060000  Metadata / Log Area   128KB  섹터 7
+주소          영역                크기    섹터
+0x08000000  Bootloader Area     32KB    섹터 0 (16KB) + 섹터 1 (16KB)
+0x08008000  Metadata Area       16KB    섹터 2
+0x0800C000  Reserved            16KB    섹터 3
+0x08010000  Slot A Application  192KB   섹터 4 (64KB) + 섹터 5 (128KB)
+0x08040000  Slot B Application  256KB   섹터 6 (128KB) + 섹터 7 (128KB)
 ```
+
+- Metadata 주소: `0x08008000` (섹터 2 시작)
+- Slot A Linker Script: `FLASH ORIGIN=0x08010000, LENGTH=192K`
+- Slot B Linker Script: `FLASH ORIGIN=0x08040000, LENGTH=256K`
+- 두 슬롯의 크기 차이(192KB vs 256KB)는 섹터 구조상 불가피하며, 펌웨어 크기 검증 시 슬롯별 상한을 개별 적용한다.
 
 ### 14.3 파티션 관련 요구사항
 
