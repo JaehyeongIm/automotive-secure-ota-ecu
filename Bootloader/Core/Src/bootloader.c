@@ -1,6 +1,15 @@
 #include "bootloader.h"
+#include "ecdsa_pubkey.h"
 #include "main.h"
 #include <stdio.h>
+
+#define uECC_SUPPORTS_secp160r1 0
+#define uECC_SUPPORTS_secp192r1 0
+#define uECC_SUPPORTS_secp224r1 0
+#define uECC_SUPPORTS_secp256r1 1
+#define uECC_SUPPORTS_secp256k1 0
+#include "../Lib/uECC.h"
+#include "../Lib/sha256.h"
 
 typedef void (*pFunction)(void);
 
@@ -101,6 +110,31 @@ void bootloader_run(void)
             printf("[BL] Fallback slot also invalid, entering Safe State\r\n");
             safe_state();
             return;
+        }
+    }
+
+    /* ECDSA 서명 검증 — size==0: ST-Link 플래싱(건너뜀), size==0xFFFFFFFF: 구 메타데이터(건너뜀) */
+    if (meta->magic == METADATA_MAGIC) {
+        uint32_t fw_total = (boot_addr == SLOT_A_ADDR) ? meta->slot_a_size
+                                                       : meta->slot_b_size;
+        uint32_t slot_max = (boot_addr == SLOT_A_ADDR) ? 0x30000UL : 0x40000UL;
+        if (fw_total > 64 && fw_total <= slot_max) {
+            uint32_t fw_data_size  = fw_total - 64;
+            const uint8_t *fw_ptr  = (const uint8_t *)boot_addr;
+            const uint8_t *sig_ptr = fw_ptr + fw_data_size;
+
+            SHA256_CTX ctx;
+            uint8_t hash[32];
+            sha256_init(&ctx);
+            sha256_update(&ctx, fw_ptr, fw_data_size);
+            sha256_final(&ctx, hash);
+
+            if (!uECC_verify(ecdsa_pubkey, hash, 32, sig_ptr, uECC_secp256r1())) {
+                printf("[BL] ECDSA FAILED at 0x%08lX — refusing to boot\r\n", boot_addr);
+                safe_state();
+                return;
+            }
+            printf("[BL] ECDSA OK\r\n");
         }
     }
 

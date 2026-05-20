@@ -20,6 +20,7 @@ static uint32_t g_fw_addr;
 static uint32_t g_fw_size;
 static uint32_t g_fw_written;
 static uint8_t  g_block_seq;
+static uint8_t  g_target_slot;
 
 static uint8_t          g_pending_buf[BUF_SIZE];
 static uint16_t         g_pending_len;
@@ -107,21 +108,34 @@ static void handle(const uint8_t *req, uint16_t len)
 
     case 0x34: {                                /* RequestDownload */
         if (g_state != STATE_UNLOCKED) { nrc(sid, 0x22); break; }
-        /* Format: 34 00 44 [4B addr] [4B size] */
+        /* Format: 34 00 44 [4B addr ignored] [4B size] */
         if (len < 11) { nrc(sid, 0x13); break; }
         if (req[1] != 0x00 || req[2] != 0x44) { nrc(sid, 0x31); break; }
 
-        g_fw_addr = ((uint32_t)req[3] << 24) | ((uint32_t)req[4] << 16)
-                  | ((uint32_t)req[5] <<  8) |  (uint32_t)req[6];
         g_fw_size = ((uint32_t)req[7] << 24) | ((uint32_t)req[8] << 16)
                   | ((uint32_t)req[9] <<  8) |  (uint32_t)req[10];
 
-        if (g_fw_addr != SLOT_B_START_ADDR || g_fw_size == 0 || g_fw_size > 0x40000UL) {
-            nrc(sid, 0x31); break;
-        }
-        printf("[UDS] Download addr=0x%08lX size=%lu\r\n", g_fw_addr, g_fw_size);
+        /* ECU selects the inactive slot as OTA target */
+        uint8_t active = ota_get_active_slot();
+        g_target_slot  = (active == 0) ? 1 : 0;
 
-        if (ota_flash_erase_slot_b() != HAL_OK) { nrc(sid, 0x72); break; }
+        uint32_t slot_max;
+        if (g_target_slot == 0) {
+            g_fw_addr = SLOT_A_START_ADDR;
+            slot_max  = SLOT_A_END_ADDR - SLOT_A_START_ADDR;   /* 192 KB */
+        } else {
+            g_fw_addr = SLOT_B_START_ADDR;
+            slot_max  = SLOT_B_END_ADDR - SLOT_B_START_ADDR;   /* 256 KB */
+        }
+
+        if (g_fw_size == 0 || g_fw_size > slot_max) { nrc(sid, 0x31); break; }
+        printf("[UDS] Target Slot %c  addr=0x%08lX  size=%lu\r\n",
+               g_target_slot == 0 ? 'A' : 'B', g_fw_addr, g_fw_size);
+
+        HAL_StatusTypeDef er = (g_target_slot == 0)
+            ? ota_flash_erase_slot_a()
+            : ota_flash_erase_slot_b();
+        if (er != HAL_OK) { nrc(sid, 0x72); break; }
 
         g_fw_written = 0;
         g_block_seq  = 1;
@@ -162,11 +176,11 @@ static void handle(const uint8_t *req, uint16_t len)
     case 0x37: {                                /* RequestTransferExit */
         if (g_state != STATE_DOWNLOADING) { nrc(sid, 0x22); break; }
 
-        if (ota_meta_write_pending_b() != HAL_OK) { nrc(sid, 0x72); break; }
+        if (ota_meta_write_pending(g_target_slot, g_fw_size) != HAL_OK) { nrc(sid, 0x72); break; }
 
         uint8_t r[] = {0x77};
         isotp_send(r, sizeof(r));
-        printf("[UDS] OTA done, rebooting to Slot B\r\n");
+        printf("[UDS] OTA done, rebooting to Slot %c\r\n", g_target_slot == 0 ? 'A' : 'B');
         HAL_Delay(100);
         NVIC_SystemReset();
         break;

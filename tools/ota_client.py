@@ -20,8 +20,8 @@ import can
 ISOTP_TX = 0x7E0   # PC → ECU
 ISOTP_RX = 0x7E8   # ECU → PC
 SEC_MASK  = 0xDEADBEEF
-SLOT_B    = 0x08040000
 CHUNK     = 256    # data bytes per TransferData
+# Target slot address is determined by the ECU (inactive slot auto-selected)
 
 
 class ISOTPError(Exception):
@@ -152,10 +152,10 @@ class OTAClient:
             raise UDSError(f"Unexpected response: {r.hex()}")
         print("[UDS] Unlocked")
 
-    def request_download(self, addr: int, size: int) -> int:
-        print(f"[UDS] RequestDownload  addr=0x{addr:08X}  size={size} bytes")
+    def request_download(self, size: int) -> int:
+        print(f"[UDS] RequestDownload  size={size} bytes  (ECU selects target slot)")
         payload = (bytes([0x34, 0x00, 0x44])
-                   + struct.pack(">I", addr)
+                   + struct.pack(">I", 0)        # addr=0: ECU auto-selects inactive slot
                    + struct.pack(">I", size))
         # Erase takes ~4 seconds — use extended timeout
         r = self.request(payload, timeout=15.0)
@@ -221,7 +221,7 @@ def main() -> None:
         client = OTAClient(bus)
         client.session_extended()
         client.security_access()
-        max_data = client.request_download(SLOT_B, len(fw))
+        max_data = client.request_download(len(fw))
         max_data = min(max_data, CHUNK)
         client.transfer_data(fw, max_data)
         client.transfer_exit()

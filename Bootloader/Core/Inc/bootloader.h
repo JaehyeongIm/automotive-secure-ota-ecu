@@ -20,7 +20,8 @@ typedef struct {
     uint32_t slot_a_version;
     uint32_t slot_b_version;
     uint32_t boot_count;
-    uint32_t reserved;
+    uint32_t slot_a_size;
+    uint32_t slot_b_size;
 } OTA_Metadata_t;
 
 void bootloader_run(void);

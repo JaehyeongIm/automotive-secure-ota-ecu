@@ -127,9 +127,16 @@ int main(void)
   filter.FilterMaskIdLow      = 0x0000;
   filter.FilterFIFOAssignment = CAN_RX_FIFO0;
   filter.FilterActivation     = ENABLE;
-  HAL_CAN_ConfigFilter(&hcan1, &filter);
-  HAL_CAN_Start(&hcan1);
-  HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING);
+  {
+    HAL_StatusTypeDef r;
+    r = HAL_CAN_ConfigFilter(&hcan1, &filter);
+    printf("[CAN] ConfigFilter=%d\r\n", (int)r);
+    r = HAL_CAN_Start(&hcan1);
+    printf("[CAN] Start=%d state=%lu ESR=0x%08lX\r\n",
+           (int)r, (uint32_t)hcan1.State, CAN1->ESR);
+    r = HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING);
+    printf("[CAN] Notify=%d\r\n", (int)r);
+  }
 
   tx_header.StdId = 0x100;
   tx_header.IDE   = CAN_ID_STD;
@@ -153,6 +160,13 @@ int main(void)
     /* USER CODE BEGIN 3 */
     HAL_IWDG_Refresh(&hiwdg);
     uds_process();
+    static uint32_t s_last_tick = 0;
+    uint32_t now = HAL_GetTick();
+    if (now - s_last_tick >= 3000) {
+        s_last_tick = now;
+        printf("[ALIVE] t=%lu CAN state=%lu ESR=0x%08lX\r\n",
+               now, (uint32_t)hcan1.State, CAN1->ESR);
+    }
   }
   /* USER CODE END 3 */
 }
@@ -406,6 +420,13 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
     if (HAL_CAN_AddTxMessage(&hcan1, &tx_header, tx_data, &tx_mailbox) == HAL_OK) {
         HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+    } else {
+        static uint8_t s_once = 0;
+        if (!s_once) {
+            s_once = 1;
+            printf("[TIM2] CAN TX fail: state=%lu ESR=0x%08lX err=0x%08lX\r\n",
+                   (uint32_t)hcan1.State, CAN1->ESR, hcan1.ErrorCode);
+        }
     }
 }
 
