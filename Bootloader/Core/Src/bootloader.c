@@ -85,9 +85,23 @@ void bootloader_run(void)
     }
 
     if (!is_valid_app(boot_addr)) {
-        printf("[BL] No valid app at 0x%08lX, entering Safe State\r\n", boot_addr);
-        safe_state();
-        return;
+        printf("[BL] No valid app at 0x%08lX, trying fallback\r\n", boot_addr);
+        /* PENDING 슬롯이 손상된 경우 반대 슬롯으로 폴백 */
+        if (boot_addr == SLOT_B_ADDR && meta->slot_a_status == SLOT_CONFIRMED) {
+            boot_addr = SLOT_A_ADDR;
+            printf("[BL] Fallback to Slot A\r\n");
+        } else if (boot_addr == SLOT_A_ADDR && meta->slot_b_status == SLOT_CONFIRMED) {
+            boot_addr = SLOT_B_ADDR;
+            printf("[BL] Fallback to Slot B\r\n");
+        } else {
+            safe_state();
+            return;
+        }
+        if (!is_valid_app(boot_addr)) {
+            printf("[BL] Fallback slot also invalid, entering Safe State\r\n");
+            safe_state();
+            return;
+        }
     }
 
     /* IWDG 시작: 앱이 8초 내 kick 안 하면 리셋 */

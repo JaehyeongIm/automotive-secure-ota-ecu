@@ -2,8 +2,11 @@
 """
 UDS OTA client for STM32 DriveECU firmware upload via CAN / ISO-TP.
 
-Usage:
+Usage (macOS / slcan):
     python ota_client.py --channel /dev/tty.usbmodemXXXX firmware_slotb.bin
+
+Usage (RPi5 / socketcan):
+    python ota_client.py --channel can0 --interface socketcan firmware_slotb.bin
 
 Security: key = seed XOR 0xDEADBEEF  (must match SEC_MASK in uds.c)
 """
@@ -196,7 +199,10 @@ class OTAClient:
 def main() -> None:
     parser = argparse.ArgumentParser(description="STM32 DriveECU OTA client")
     parser.add_argument("--channel", required=True,
-                        help="Serial port for CANable (e.g. /dev/tty.usbmodemXXXX)")
+                        help="slcan: /dev/tty.usbmodemXXXX  |  socketcan: can0")
+    parser.add_argument("--interface", default="slcan",
+                        choices=["slcan", "socketcan"],
+                        help="CAN interface type (default: slcan)")
     parser.add_argument("--bitrate", type=int, default=500000)
     parser.add_argument("firmware", help="Slot B firmware .bin file")
     args = parser.parse_args()
@@ -205,9 +211,12 @@ def main() -> None:
         fw = f.read()
     print(f"[OTA] Firmware: {args.firmware}  ({len(fw)} bytes)")
 
-    bus = can.interface.Bus(interface="slcan",
-                            channel=args.channel,
-                            bitrate=args.bitrate)
+    if args.interface == "socketcan":
+        bus = can.interface.Bus(interface="socketcan", channel=args.channel)
+    else:
+        bus = can.interface.Bus(interface="slcan",
+                                channel=args.channel,
+                                bitrate=args.bitrate)
     try:
         client = OTAClient(bus)
         client.session_extended()
