@@ -2,26 +2,20 @@
 #include "motor.h"
 #include "main.h"
 
-#define BASE_SPEED      600   /* 0..999 */
-#define LINE_THRESHOLD  2048  /* 12-bit ADC 중간값, 실물 교정 필요 */
-#define KP              200   /* v2 비례 게인: correction = error * KP / 4096 */
+#define BASE_SPEED  600  /* 0..999 */
+#define KP          80   /* v2 비례 게인: correction = error * KP */
 
 volatile uint8_t g_ota_active    = 0;
 volatile uint8_t g_obstacle_flag = 0;
 volatile uint8_t g_driving_state = 0;
 
-extern ADC_HandleTypeDef hadc1;
-
-static void read_sensors(uint16_t *l, uint16_t *c, uint16_t *r)
+/* DO 출력: 라인 감지 시 LOW(RESET), 미감지 시 HIGH(SET) */
+static void read_sensors(uint8_t *s1, uint8_t *s2, uint8_t *s3, uint8_t *s4)
 {
-    HAL_ADC_Start(&hadc1);
-    HAL_ADC_PollForConversion(&hadc1, 10);
-    *l = HAL_ADC_GetValue(&hadc1);
-    HAL_ADC_PollForConversion(&hadc1, 10);
-    *c = HAL_ADC_GetValue(&hadc1);
-    HAL_ADC_PollForConversion(&hadc1, 10);
-    *r = HAL_ADC_GetValue(&hadc1);
-    HAL_ADC_Stop(&hadc1);
+    *s1 = (HAL_GPIO_ReadPin(IR_S1_GPIO_Port, IR_S1_Pin) == GPIO_PIN_RESET) ? 1 : 0;
+    *s2 = (HAL_GPIO_ReadPin(IR_S2_GPIO_Port, IR_S2_Pin) == GPIO_PIN_RESET) ? 1 : 0;
+    *s3 = (HAL_GPIO_ReadPin(IR_S3_GPIO_Port, IR_S3_Pin) == GPIO_PIN_RESET) ? 1 : 0;
+    *s4 = (HAL_GPIO_ReadPin(IR_S4_GPIO_Port, IR_S4_Pin) == GPIO_PIN_RESET) ? 1 : 0;
 }
 
 void drive_init(void)
@@ -37,29 +31,38 @@ void drive_update(void)
         return;
     }
 
-    uint16_t l, c, r;
-    read_sensors(&l, &c, &r);
+    uint8_t s1, s2, s3, s4;
+    read_sensors(&s1, &s2, &s3, &s4);
 
     uint16_t lp, rp;
 
 #if APP_VERSION == 1
-    /* ON/OFF 제어: 감지된 센서 위치에 따라 방향 결정 */
-    if (l > LINE_THRESHOLD) {
-        lp = 0; rp = BASE_SPEED;           /* 좌측 감지 → 좌회전 */
-    } else if (r > LINE_THRESHOLD) {
-        lp = BASE_SPEED; rp = 0;           /* 우측 감지 → 우회전 */
-    } else if (c > LINE_THRESHOLD) {
-        lp = rp = BASE_SPEED;              /* 중앙 감지 → 직진 */
+    /* ON/OFF 제어
+     * 우선순위: 외측 센서(S1/S4) > 내측 센서(S2/S3) > 라인 없음
+     * 직진: S2+S3 동시 감지, 또는 전체 감지(교차로) */
+    if (!s1 && !s2 && !s3 && !s4) {
+        lp = rp = 0;                             /* 라인 없음 → 정지 */
+    } else if (s1) {
+        lp = 0;           rp = BASE_SPEED;       /* 맨 좌측 → 급좌회전 */
+    } else if (s4) {
+        lp = BASE_SPEED;  rp = 0;               /* 맨 우측 → 급우회전 */
+    } else if (s2 && !s3) {
+        lp = BASE_SPEED / 2; rp = BASE_SPEED;   /* 좌중 → 완좌회전 */
+    } else if (s3 && !s2) {
+        lp = BASE_SPEED; rp = BASE_SPEED / 2;   /* 우중 → 완우회전 */
     } else {
-        lp = rp = 0;                       /* 라인 없음 → 정지 */
+        lp = rp = BASE_SPEED;                    /* S2+S3 or all → 직진 */
     }
 #else
-    /* 비례 제어: 좌우 오차에 Kp 적용 */
-    if (l < LINE_THRESHOLD && c < LINE_THRESHOLD && r < LINE_THRESHOLD) {
+    /* 비례 제어 (App v2)
+     * 가중치: S1=-3, S2=-1, S3=+1, S4=+3
+     * 양수 error → 오른쪽 라인 → 우회전(좌모터 증속, 우모터 감속) */
+    if (!s1 && !s2 && !s3 && !s4) {
         lp = rp = 0;
     } else {
-        int32_t error      = (int32_t)r - (int32_t)l;
-        int32_t correction = (error * KP) / 4096;
+        int32_t error      = -3*(int32_t)s1 - 1*(int32_t)s2
+                            + 1*(int32_t)s3 + 3*(int32_t)s4;
+        int32_t correction = error * KP;
         int32_t left_raw   = (int32_t)BASE_SPEED + correction;
         int32_t right_raw  = (int32_t)BASE_SPEED - correction;
         lp = (uint16_t)(left_raw  < 0 ? 0 : left_raw  > 999 ? 999 : left_raw);
