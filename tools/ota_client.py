@@ -17,8 +17,10 @@ import time
 import sys
 import can
 
-ISOTP_TX = 0x7E0   # PC → ECU
-ISOTP_RX = 0x7E8   # ECU → PC
+ECU_IDS = {
+    'drive':  {'tx': 0x7E0, 'rx': 0x7E8},  # DriveECU
+    'sensor': {'tx': 0x7E1, 'rx': 0x7E9},  # SensorECU
+}
 SEC_MASK  = 0xDEADBEEF
 CHUNK     = 256    # data bytes per TransferData
 # Target slot address is determined by the ECU (inactive slot auto-selected)
@@ -33,30 +35,32 @@ class UDSError(Exception):
 
 
 class OTAClient:
-    def __init__(self, bus: can.BusABC):
+    def __init__(self, bus: can.BusABC, ecu: str = 'drive'):
         self.bus = bus
+        self.ISOTP_TX = ECU_IDS[ecu]['tx']
+        self.ISOTP_RX = ECU_IDS[ecu]['rx']
 
     # ------------------------------------------------------------------ send --
 
     def _send_sf(self, data: bytes) -> None:
         assert len(data) <= 7
         frame = bytes([len(data)]) + data + bytes(7 - len(data))
-        self.bus.send(can.Message(arbitration_id=ISOTP_TX, data=frame,
+        self.bus.send(can.Message(arbitration_id=self.ISOTP_TX, data=frame,
                                   is_extended_id=False))
 
     def _send_ff(self, data: bytes) -> None:
         total = len(data)
         ff = bytes([0x10 | (total >> 8), total & 0xFF]) + data[:6]
-        self.bus.send(can.Message(arbitration_id=ISOTP_TX, data=ff,
+        self.bus.send(can.Message(arbitration_id=self.ISOTP_TX, data=ff,
                                   is_extended_id=False))
 
     def _send_cf(self, chunk: bytes, sn: int) -> None:
         frame = bytes([0x20 | (sn & 0x0F)]) + chunk + bytes(7 - len(chunk))
-        self.bus.send(can.Message(arbitration_id=ISOTP_TX, data=frame,
+        self.bus.send(can.Message(arbitration_id=self.ISOTP_TX, data=frame,
                                   is_extended_id=False))
 
     def _send_fc(self) -> None:
-        self.bus.send(can.Message(arbitration_id=ISOTP_TX,
+        self.bus.send(can.Message(arbitration_id=self.ISOTP_TX,
                                   data=bytes([0x30, 0, 0, 0, 0, 0, 0, 0]),
                                   is_extended_id=False))
 
@@ -72,7 +76,7 @@ class OTAClient:
 
         while time.monotonic() < deadline:
             msg = self.bus.recv(timeout=min(0.5, deadline - time.monotonic()))
-            if not msg or msg.arbitration_id != ISOTP_RX:
+            if not msg or msg.arbitration_id != self.ISOTP_RX:
                 continue
             d = bytes(msg.data)
             pci = d[0] & 0xF0
@@ -110,7 +114,7 @@ class OTAClient:
         deadline = time.monotonic() + 1.0
         while time.monotonic() < deadline:
             msg = self.bus.recv(timeout=0.5)
-            if msg and msg.arbitration_id == ISOTP_RX and (msg.data[0] & 0xF0) == 0x30:
+            if msg and msg.arbitration_id == self.ISOTP_RX and (msg.data[0] & 0xF0) == 0x30:
                 break
         else:
             raise ISOTPError("No Flow Control from ECU")
@@ -191,25 +195,27 @@ class OTAClient:
         r = self.request(bytes([0x37]))
         if r[0] != 0x77:
             raise UDSError(f"Unexpected response: {r.hex()}")
-        print("[UDS] Transfer complete — ECU will reboot to Slot B")
+        print("[UDS] Transfer complete — ECU will reboot to new slot")
 
 
 # --------------------------------------------------------------------------- #
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="STM32 DriveECU OTA client")
+    parser = argparse.ArgumentParser(description="STM32 ECU OTA client")
+    parser.add_argument("--ecu", default="drive", choices=["drive", "sensor"],
+                        help="Target ECU (drive=0x7E0/7E8, sensor=0x7E1/7E9)")
     parser.add_argument("--channel", required=True,
                         help="slcan: /dev/tty.usbmodemXXXX  |  socketcan: can0")
     parser.add_argument("--interface", default="slcan",
                         choices=["slcan", "socketcan"],
                         help="CAN interface type (default: slcan)")
     parser.add_argument("--bitrate", type=int, default=500000)
-    parser.add_argument("firmware", help="Slot B firmware .bin file")
+    parser.add_argument("firmware", help="Signed firmware .bin file")
     args = parser.parse_args()
 
     with open(args.firmware, "rb") as f:
         fw = f.read()
-    print(f"[OTA] Firmware: {args.firmware}  ({len(fw)} bytes)")
+    print(f"[OTA] ECU={args.ecu}  Firmware={args.firmware}  ({len(fw)} bytes)")
 
     if args.interface == "socketcan":
         bus = can.interface.Bus(interface="socketcan", channel=args.channel)
@@ -218,7 +224,7 @@ def main() -> None:
                                 channel=args.channel,
                                 bitrate=args.bitrate)
     try:
-        client = OTAClient(bus)
+        client = OTAClient(bus, ecu=args.ecu)
         client.session_extended()
         client.security_access()
         max_data = client.request_download(len(fw))
