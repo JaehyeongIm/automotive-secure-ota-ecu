@@ -9,13 +9,16 @@ volatile uint8_t g_ota_active    = 0;
 volatile uint8_t g_obstacle_flag = 0;
 volatile uint8_t g_driving_state = 0;
 
-/* DO 출력: 라인 감지 시 LOW(RESET), 미감지 시 HIGH(SET) */
+static int32_t s_last_error = 0;
+
+/* DO 출력: 흰색(고반사) → LOW, 검은색(저반사) → HIGH
+ * 검은 라인 / 흰 배경 트랙 기준: 검은 라인 위 → HIGH(SET) → s=1 */
 static void read_sensors(uint8_t *s1, uint8_t *s2, uint8_t *s3, uint8_t *s4)
 {
-    *s4 = (HAL_GPIO_ReadPin(IR_S1_GPIO_Port, IR_S1_Pin) == GPIO_PIN_RESET) ? 1 : 0;
-    *s3 = (HAL_GPIO_ReadPin(IR_S2_GPIO_Port, IR_S2_Pin) == GPIO_PIN_RESET) ? 1 : 0;
-    *s2 = (HAL_GPIO_ReadPin(IR_S3_GPIO_Port, IR_S3_Pin) == GPIO_PIN_RESET) ? 1 : 0;
-    *s1 = (HAL_GPIO_ReadPin(IR_S4_GPIO_Port, IR_S4_Pin) == GPIO_PIN_RESET) ? 1 : 0;
+    *s4 = (HAL_GPIO_ReadPin(IR_S1_GPIO_Port, IR_S1_Pin) == GPIO_PIN_SET) ? 1 : 0;
+    *s3 = (HAL_GPIO_ReadPin(IR_S2_GPIO_Port, IR_S2_Pin) == GPIO_PIN_SET) ? 1 : 0;
+    *s2 = (HAL_GPIO_ReadPin(IR_S3_GPIO_Port, IR_S3_Pin) == GPIO_PIN_SET) ? 1 : 0;
+    *s1 = (HAL_GPIO_ReadPin(IR_S4_GPIO_Port, IR_S4_Pin) == GPIO_PIN_SET) ? 1 : 0;
 }
 
 void drive_init(void)
@@ -58,18 +61,21 @@ void drive_update(void)
 #else
     /* 비례 제어 (App v2)
      * 가중치: S1=-3, S2=-1, S3=+1, S4=+3
-     * 양수 error → 오른쪽 라인 → 우회전(좌모터 증속, 우모터 감속) */
+     * 양수 error → 오른쪽 라인 → 우회전(좌모터 증속, 우모터 감속)
+     * 전체 미감지 시 마지막 error 방향으로 회전하여 라인 복귀 시도 */
+    int32_t error;
     if (!s1 && !s2 && !s3 && !s4) {
-        lp = rp = 0;
+        error = s_last_error;
     } else {
-        int32_t error      = -3*(int32_t)s1 - 1*(int32_t)s2
-                            + 1*(int32_t)s3 + 3*(int32_t)s4;
-        int32_t correction = error * KP;
-        int32_t left_raw   = (int32_t)BASE_SPEED + correction;
-        int32_t right_raw  = (int32_t)BASE_SPEED - correction;
-        lp = (uint16_t)(left_raw  < 0 ? 0 : left_raw  > 999 ? 999 : left_raw);
-        rp = (uint16_t)(right_raw < 0 ? 0 : right_raw > 999 ? 999 : right_raw);
+        error = -3*(int32_t)s1 - 1*(int32_t)s2
+               + 1*(int32_t)s3 + 3*(int32_t)s4;
+        s_last_error = error;
     }
+    int32_t correction = error * KP;
+    int32_t left_raw   = (int32_t)BASE_SPEED + correction;
+    int32_t right_raw  = (int32_t)BASE_SPEED - correction;
+    lp = (uint16_t)(left_raw  < 0 ? 0 : left_raw  > 999 ? 999 : left_raw);
+    rp = (uint16_t)(right_raw < 0 ? 0 : right_raw > 999 ? 999 : right_raw);
 #endif
 
     motor_set(lp, rp);

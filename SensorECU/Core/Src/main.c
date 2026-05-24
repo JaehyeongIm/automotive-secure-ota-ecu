@@ -175,6 +175,7 @@ int main(void)
       s_measure_tick = HAL_GetTick();
       uint16_t dist  = hcsr04_measure_cm();
       s_distance_cm  = dist;
+      printf("[DIST] %u cm\r\n", dist);
 
 #if APP_VERSION == 1
       s_obstacle = (dist > 0 && dist < 15) ? 1 : 0;
