@@ -12,10 +12,10 @@ volatile uint8_t g_driving_state = 0;
 /* DO 출력: 라인 감지 시 LOW(RESET), 미감지 시 HIGH(SET) */
 static void read_sensors(uint8_t *s1, uint8_t *s2, uint8_t *s3, uint8_t *s4)
 {
-    *s1 = (HAL_GPIO_ReadPin(IR_S1_GPIO_Port, IR_S1_Pin) == GPIO_PIN_RESET) ? 1 : 0;
-    *s2 = (HAL_GPIO_ReadPin(IR_S2_GPIO_Port, IR_S2_Pin) == GPIO_PIN_RESET) ? 1 : 0;
-    *s3 = (HAL_GPIO_ReadPin(IR_S3_GPIO_Port, IR_S3_Pin) == GPIO_PIN_RESET) ? 1 : 0;
-    *s4 = (HAL_GPIO_ReadPin(IR_S4_GPIO_Port, IR_S4_Pin) == GPIO_PIN_RESET) ? 1 : 0;
+    *s4 = (HAL_GPIO_ReadPin(IR_S1_GPIO_Port, IR_S1_Pin) == GPIO_PIN_RESET) ? 1 : 0;
+    *s3 = (HAL_GPIO_ReadPin(IR_S2_GPIO_Port, IR_S2_Pin) == GPIO_PIN_RESET) ? 1 : 0;
+    *s2 = (HAL_GPIO_ReadPin(IR_S3_GPIO_Port, IR_S3_Pin) == GPIO_PIN_RESET) ? 1 : 0;
+    *s1 = (HAL_GPIO_ReadPin(IR_S4_GPIO_Port, IR_S4_Pin) == GPIO_PIN_RESET) ? 1 : 0;
 }
 
 void drive_init(void)
@@ -42,6 +42,8 @@ void drive_update(void)
      * 직진: S2+S3 동시 감지, 또는 전체 감지(교차로) */
     if (!s1 && !s2 && !s3 && !s4) {
         lp = rp = 0;                             /* 라인 없음 → 정지 */
+    } else if (s1 && s2 && s3 && s4) {
+        lp = rp = BASE_SPEED;                    /* 전체 감지(교차로) → 직진 */
     } else if (s1) {
         lp = 0;           rp = BASE_SPEED;       /* 맨 좌측 → 급좌회전 */
     } else if (s4) {
@@ -51,7 +53,7 @@ void drive_update(void)
     } else if (s3 && !s2) {
         lp = BASE_SPEED; rp = BASE_SPEED / 2;   /* 우중 → 완우회전 */
     } else {
-        lp = rp = BASE_SPEED;                    /* S2+S3 or all → 직진 */
+        lp = rp = BASE_SPEED;                    /* S2+S3 → 직진 */
     }
 #else
     /* 비례 제어 (App v2)

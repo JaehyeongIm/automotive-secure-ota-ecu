@@ -153,7 +153,7 @@ int main(void)
   uds_init();
   drive_init();
   // printf("[DriveECU] Start\r\n");
-  printf("[DriveECU v2] Start\r\n");
+  printf("[DriveECU v%d] Start, Slot=%d\r\n", APP_VERSION, ota_get_active_slot());
 
   /* USER CODE END 2 */
 

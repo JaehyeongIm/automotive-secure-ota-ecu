@@ -136,9 +136,11 @@ int main(void)
   filter.FilterMaskIdLow      = 0x0000;
   filter.FilterFIFOAssignment = CAN_RX_FIFO0;
   filter.FilterActivation     = ENABLE;
-  HAL_CAN_ConfigFilter(&hcan1, &filter);
-  HAL_CAN_Start(&hcan1);
-  HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING);
+  HAL_StatusTypeDef cr = HAL_CAN_ConfigFilter(&hcan1, &filter);
+  HAL_StatusTypeDef sr = HAL_CAN_Start(&hcan1);
+  HAL_StatusTypeDef nr = HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING);
+  printf("[CAN] ConfigFilter=%d Start=%d Notify=%d state=%lu ESR=0x%08lX\r\n",
+         (int)cr, (int)sr, (int)nr, (uint32_t)hcan1.State, CAN1->ESR);
 
   tx_header.StdId = 0x201;
   tx_header.IDE   = CAN_ID_STD;
