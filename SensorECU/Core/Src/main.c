@@ -177,11 +177,7 @@ int main(void)
       s_distance_cm  = dist;
       printf("[DIST] %u cm\r\n", dist);
 
-#if APP_VERSION == 1
-      s_obstacle = (dist > 0 && dist < 15) ? 1 : 0;
-#else
-      s_obstacle = (dist > 0 && dist < 25) ? 1 : 0;
-#endif
+      s_obstacle = (dist > 0 && dist <= 10) ? 1 : 0;
 
       uint8_t obs_data[8] = {s_obstacle,
                              (uint8_t)(dist >> 8), (uint8_t)dist,

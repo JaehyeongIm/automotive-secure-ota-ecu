@@ -152,7 +152,9 @@ int main(void)
   isotp_init(uds_on_isotp_rx);
   uds_init();
   drive_init();
-  // printf("[DriveECU] Start\r\n");
+  /* B1(PC13) EXTI 인터럽트 활성화 — MX_GPIO_Init에서 핀 설정만 하고 NVIC는 수동 등록 */
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
   printf("[DriveECU v%d] Start, Slot=%d\r\n", APP_VERSION, ota_get_active_slot());
 
   /* USER CODE END 2 */
@@ -546,7 +548,8 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
     }
 
     if (rx_header.StdId == 0x200) {
-        g_obstacle_flag = rx_data[0];  /* 0x01=감지, 0x00=없음 */
+        g_obstacle_flag = rx_data[0];
+        g_distance_cm   = ((uint16_t)rx_data[1] << 8) | rx_data[2];
         return;
     }
 
@@ -554,6 +557,15 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
            rx_header.StdId, rx_header.DLC,
            rx_data[0], rx_data[1], rx_data[2], rx_data[3],
            (uint32_t)(rx_data[1] << 24 | rx_data[2] << 16 | rx_data[3] << 8 | rx_data[4]));
+}
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    if (GPIO_Pin != B1_Pin) return;
+    static uint32_t s_last_press = 0;
+    uint32_t now = HAL_GetTick();
+    if (now - s_last_press < 300) return;  /* 디바운스 300ms */
+    s_last_press = now;
+    g_button_pressed = 1;
 }
 /* USER CODE END 4 */
 

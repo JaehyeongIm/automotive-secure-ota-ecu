@@ -1,25 +1,30 @@
 #include "drive.h"
 #include "motor.h"
 #include "main.h"
+#include <stdio.h>
 
-#define BASE_SPEED  600  /* 0..999 */
-#define KP          80   /* v2 비례 게인: correction = error * KP */
+#define BASE_SPEED    600   /* 직진 속도 (0–999) */
+#define SLOW_SPEED    300   /* 감속 속도 — v2, v3 */
+#define STOP_DIST_CM   10   /* 정지 거리 (cm) */
+#define SLOW_DIST_CM   30   /* 감속 시작 거리 (cm) — v2, v3 */
+#define FORWARD_MS   3000   /* 1m 전진 시간 (ms) — 실측 후 캘리브레이션 필요 */
+#define REVERSE_MS    600   /* 후진 복귀 시간 (ms) — v3 */
 
-volatile uint8_t g_ota_active    = 0;
-volatile uint8_t g_obstacle_flag = 0;
-volatile uint8_t g_driving_state = 0;
+volatile uint8_t  g_ota_active     = 0;
+volatile uint8_t  g_obstacle_flag  = 0;
+volatile uint8_t  g_driving_state  = 0;
+volatile uint8_t  g_button_pressed = 0;
+volatile uint16_t g_distance_cm    = 999;
 
-static int32_t s_last_error = 0;
+typedef enum {
+    DRIVE_IDLE,
+    DRIVE_RUNNING,
+    DRIVE_STOPPED,    /* v3 전용: 정지 후 후진 대기 */
+    DRIVE_REVERSING,  /* v3 전용 */
+} DriveState;
 
-/* DO 출력: 흰색(고반사) → LOW, 검은색(저반사) → HIGH
- * 검은 라인 / 흰 배경 트랙 기준: 검은 라인 위 → HIGH(SET) → s=1 */
-static void read_sensors(uint8_t *s1, uint8_t *s2, uint8_t *s3, uint8_t *s4)
-{
-    *s4 = (HAL_GPIO_ReadPin(IR_S1_GPIO_Port, IR_S1_Pin) == GPIO_PIN_SET) ? 1 : 0;
-    *s3 = (HAL_GPIO_ReadPin(IR_S2_GPIO_Port, IR_S2_Pin) == GPIO_PIN_SET) ? 1 : 0;
-    *s2 = (HAL_GPIO_ReadPin(IR_S3_GPIO_Port, IR_S3_Pin) == GPIO_PIN_SET) ? 1 : 0;
-    *s1 = (HAL_GPIO_ReadPin(IR_S4_GPIO_Port, IR_S4_Pin) == GPIO_PIN_SET) ? 1 : 0;
-}
+static DriveState s_state    = DRIVE_IDLE;
+static uint32_t   s_state_ts = 0;
 
 void drive_init(void)
 {
@@ -28,56 +33,105 @@ void drive_init(void)
 
 void drive_update(void)
 {
-    if (g_ota_active || g_obstacle_flag) {
+    if (g_ota_active) {
         motor_stop();
         g_driving_state = 0;
+        s_state = DRIVE_IDLE;
         return;
     }
 
-    uint8_t s1, s2, s3, s4;
-    read_sensors(&s1, &s2, &s3, &s4);
+    uint32_t now = HAL_GetTick();
 
-    uint16_t lp, rp;
+    switch (s_state) {
+
+    case DRIVE_IDLE:
+        if (g_button_pressed) {
+            g_button_pressed = 0;
+            s_state    = DRIVE_RUNNING;
+            s_state_ts = now;
+            printf("[DRIVE v%d] 출발\r\n", APP_VERSION);
+        }
+        break;
+
+    case DRIVE_RUNNING:
+        /* 1m 시간 완료 → 정상 정지 */
+        if (now - s_state_ts >= FORWARD_MS) {
+            motor_stop();
+            g_driving_state = 0;
+            s_state = DRIVE_IDLE;
+            printf("[DRIVE] 1m 완료 → 정지\r\n");
+            break;
+        }
 
 #if APP_VERSION == 1
-    /* ON/OFF 제어
-     * 우선순위: 외측 센서(S1/S4) > 내측 센서(S2/S3) > 라인 없음
-     * 직진: S2+S3 동시 감지, 또는 전체 감지(교차로) */
-    if (!s1 && !s2 && !s3 && !s4) {
-        lp = rp = 0;                             /* 라인 없음 → 정지 */
-    } else if (s1 && s2 && s3 && s4) {
-        lp = rp = BASE_SPEED;                    /* 전체 감지(교차로) → 직진 */
-    } else if (s1) {
-        lp = 0;           rp = BASE_SPEED;       /* 맨 좌측 → 급좌회전 */
-    } else if (s4) {
-        lp = BASE_SPEED;  rp = 0;               /* 맨 우측 → 급우회전 */
-    } else if (s2 && !s3) {
-        lp = BASE_SPEED / 2; rp = BASE_SPEED;   /* 좌중 → 완좌회전 */
-    } else if (s3 && !s2) {
-        lp = BASE_SPEED; rp = BASE_SPEED / 2;   /* 우중 → 완우회전 */
-    } else {
-        lp = rp = BASE_SPEED;                    /* S2+S3 → 직진 */
-    }
-#else
-    /* 비례 제어 (App v2)
-     * 가중치: S1=-3, S2=-1, S3=+1, S4=+3
-     * 양수 error → 오른쪽 라인 → 우회전(좌모터 증속, 우모터 감속)
-     * 전체 미감지 시 마지막 error 방향으로 회전하여 라인 복귀 시도 */
-    int32_t error;
-    if (!s1 && !s2 && !s3 && !s4) {
-        error = s_last_error;
-    } else {
-        error = -3*(int32_t)s1 - 1*(int32_t)s2
-               + 1*(int32_t)s3 + 3*(int32_t)s4;
-        s_last_error = error;
-    }
-    int32_t correction = error * KP;
-    int32_t left_raw   = (int32_t)BASE_SPEED + correction;
-    int32_t right_raw  = (int32_t)BASE_SPEED - correction;
-    lp = (uint16_t)(left_raw  < 0 ? 0 : left_raw  > 999 ? 999 : left_raw);
-    rp = (uint16_t)(right_raw < 0 ? 0 : right_raw > 999 ? 999 : right_raw);
-#endif
+        /* 장애물 플래그(10cm 이내) 감지 시 즉시 정지 */
+        if (g_obstacle_flag) {
+            motor_stop();
+            g_driving_state = 0;
+            s_state = DRIVE_IDLE;
+            printf("[DRIVE] 장애물(10cm) 감지 → 정지\r\n");
+            break;
+        }
+        motor_set(BASE_SPEED, BASE_SPEED);
 
-    motor_set(lp, rp);
-    g_driving_state = (lp > 0 || rp > 0) ? 1 : 0;
+#elif APP_VERSION == 2
+        /* 10cm 이내: 정지 / 10~30cm: 거리 비례 감속 / 30cm 이상: 정속 */
+        if (g_distance_cm <= STOP_DIST_CM) {
+            motor_stop();
+            g_driving_state = 0;
+            s_state = DRIVE_IDLE;
+            printf("[DRIVE] %ucm → 정지\r\n", g_distance_cm);
+            break;
+        } else if (g_distance_cm <= SLOW_DIST_CM) {
+            uint16_t sp = SLOW_SPEED + (uint16_t)(
+                (uint32_t)(BASE_SPEED - SLOW_SPEED)
+                * (g_distance_cm - STOP_DIST_CM)
+                / (SLOW_DIST_CM  - STOP_DIST_CM));
+            motor_set(sp, sp);
+        } else {
+            motor_set(BASE_SPEED, BASE_SPEED);
+        }
+
+#elif APP_VERSION == 3
+        /* v2 감속 로직 동일 + 정지 후 자동 후진 */
+        if (g_distance_cm <= STOP_DIST_CM) {
+            motor_stop();
+            g_driving_state = 0;
+            s_state    = DRIVE_STOPPED;
+            s_state_ts = now;
+            printf("[DRIVE] %ucm → 정지 후 후진\r\n", g_distance_cm);
+            break;
+        } else if (g_distance_cm <= SLOW_DIST_CM) {
+            uint16_t sp = SLOW_SPEED + (uint16_t)(
+                (uint32_t)(BASE_SPEED - SLOW_SPEED)
+                * (g_distance_cm - STOP_DIST_CM)
+                / (SLOW_DIST_CM  - STOP_DIST_CM));
+            motor_set(sp, sp);
+        } else {
+            motor_set(BASE_SPEED, BASE_SPEED);
+        }
+#endif
+        g_driving_state = 1;
+        break;
+
+    case DRIVE_STOPPED:
+        /* 300ms 대기 후 후진 시작 (v3 전용) */
+        g_driving_state = 0;
+        if (now - s_state_ts >= 300) {
+            motor_reverse(SLOW_SPEED, SLOW_SPEED);
+            s_state    = DRIVE_REVERSING;
+            s_state_ts = now;
+            printf("[DRIVE] 후진 시작\r\n");
+        }
+        break;
+
+    case DRIVE_REVERSING:
+        g_driving_state = 0;
+        if (now - s_state_ts >= REVERSE_MS) {
+            motor_stop();
+            s_state = DRIVE_IDLE;
+            printf("[DRIVE] 후진 완료 → 대기\r\n");
+        }
+        break;
+    }
 }

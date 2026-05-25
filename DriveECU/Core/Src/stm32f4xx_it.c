@@ -242,5 +242,9 @@ void TIM2_IRQHandler(void)
 }
 
 /* USER CODE BEGIN 1 */
-
+/* B1(USER) 버튼은 PC13 = EXTI 라인 13 → EXTI15_10_IRQHandler */
+void EXTI15_10_IRQHandler(void)
+{
+    HAL_GPIO_EXTI_IRQHandler(B1_Pin);
+}
 /* USER CODE END 1 */
