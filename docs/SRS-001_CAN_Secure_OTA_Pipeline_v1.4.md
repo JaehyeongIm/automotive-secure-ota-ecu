@@ -4,12 +4,12 @@
 |---|---|
 | 문서 ID | SRS-001 |
 | 문서명 | CAN 기반 UDS over ISO-TP Secure OTA 파이프라인 요구사항 명세서 |
-| 프로젝트명 | Dual ECU 라인트레이싱 차량 Secure OTA 시스템 |
-| 버전 | 1.7 |
-| 작성일 | 2026-05-21 |
-| 작성 목적 | Dual ECU 라인트레이싱 차량 Secure OTA 시스템 소프트웨어 요구사항 정의 |
-| 주요 대상 | Raspberry Pi 5 Gateway, STM32F446RE ECU 2대, CAN Bus, Custom Bootloader, 라인트레이싱 차량 |
-| 범위 변경 | 1.6 대비 Flash 파티션 실제 구현값 반영(Section 14.2), ECDSA 서명 포맷 구현 방식 확정(Section 13.7), A/B OTA 구현 완료 반영 |
+| 프로젝트명 | Dual ECU 버튼 트리거 직진 주행 Secure OTA 시스템 |
+| 버전 | 2.0 |
+| 작성일 | 2026-05-25 |
+| 작성 목적 | Dual ECU 버튼 트리거 직진 주행 + 장애물 회피 OTA 데모 시스템 소프트웨어 요구사항 정의 |
+| 주요 대상 | Raspberry Pi 5 Gateway, STM32F446RE ECU 2대, CAN Bus, Custom Bootloader, RC 차량 데모 플랫폼 |
+| 범위 변경 | 1.7 대비 주행 방식 변경(라인트레이싱 → 버튼 트리거 직진), App v1/v2/v3 3단계 OTA 구조 확정, Uptane 지연 활성화 도입, 장애물 임계값 단일화(10cm) |
 
 ---
 
@@ -30,7 +30,7 @@
 - Anti-rollback 정책
 - ECU ID / HW ID 기반 대상 검증
 - 공격자 관점의 보안 시나리오 검증
-- 라인트레이싱 차량을 통한 OTA 적용 결과 실증
+- 버튼 트리거 직진 주행 + 장애물 회피 차량 플랫폼을 통한 OTA 적용 결과 실증
 
 본 시스템은 양산 차량 ECU 환경을 완전히 재현하지 않으며, 가용 개발 플랫폼(STM32F446RE, Raspberry Pi 5) 범위 내에서 전장 OTA의 핵심 기능을 구현하고 검증하는 것을 목표로 한다. 구현 범위의 한계는 Section 19에 명시한다.
 
@@ -48,7 +48,7 @@
 | A/B Slot 및 Rollback | 비활성 Slot 대상 업데이트, Self-test 기반 Confirmed 처리, 실패 시 자동 복구 |
 | Secure OTA | SHA-256 무결성 검증, ECDSA 서명 검증, Anti-rollback, ECU ID 검증 |
 | 위협 시나리오 검증 | 변조, 위조, 다운그레이드, Replay, 미인증 명령, CAN Flood 공격 방어 검증 |
-| 시스템 실증 | 라인트레이싱 차량 플랫폼을 통한 OTA 적용 결과 기능 검증 |
+| 시스템 실증 | 버튼 트리거 직진 주행 차량 플랫폼을 통한 App v1/v2/v3 OTA 적용 결과 기능 검증 |
 | 요구사항 추적성 | SRS 요구사항에서 설계, 구현, 테스트, 트러블슈팅까지 양방향 추적 관리 |
 | 계측 기반 검증 | 오실로스코프, 로직분석기, ST-LINK를 활용한 신호 수준 검증 및 원인 분석 |
 
@@ -72,7 +72,7 @@
 10. 전자서명 기반 펌웨어 인증성 검증
 11. Anti-rollback 정책 구현
 12. ECU ID / HW ID 기반 대상 검증
-13. 라인트레이싱 App v1/v2 업데이트 실증
+13. 버튼 트리거 직진 주행 App v1/v2/v3 업데이트 실증 (장애물 감지 반응 단계별 차이 실증)
 14. 공격자 시나리오 기반 보안 테스트
 15. 정상/비정상 업데이트 로그 수집 및 테스트 리포트 작성
 16. ASPICE-inspired 요구사항 기반 개발 프로세스 적용
@@ -93,7 +93,7 @@
 | ISO-TP 멀티 세션 동시 처리 | 단일 ECU당 단일 OTA 세션만 운용하므로 동시 세션 관리는 제외 |
 | HSM 기반 키 저장 | F446RE의 하드웨어 한계로 양산 ECU 수준 구현 불가 |
 | 실제 차량 ECU 연결 공격 | 안전/법적 문제로 자체 제작 테스트 네트워크 내부에서만 검증 |
-| 실제 차량 주행 제어 | 축소형 라인트레이싱 차량 플랫폼에서만 실증 |
+| 실제 차량 주행 제어 | 버튼 트리거 직진 주행 RC 차량 플랫폼에서만 실증 |
 | ASPICE 완전 준수/공식 평가 | 개인 프로젝트 범위이므로 공식 ASPICE 심사나 조직 프로세스 수준의 준수는 제외 |
 | 상용 요구사항 관리 도구 필수 사용 | Polarion, DOORS 등 상용 도구 대신 Markdown/Spreadsheet 기반 추적성 관리로 대체 |
 | UN R156 SUMS 인증 | UNECE WP.29 UN R156 기반 Software Update Management System 공식 인증은 본 프로젝트 범위 제외. 개인 프로젝트 규모에서 인증 기관 심사는 불가 |
@@ -130,8 +130,8 @@
 | Drive ECU                  |      | Sensor/Body ECU              |
 | - Custom Bootloader        |      | - Custom Bootloader          |
 | - A/B App Slot             |      | - A/B App Slot               |
-| - Line Tracing Control     |      | - Distance/Obstacle Sensing  |
-| - Motor Control            |      | - Status Message Tx          |
+| - Button-Trigger Drive     |      | - Distance/Obstacle Sensing  |
+| - Motor Control (PWM)      |      | - Status Message Tx          |
 +----------------------------+      +------------------------------+
 ```
 
@@ -140,14 +140,14 @@
 | 구성 요소 | 역할 |
 |---|---|
 | Raspberry Pi 5 | Jenkins CI/CD 서버, OTA Gateway, Update Manager, CAN 송수신, 로그 수집, 공격자 시나리오 실행 |
-| STM32F446RE #1 | Drive ECU: 라인트레이싱, 모터 제어, OTA 대상 ECU |
-| STM32F446RE #2 | Sensor/Body ECU: 거리센서, 장애물 감지, 상태 메시지 송신, OTA 대상 ECU |
+| STM32F446RE #1 | Drive ECU: 버튼 트리거 직진 주행, 모터 제어(PWM), 장애물 반응 로직, OTA 대상 ECU |
+| STM32F446RE #2 | Sensor/Body ECU: HC-SR04 거리센서, 장애물 감지(10cm 임계값), 상태 메시지 송신, OTA 대상 ECU |
 | CAN Transceiver | STM32와 CAN Bus 간 물리 계층 연결 |
 | CANable 또는 유사 장치 | PC/Raspberry Pi에서 CAN 로그 확인 및 테스트 프레임 송신 |
-| 2WD 차체 | OTA 적용 결과를 실증할 차량 플랫폼 |
+| 2WD 차체 | OTA 적용 결과를 실증할 RC 차량 데모 플랫폼 |
 | TB6612FNG | DC 모터 구동 드라이버 |
-| 라인트레이서 센서 | Drive ECU의 라인 감지 입력 |
-| 거리센서 | Sensor/Body ECU의 장애물 감지 입력 |
+| B1 버튼 (USER button) | Drive ECU의 주행 트리거 입력 (EXTI PC13) |
+| HC-SR04 초음파 센서 | Sensor/Body ECU의 장애물 감지 입력 |
 
 ---
 
@@ -312,22 +312,24 @@
 
 | ID | 요구사항 | 우선순위 | 수용 기준 |
 |---|---|---:|---|
-| FR-DRV-001 | Drive ECU는 라인트레이싱 센서 입력을 읽어야 한다. | Must | 4채널 IR 센서 입력값을 주기적으로 읽고 로그/상태로 확인할 수 있어야 한다. |
-| FR-DRV-002 | Drive ECU는 TB6612FNG를 통해 좌우 모터를 제어해야 한다. | Must | PWM 기반 좌우 모터 속도 제어가 가능해야 한다. |
-| FR-DRV-003 | Drive ECU App v1은 ON/OFF 방식(bang-bang) 라인트레이싱 제어를 구현해야 한다. | Must | 4채널 IR 센서 입력을 ON/OFF로 해석하여 좌우 모터를 전속 또는 정지 상태로 전환하며, 직선에서는 주행하되 곡선 구간에서 진동/사행 주행이 관찰되어야 한다. |
-| FR-DRV-004 | Drive ECU App v2는 가중치 기반 비례 제어 라인트레이싱을 구현해야 한다. | Should | 4채널 IR 센서에 가중치(외측 ±3, 내측 ±1)를 적용하여 편차를 계산하고, 좌우 모터 PWM을 차등 조정하여 v1 대비 곡선 구간 추종이 부드럽게 개선되어야 한다. |
-| FR-DRV-005 | Drive ECU는 Sensor ECU의 장애물 상태 메시지를 반영해야 한다. | Should | 장애물 감지 시 정지 또는 감속해야 한다. |
-| FR-DRV-006 | Drive ECU는 현재 App Version과 Slot 정보를 CAN으로 보고해야 한다. | Must | Gateway의 Inventory 요청에 응답해야 한다. |
+| FR-DRV-001 | Drive ECU는 TB6612FNG를 통해 좌우 모터를 PWM 제어해야 한다. | Must | PWM 기반 좌우 모터 속도 제어 및 후진 방향 제어가 가능해야 한다. |
+| FR-DRV-002 | Drive ECU는 B1(USER) 버튼 입력을 EXTI 인터럽트로 감지하여 주행을 시작해야 한다. | Must | B1 버튼 누름 후 300ms 디바운스 처리 후 g_button_pressed 플래그가 설정되어 DRIVE_IDLE → DRIVE_RUNNING 전이가 발생해야 한다. |
+| FR-DRV-003 | Drive ECU App v1은 버튼 트리거 직진 주행 중 장애물이 10cm 이내 감지되면 즉시 정지해야 한다. | Must | 주행 시작 후 최대 3000ms 직진하며, 10cm 이하 장애물 감지 시(g_obstacle_flag) 즉시 모터를 정지하고 DRIVE_IDLE로 복귀해야 한다. |
+| FR-DRV-004 | Drive ECU App v2는 30cm 이내 감속 + 10cm 이내 정지 비례제어를 구현해야 한다. | Should | 10~30cm 구간에서 거리에 비례하여 SLOW_SPEED(300)~BASE_SPEED(600) 사이로 속도를 조정하고, 10cm 이하에서 정지 후 DRIVE_IDLE로 복귀해야 한다. |
+| FR-DRV-005 | Drive ECU App v3는 v2 감속 로직에 더해 정지 후 자동 후진 복귀를 구현해야 한다. | Should | 10cm 이하 정지 후 300ms 대기, 600ms 후진(SLOW_SPEED), DRIVE_IDLE 복귀 순서로 동작해야 한다. |
+| FR-DRV-006 | Drive ECU는 현재 App Version과 Slot 정보를 CAN으로 보고해야 한다. | Must | CAN ID 0x100 heartbeat에 APP_VERSION, 활성 슬롯, 주행 상태, 장애물 상태가 포함되어야 한다. |
+| FR-DRV-007 | Drive ECU는 OTA 다운로드(TransferData) 진행 중에도 주행 기능을 유지해야 한다. | Must | RequestDownload(0x34) 수신 후 g_ota_active=1 구간(Flash Erase ~4초)에만 모터가 정지되며, 그 외 TransferData 구간에서는 drive_update()가 정상 실행되어야 한다. |
+| FR-DRV-008 | Drive ECU는 DRIVE_IDLE 상태 진입 시 g_fw_pending 플래그를 확인하여 재부팅으로 펌웨어를 활성화해야 한다. | Must | TransferExit(0x37) 완료 후 g_fw_pending=1이 설정되고, 다음 DRIVE_IDLE 진입 시 NVIC_SystemReset()이 호출되어 Bootloader가 새 슬롯으로 부팅해야 한다. (Uptane 지연 활성화) |
 
 ### 7.6 Sensor/Body ECU Application 요구사항
 
 | ID | 요구사항 | 우선순위 | 수용 기준 |
 |---|---|---:|---|
 | FR-SEN-001 | Sensor ECU는 HC-SR04 초음파 거리센서 입력을 읽어야 한다. | Must | Trigger/Echo GPIO 방식으로 거리값을 주기적으로 측정할 수 있어야 한다. |
-| FR-SEN-002 | Sensor ECU App v1은 장애물 감지 임계값 15cm를 사용해야 한다. | Must | 측정 거리가 15cm 이하일 때 obstacle_detected 상태를 CAN으로 송신해야 한다. |
+| FR-SEN-002 | Sensor ECU는 장애물 감지 임계값 10cm를 사용해야 한다. | Must | 측정 거리가 10cm 이하일 때 obstacle_detected=1 및 실제 거리값(cm)을 CAN ID 0x200으로 송신해야 한다. Drive ECU는 이 값으로 g_obstacle_flag 및 g_distance_cm을 갱신한다. |
 | FR-SEN-003 | Sensor ECU는 100ms 주기로 Alive/Heartbeat 메시지를 CAN으로 송신해야 한다. | Should | Drive ECU 또는 Gateway가 300ms 이내 Heartbeat를 수신하지 못하면 Sensor ECU를 dead로 간주할 수 있어야 한다. |
-| FR-SEN-004 | Sensor ECU App v2는 장애물 감지 임계값을 25cm로 변경해야 한다. | Should | OTA 업데이트 후 측정 거리가 25cm 이하일 때 obstacle_detected 상태를 송신하여 v1(15cm) 대비 조기 감지가 확인되어야 한다. |
-| FR-SEN-005 | Sensor ECU는 현재 App Version과 Slot 정보를 CAN으로 보고해야 한다. | Must | Gateway의 Inventory 요청에 응답해야 한다. |
+| FR-SEN-004 | Sensor ECU는 측정한 거리값(cm)을 CAN ID 0x200 페이로드 byte[1:2]에 포함하여 송신해야 한다. | Must | Drive ECU가 수신한 g_distance_cm 값이 Sensor ECU 실측값과 일치해야 한다. Drive ECU의 v2/v3 비례 감속 로직이 이 값을 직접 사용한다. |
+| FR-SEN-005 | Sensor ECU는 현재 App Version과 Slot 정보를 CAN으로 보고해야 한다. | Must | CAN ID 0x201 heartbeat에 APP_VERSION, 활성 슬롯 정보가 포함되어야 한다. |
 
 ### 7.7 CI/CD 파이프라인 요구사항
 
@@ -341,7 +343,7 @@ Jenkins 기반 CI/CD 파이프라인은 Raspberry Pi 5에서 운용되며, Git p
 | FR-CICD-004 | Stage 2에서 cppcheck를 통해 펌웨어 소스코드 정적 분석을 수행해야 한다. | Should | error 등급 이상의 결함 검출 시 파이프라인이 중단되고 결함 목록이 로그에 기록되어야 한다. |
 | FR-CICD-005 | Stage 3에서 빌드된 펌웨어 바이너리 크기가 App Slot 크기(128KB)를 초과하는지 검사해야 한다. | Must | 초과 시 파이프라인이 중단되고 실제 크기와 한계 크기가 로그에 기록되어야 한다. |
 | FR-CICD-006 | Stage 4에서 ECDSA 개인키로 펌웨어에 서명하고 Manifest를 생성해야 한다. | Must | 서명된 펌웨어 바이너리와 Manifest 파일이 Jenkins 아티팩트로 저장되어야 한다. |
-| FR-CICD-007 | Stage 5에서 OTA 배포 스크립트를 실행하기 전 대상 ECU가 주행 중이 아닌지 확인해야 한다. | Must | ECU Status 메시지(CAN ID 0x100/0x200)로 주행 상태를 확인하고, 주행 중인 경우 배포를 중단해야 한다. 주행 중이 아닌 경우 UDS over ISO-TP 절차로 ECU 플래시를 완료하고 Self-test 결과가 로그에 기록되어야 한다. |
+| FR-CICD-007 | Stage 5에서 OTA 배포 스크립트는 주행 중에도 다운로드를 시작할 수 있으나, 실제 펌웨어 활성화(재부팅)는 ECU가 IDLE 상태가 된 후 자동으로 수행된다. | Must | UDS over ISO-TP 절차(0x10→0x27→0x34→0x36→0x37)로 비활성 슬롯에 펌웨어 기록을 완료한다. TransferExit 후 ECU는 g_fw_pending=1을 세트하고 즉시 재부팅하지 않는다. DRIVE_IDLE 상태 진입 시 ECU가 자동 재부팅하며, Jenkins는 heartbeat(CAN 0x100) 슬롯 전환을 확인한다. (Uptane 지연 활성화, FR-DRV-008 연계) |
 | FR-CICD-008 | 각 Stage의 실행 결과와 로그가 Jenkins 빌드 이력에 기록되어야 한다. | Must | 성공/실패 여부, 실패 원인, 각 Stage 소요 시간이 Jenkins UI에서 확인 가능해야 한다. |
 | FR-CICD-009 | ECDSA 개인키는 Jenkins Credentials로 관리되어야 하며 Jenkinsfile에 평문 노출되지 않아야 한다. | Must | Jenkinsfile 소스코드에 키 값이 존재하지 않아야 한다. |
 | FR-CICD-010 | Stage 5 OTA 배포 실패 시 Jenkins 빌드를 FAILURE로 표시하고 실패 원인을 로그에 기록해야 한다. | Must | ECU 플래시 실패, Self-test 실패, Rollback 발생 중 어느 경우에도 Jenkins 빌드 상태가 FAILURE로 기록되어야 한다. 재시도는 수동으로만 수행한다. |
@@ -438,7 +440,7 @@ Jenkins 기반 CI/CD 파이프라인은 Raspberry Pi 5에서 운용되며, Git p
 
 | ID | 요구사항 | 우선순위 | 수용 기준 |
 |---|---|---:|---|
-| NFR-REL-001 | 업데이트 실패 시 기존 정상 App이 유지되어야 한다. | Must | 실패 테스트 후 기존 라인트레이싱 기능이 동작해야 한다. |
+| NFR-REL-001 | 업데이트 실패 시 기존 정상 App이 유지되어야 한다. | Must | 실패 테스트 후 기존 버튼 트리거 주행 기능이 동작해야 한다. |
 | NFR-REL-002 | 전원 차단 후에도 Bootloader가 일관된 상태로 복구해야 한다. | Must | 재부팅 후 Metadata 기반으로 안전 Slot을 선택해야 한다. |
 | NFR-REL-003 | CAN 통신 중단 시 업데이트 세션이 무한 대기하지 않아야 한다. | Must | Timeout 후 abort 상태로 전환되어야 한다. |
 | NFR-REL-004 | App Self-test 실패 시 rollback해야 한다. | Must | 실패 App이 Confirmed 처리되지 않아야 한다. |
@@ -449,7 +451,7 @@ Jenkins 기반 CI/CD 파이프라인은 Raspberry Pi 5에서 운용되며, Git p
 |---|---|---:|---|
 | NFR-PERF-001 | CAN 전송은 Chunk 단위로 안정적으로 수행되어야 한다. | Must | 전체 이미지 전송 중 sequence 오류 없이 완료되어야 한다. |
 | NFR-PERF-002 | 업데이트 시간은 측정되어야 한다. | Should | 이미지 크기, chunk 수, 전송 시간, 평균 throughput이 로그에 남아야 한다. |
-| NFR-PERF-003 | 라인트레이싱 제어 루프는 10ms 이하의 주기로 실행되어야 한다. | Should | 센서 읽기, 편차 계산, PWM 출력까지 전체 제어 루프가 10ms 이내에 완료되어야 한다. |
+| NFR-PERF-003 | drive_update() 제어 루프는 10ms 이하의 주기로 실행되어야 한다. | Should | CAN 수신 처리, 상태 전이, PWM 출력까지 전체 제어 루프가 10ms 이내에 완료되어야 한다. |
 
 ### 10.3 유지보수성 요구사항
 
@@ -458,13 +460,13 @@ Jenkins 기반 CI/CD 파이프라인은 Raspberry Pi 5에서 운용되며, Git p
 | NFR-MNT-001 | CAN / ISO-TP / UDS 메시지 명세는 문서로 관리해야 한다. | Must | SDD-001 또는 CAN-001에 CAN ID, ISO-TP 프레임 구조, UDS SID/NRC 명세가 포함되어야 한다. |
 | NFR-MNT-002 | Bootloader 상태 전이는 다이어그램으로 문서화해야 한다. | Must | SDD-001에 Bootloader 상태 전이 다이어그램이 포함되어야 한다. |
 | NFR-MNT-003 | 테스트 케이스와 결과는 추적 가능해야 한다. | Must | 요구사항 ID와 테스트 ID가 매핑되어야 한다. |
-| NFR-MNT-004 | App v1/v2 변경점은 릴리즈 노트로 관리해야 한다. | Should | version별 기능 차이가 문서화되어야 한다. |
+| NFR-MNT-004 | App v1/v2/v3 변경점은 릴리즈 노트로 관리해야 한다. | Should | v1(즉시 정지), v2(비례 감속+정지), v3(v2+자동 후진 복귀) 기능 차이가 문서화되어야 한다. |
 
 ### 10.4 안전성 요구사항
 
 | ID | 요구사항 | 우선순위 | 수용 기준 |
 |---|---|---:|---|
-| NFR-SAFE-001 | 라인트레이싱 차량은 업데이트 중 주행하지 않아야 한다. | Must | 업데이트 세션 진입 시 모터 출력이 차단되어야 한다. |
+| NFR-SAFE-001 | OTA 다운로드(TransferData) 중 주행은 허용되나, RequestDownload(0x34) 처리 중 Flash Erase 구간(~4초)에는 모터가 정지해야 한다. | Must | g_ota_active=1 구간에서 drive_update()가 motor_stop()을 호출해야 한다. TransferData 구간에서는 drive_update()가 정상 실행되어 주행이 가능해야 한다. 펌웨어 활성화(재부팅)는 DRIVE_IDLE 상태에서만 발생해야 한다. |
 | NFR-SAFE-002 | 장애물 감지 시 Drive ECU는 정지 또는 감속해야 한다. | Should | 지정 거리 이하에서 모터 출력이 제한되어야 한다. |
 | NFR-SAFE-003 | Bootloader 상태에서는 모터가 구동되지 않아야 한다. | Must | Bootloader 실행 중 PWM 출력이 비활성화되어야 한다. |
 | NFR-SAFE-004 | 시스템 Safe State는 "모터 정지 + Bootloader 대기 + 기존 Confirmed Slot 유지"로 정의한다. | Must | 업데이트 실패, 검증 오류, 통신 중단, Watchdog 리셋 등 비정상 상황 발생 시 Safe State로 진입하고 기존 Confirmed App이 유지되어야 한다. |
@@ -536,7 +538,7 @@ Jenkins 기반 CI/CD 파이프라인은 Raspberry Pi 5에서 운용되며, Git p
 | DBG-002 | 업데이트 중 MCU 리셋 또는 오동작 발생 시 전원 레일과 모터 구동 영향을 확인해야 한다. | Medium | TSR-001 |
 | DBG-003 | Bootloader에서 App jump 실패 시 MSP, Reset Handler 주소, VTOR 설정을 ST-LINK로 확인해야 한다. | High | TSR-001 |
 | DBG-004 | Flash erase/write 실패 시 HAL Flash error flag, sector boundary, write alignment를 확인해야 한다. | High | TSR-001 |
-| DBG-005 | 라인트레이싱 제어 이상 발생 시 센서 입력, PWM 출력, 모터 드라이버 입력 신호를 확인해야 한다. | Low | TSR-001 |
+| DBG-005 | 버튼 트리거 주행 이상 발생 시 EXTI 인터럽트 동작, PWM 출력, 모터 드라이버 입력 신호를 확인해야 한다. | Low | TSR-001 |
 | DBG-006 | 보안 검증 실패 사례는 로그상 실패 원인과 실제 입력 조건이 일치하는지 확인해야 한다. | High | TR-001, TSR-001 |
 
 ### 12.4 트러블슈팅 리포트 형식 요구사항
@@ -565,7 +567,7 @@ TSR-001에는 각 문제에 대해 다음 항목을 포함한다.
 | ISS-BL-001 | Bootloader App jump 실패 | ST-LINK | MSP, Reset Handler, VTOR | 디버깅 캡처, 수정 전후 로그 |
 | ISS-FL-001 | Flash write 실패 | ST-LINK | sector boundary, HAL error flag | sector map 수정 기록 |
 | ISS-CAN-002 | TransferData 누락/순서 오류 | CANable, SocketCAN | sequence number, timeout | CAN 로그 및 NRC 기록 |
-| ISS-SEN-001 | 라인트레이싱 오동작 | 로직분석기 | 센서 입력 타이밍, PWM duty | 센서/제어 주기 조정 기록 |
+| ISS-SEN-001 | HC-SR04 거리 측정 오동작 | 로직분석기 | Trigger/Echo 타이밍, 거리값 이상 | 측정 주기/임계값 조정 기록 |
 
 ---
 ## 13. 데이터 및 메시지 요구사항
@@ -718,9 +720,9 @@ STM32F446RE Linker Script 및 실제 구현 기준으로 확정된 파티션.
 | TC-NOR-002 | FR-BL-003 | Bootloader에서 App jump 확인 | App 정상 실행 |
 | TC-NOR-003 | FR-CAN-002~009 | UDS-style 업데이트 전체 절차 수행 | 새 Slot에 이미지 설치 |
 | TC-NOR-004 | FR-AB-004 | 새 App Self-test 및 Confirm | 새 Slot confirmed 처리 |
-| TC-NOR-005 | FR-DRV-003 | Drive ECU App v1 ON/OFF 라인트레이싱 | 직선 주행 가능, 곡선 구간에서 진동/사행 주행 관찰 |
-| TC-NOR-006 | FR-DRV-004 | OTA 후 App v2 비례 제어 주행 확인 | 동일 코스 3회 반복 주행에서 v1 대비 곡선 이탈 횟수가 감소하거나 랩타임이 단축되어야 한다. |
-| TC-NOR-007 | FR-SEN-002, FR-SEN-004 | Sensor ECU v1(15cm)/v2(25cm) 임계값 동작 확인 | v1: 15cm 이하 감지, v2: OTA 후 25cm 이하 감지, Drive ECU 정지/감속 반영 |
+| TC-NOR-005 | FR-DRV-002, FR-DRV-003 | Drive ECU App v1: B1 버튼 누름 → 직진 → 10cm 장애물 즉시 정지 | 버튼 후 주행 시작, 10cm 이하 장애물 감지 시 즉시 모터 정지, DRIVE_IDLE 복귀 |
+| TC-NOR-006 | FR-DRV-004, FR-DRV-007, FR-DRV-008 | App v2 OTA 후: 30cm 감속 + 10cm 정지 비례제어 확인 및 주행 중 다운로드 + IDLE 활성화 | v1 대비 30cm 구간에서 감속 동작 확인, OTA 다운로드 완료 후 DRIVE_IDLE 진입 시 자동 재부팅 및 슬롯 전환 확인 |
+| TC-NOR-007 | FR-DRV-005, FR-SEN-002, FR-SEN-004 | App v3 OTA 후: 감속+정지+자동 후진 복귀 동작 확인 | 장애물 10cm 이하 정지 → 300ms 대기 → 600ms 후진 → DRIVE_IDLE 복귀 순서 동작 확인 |
 
 ### 15.2 실패 복구 테스트 (SWE.6 — 시스템 수준)
 
@@ -776,8 +778,8 @@ STM32F446RE Linker Script 및 실제 구현 기준으로 확정된 파티션.
 | Bootloader | FR-BL-001 ~ FR-BL-012 | TC-NOR-002, TC-NOR-003, TC-FAIL-001 ~ TC-FAIL-005 |
 | A/B Rollback | FR-AB-001 ~ FR-AB-007 | TC-NOR-004, TC-FAIL-001, TC-FAIL-004 |
 | CAN / ISO-TP / UDS | FR-CAN-001 ~ FR-CAN-017 | TC-NOR-003, TC-FAIL-002, TC-SEC-005 |
-| Drive ECU App | FR-DRV-001 ~ FR-DRV-006 | TC-NOR-005, TC-NOR-006, TC-NOR-007 |
-| Sensor ECU App | FR-SEN-001 ~ FR-SEN-005 | TC-NOR-007 |
+| Drive ECU App | FR-DRV-001 ~ FR-DRV-008 | TC-NOR-005, TC-NOR-006, TC-NOR-007 |
+| Sensor ECU App | FR-SEN-001 ~ FR-SEN-005 | TC-NOR-005, TC-NOR-006, TC-NOR-007 |
 | Manifest / Firmware Security | SR-MF-001 ~ SR-MF-008, SR-FW-001 ~ SR-FW-006 | TC-SEC-001 ~ TC-SEC-004 |
 | Attack Defense | SR-ATK-001 ~ SR-ATK-010 | TC-SEC-001 ~ TC-SEC-010 |
 | Uptane-lite | SR-UP-001 ~ SR-UP-005 | TC-NOR-001, TC-SEC-003, TC-SEC-010 |
@@ -874,8 +876,9 @@ TSR-001  (SUP.9)
 5. Hash, Signature, Version, ECU ID 검증이 수행된다.
 6. 검증 성공 후 새 Slot으로 부팅하고 Self-test 후 Confirmed 처리된다.
 7. 업데이트 실패 또는 전원 차단 시 기존 Confirmed Slot으로 복구된다.
-8. Drive ECU App v1/v2의 라인트레이싱 동작 차이가 확인된다.
-9. Sensor ECU의 장애물 감지 메시지가 Drive ECU 동작에 반영된다.
+8. Drive ECU App v1(즉시 정지)/v2(비례 감속+정지)/v3(감속+정지+자동 후진)의 장애물 반응 동작 차이가 확인된다.
+9. Sensor ECU의 장애물 거리 메시지(CAN 0x200)가 Drive ECU의 g_distance_cm에 반영되어 v2/v3 비례 감속 로직이 동작한다.
+9-1. OTA 다운로드 완료 후 펌웨어 활성화가 DRIVE_IDLE 상태에서 자동으로 수행된다. (Uptane 지연 활성화)
 10. 변조, unsigned, downgrade, replay, unauthorized update, CAN flood 공격 시나리오가 거부 또는 안전 실패 처리된다.
 11. 요구사항-설계-구현-테스트 추적성 문서와 테스트 로그가 남는다.
 12. 주요 디버깅 이슈는 사용 도구, 측정 근거, 원인, 조치, 재검증 결과를 포함하여 TSR-001에 기록된다.
@@ -949,8 +952,8 @@ TSR-001  (SUP.9)
 
 | 날짜 | 작업 내용 | 산출물 |
 |---|---|---|
-| 05/30 ~ 05/31 | Drive ECU App v1(bang-bang) + Sensor ECU App v1(15cm 임계값) (FR-DRV-003, FR-SEN-002) | v1 라인트레이싱 및 장애물 감지 동작 |
-| 06/01 | OTA로 App v2 배포 및 주행/감지 차이 실증 (FR-DRV-004, FR-SEN-004) | TC-NOR-005~007 PASS |
+| 05/30 ~ 05/31 | Drive ECU App v1(즉시 정지) + App v2(비례 감속) + App v3(감속+후진) 구현, 장애물 임계값 10cm 고정 (FR-DRV-001~008, FR-SEN-002~004) | v1/v2/v3 버튼 트리거 주행 및 장애물 반응 동작 확인 |
+| 06/01 | OTA로 App v1→v2→v3 순차 배포 및 장애물 반응 차이 실증, Uptane 지연 활성화 확인 (FR-DRV-007, FR-DRV-008) | TC-NOR-005~007 PASS |
 | 06/02 ~ 06/03 | 보안 공격 시나리오 테스트 10종 수행 (SR-ATK-001~010) | TC-SEC-001~010 PASS |
 | 06/04 | Jenkins Stage 4~5 완성 (서명 자동화 + OTA 자동 배포) (FR-CICD-006~009) | TC-CICD-001~003 PASS |
 | 06/05 ~ 06/06 | 필수 문서 7종 완성 (SAD, SDD, RTM, TP, TR, TSR) + 최종 검토 | 필수 문서 7종 완료 |
@@ -961,7 +964,7 @@ TSR-001  (SUP.9)
 |---|---|---|
 | MS-001 | 2026-05-22 | Bootloader에서 App jump 성공, Jenkins 빌드 파이프라인 동작 |
 | MS-002 | 2026-05-29 | 전체 OTA 흐름 성공 (SHA-256/ECDSA 검증 포함), Rollback 동작 확인 |
-| MS-003 | 2026-06-01 | App v1/v2 OTA 실증 완료 (라인트레이싱 + 장애물 감지 차이 확인) |
+| MS-003 | 2026-06-01 | App v1/v2/v3 OTA 실증 완료 (버튼 트리거 주행 + 장애물 반응 단계별 차이 확인, Uptane 지연 활성화 확인) |
 | MS-004 | 2026-06-04 | 보안 공격 시나리오 10종 통과, Jenkins 전체 파이프라인 완성 |
 | MS-005 | 2026-06-06 | 필수 문서 7종 완성, 프로젝트 1차 완료 |
 
@@ -1005,4 +1008,5 @@ TSR-001  (SUP.9)
 | 1.4 | 2026-05-16 | ISO-TP 전송 계층 추가, SAD-001/SDD-001 필수 문서 추가(필수 문서 7종 확장), 산출물 요구사항 간소화, Drive ECU v1/v2 조작변인 구체화(ON/OFF → 비례 제어), Sensor ECU v1/v2 임계값 구체화(15cm → 25cm), HC-SR04 확정 |
 | 1.5 | 2026-05-16 | Jenkins 기반 CI/CD 파이프라인 요구사항 추가(FR-CICD-001~009), 시스템 구성 다이어그램 업데이트, CI/CD 테스트 케이스 추가(TC-CICD-001~003), RTM 업데이트, Section 21 개발 일정 신규 추가(3주 일정, 마일스톤 5종) |
 | 1.6 | 2026-05-16 | CAN ID 테이블 추가(Section 13.2), ISO-TP/Security Access 파라미터 수치화(Section 6.2, 13.6), 키 관리 요구사항 추가(SR-KEY-001~004), IWDG 8000ms/WRP(FR-BL-012~013), Safe State 정의(NFR-SAFE-004), NFR-PERF-003 ≤10ms 수치화, UVR-001(SWE.4) 필수 문서 추가, TC SWE 레벨 구분, UN R156 Out of Scope 명시 |
+| 2.0 | 2026-05-25 | 주행 방식 전면 변경(라인트레이싱 → 버튼 트리거 직진): FR-DRV 전체 재작성(001~008), 라인센서 제거, B1 USER 버튼 추가, App v1/v2/v3 3단계 OTA 구조 확정(즉시 정지/비례 감속/자동 후진), Uptane 지연 활성화 도입(FR-DRV-007, FR-DRV-008, FR-CICD-007 갱신), 장애물 임계값 단일화 10cm(FR-SEN-002 갱신, FR-SEN-004 재정의), NFR-SAFE-001 갱신(다운로드 중 주행 허용), 성공 기준 §18 item 8~9 갱신, TC-NOR-005~007 갱신, 시스템 개요 §3.1/3.2 갱신 |
 

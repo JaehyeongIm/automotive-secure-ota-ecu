@@ -71,10 +71,10 @@ graph TD
     end
 
     subgraph HW["차량 하드웨어"]
-        IR["IR 라인센서\n4채널"]
+        BTN["B1 버튼\n(USER button, PC13)"]
         MOTOR["TB6612FNG\n모터 드라이버"]
         ULTRA["HC-SR04\n초음파 센서"]
-        IR --> DriveECU
+        BTN --> DriveECU
         MOTOR --> DriveECU
         ULTRA --> SensorECU
     end
@@ -107,24 +107,28 @@ stateDiagram-v2
     JumpToApp --> NormalOperation : App 실행
 
     state NormalOperation {
-        [*] --> Driving : 주행 중
-        Driving --> ObstacleStop : 장애물 감지
-        ObstacleStop --> Driving : 장애물 해제
-        Driving --> OTASession : UDS 0x10 수신
-        ObstacleStop --> OTASession : UDS 0x10 수신
+        [*] --> DRIVE_IDLE : 초기화 완료
+        DRIVE_IDLE --> DRIVE_RUNNING : B1 버튼 누름
+        DRIVE_RUNNING --> DRIVE_IDLE : 3초 완료 or 장애물 정지 (v1/v2)
+        DRIVE_RUNNING --> DRIVE_STOPPED : 10cm 장애물 (v3)
+        DRIVE_STOPPED --> DRIVE_REVERSING : 300ms 대기 후 후진 (v3)
+        DRIVE_REVERSING --> DRIVE_IDLE : 600ms 후진 완료 (v3)
+        DRIVE_IDLE --> DRIVE_IDLE : g_fw_pending 감지\n→ NVIC_SystemReset()
     }
 
     state OTASession {
-        [*] --> ExtendedSession : DiagnosticSessionControl
-        ExtendedSession --> SecurityUnlock : SecurityAccess Seed/Key
-        SecurityUnlock --> Downloading : RequestDownload
-        Downloading --> Transferring : TransferData (청크 반복)
-        Transferring --> Transferring : 다음 청크
-        Transferring --> TransferDone : RequestTransferExit
-        TransferDone --> [*] : 재부팅
+        [*] --> ExtendedSession : DiagnosticSessionControl (0x10 0x02)
+        ExtendedSession --> SecurityUnlock : SecurityAccess Seed/Key (0x27)
+        SecurityUnlock --> Erasing : RequestDownload (0x34)\ng_ota_active=1, Flash Erase ~4초
+        Erasing --> Transferring : Erase 완료\ng_ota_active=0
+        Transferring --> Transferring : TransferData (0x36) 청크 반복
+        Transferring --> TransferDone : RequestTransferExit (0x37)
+        TransferDone --> [*] : g_fw_pending=1 세트\n즉시 재부팅 없음
     }
 
-    OTASession --> Bootloader : 재부팅 후 슬롯 전환
+    NormalOperation --> OTASession : UDS 0x10 수신 (주행 중 가능)
+    OTASession --> NormalOperation : TransferExit 완료\n(g_fw_pending=1, 주행 재개)
+    NormalOperation --> Bootloader : DRIVE_IDLE에서 g_fw_pending 감지\n→ 재부팅 → 슬롯 전환
     Waiting --> [*] : 수동 개입 필요
 ```
 
@@ -168,23 +172,32 @@ sequenceDiagram
     ECU->>CAN: 0x67 0x02 (Unlock OK)
 
     JEN->>CAN: UDS 0x34 (RequestDownload)
-    CAN->>ECU: 비활성 슬롯(B) 플래시 준비\n(섹터 Erase ~4초)
+    ECU->>ECU: g_ota_active=1\n비활성 슬롯(B) Flash Erase (~4초, 모터 정지)
+    ECU->>ECU: g_ota_active=0
     ECU->>CAN: 0x74 + maxBlockLen
 
+    Note over ECU,JEN: TransferData 구간: drive_update() 정상 실행 (주행 가능)
     loop 펌웨어 청크 전송 (256 bytes x N)
         JEN->>CAN: UDS 0x36 + chunk
         ECU->>CAN: 0x76 (OK)
     end
 
     JEN->>CAN: UDS 0x37 (TransferExit)
+    ECU->>ECU: ota_meta_write_pending()\n(메타데이터 갱신, active_slot 미변경)
+    ECU->>ECU: g_fw_pending = 1
     ECU->>CAN: 0x77 (OK)
-    ECU->>ECU: 메타데이터 업데이트\n(active_slot = B)
-    ECU->>ECU: 재부팅
+    Note over ECU: 즉시 재부팅 없음 — 주행 재개 가능
+    CAN->>JEN: 0x77 수신
+
+    Note over ECU: DRIVE_RUNNING / DRIVE_IDLE 상태 정상 유지
+    ECU->>CAN: heartbeat [ver, slot=A, driving=0, ...]
+    Note over ECU: DRIVE_IDLE 진입 시 g_fw_pending 감지
+    ECU->>ECU: NVIC_SystemReset()
 
     ECU->>ECU: Bootloader: ECDSA 검증
     ECU->>ECU: Slot B App 실행
 
-    JEN->>JEN: 10초 대기
+    JEN->>JEN: 슬롯 전환 대기 (heartbeat 모니터링)
     JEN->>CAN: CAN 0x100 수신 대기
     ECU->>CAN: heartbeat [ver, slot=B, ...]
     CAN->>JEN: 슬롯 전환 확인 (A→B)
