@@ -15,6 +15,8 @@
 #define SEC_MASK    0xDEADBEEFUL
 #define BUF_SIZE    512U
 
+volatile uint8_t g_fw_pending = 0;  /* TransferExit 완료 후 세트 → IDLE 시 재부팅 */
+
 static uint8_t  g_state = STATE_DEFAULT;
 static uint32_t g_seed;
 static uint32_t g_fw_addr;
@@ -39,6 +41,7 @@ void uds_init(void)
     g_state         = STATE_DEFAULT;
     g_pending_ready = 0;
     g_pending_len   = 0;
+    g_fw_pending    = 0;
 }
 
 /* Called from CAN interrupt — copy only, no processing */
@@ -181,9 +184,9 @@ static void handle(const uint8_t *req, uint16_t len)
 
         uint8_t r[] = {0x77};
         isotp_send(r, sizeof(r));
-        printf("[UDS] OTA done, rebooting to Slot %c\r\n", g_target_slot == 0 ? 'A' : 'B');
-        HAL_Delay(100);
-        NVIC_SystemReset();
+        g_fw_pending = 1;
+        g_state      = STATE_DEFAULT;
+        printf("[UDS] FW ready Slot %c — IDLE 시 재부팅\r\n", g_target_slot == 0 ? 'A' : 'B');
         break;
     }
 
