@@ -18,8 +18,8 @@ import sys
 import can
 
 ECU_IDS = {
-    'drive':  {'tx': 0x7E0, 'rx': 0x7E8},  # DriveECU
-    'sensor': {'tx': 0x7E1, 'rx': 0x7E9},  # SensorECU
+    'drive':  {'tx': 0x7E0, 'rx': 0x7E8, 'hb_id': 0x100, 'driving_byte': 2},
+    'sensor': {'tx': 0x7E1, 'rx': 0x7E9, 'hb_id': None,  'driving_byte': None},
 }
 SEC_MASK  = 0xDEADBEEF
 CHUNK     = 256    # data bytes per TransferData
@@ -36,9 +36,33 @@ class UDSError(Exception):
 
 class OTAClient:
     def __init__(self, bus: can.BusABC, ecu: str = 'drive'):
-        self.bus = bus
+        self.bus      = bus
+        self.ecu      = ecu
         self.ISOTP_TX = ECU_IDS[ecu]['tx']
         self.ISOTP_RX = ECU_IDS[ecu]['rx']
+
+    # ------------------------------------------------------- idle detection --
+
+    def wait_for_idle(self, timeout: float = 120.0) -> None:
+        """CAN heartbeat를 모니터링하여 ECU가 IDLE(주행 중 아님) 상태가 될 때까지 대기."""
+        hb_id        = ECU_IDS[self.ecu]['hb_id']
+        driving_byte = ECU_IDS[self.ecu]['driving_byte']
+        if hb_id is None:
+            return  # SensorECU는 주행 상태 없음 — 즉시 진행
+
+        print(f"[OTA] ECU IDLE 대기 중 (최대 {timeout:.0f}초)...")
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            msg = self.bus.recv(timeout=1.0)
+            if msg is None or msg.arbitration_id != hb_id:
+                continue
+            if len(msg.data) > driving_byte and msg.data[driving_byte] == 0:
+                print("[OTA] ECU IDLE 확인 → OTA 시작")
+                return
+            remaining = int(deadline - time.monotonic())
+            print(f"\r[OTA] 주행 중 — 대기... ({remaining}초 남음)  ", end="", flush=True)
+        print()
+        raise ISOTPError(f"ECU IDLE 대기 타임아웃 ({timeout:.0f}초) — OTA 중단")
 
     # ------------------------------------------------------------------ send --
 
@@ -210,6 +234,8 @@ def main() -> None:
                         choices=["slcan", "socketcan"],
                         help="CAN interface type (default: slcan)")
     parser.add_argument("--bitrate", type=int, default=500000)
+    parser.add_argument("--idle-timeout", type=float, default=120.0,
+                        help="ECU IDLE 대기 최대 시간(초). 0이면 즉시 진행 (default: 120)")
     parser.add_argument("firmware", help="Signed firmware .bin file")
     args = parser.parse_args()
 
@@ -225,6 +251,8 @@ def main() -> None:
                                 bitrate=args.bitrate)
     try:
         client = OTAClient(bus, ecu=args.ecu)
+        if args.idle_timeout > 0:
+            client.wait_for_idle(timeout=args.idle_timeout)
         client.session_extended()
         client.security_access()
         max_data = client.request_download(len(fw))

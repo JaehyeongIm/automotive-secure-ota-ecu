@@ -1,6 +1,5 @@
 #include "drive.h"
 #include "motor.h"
-#include "uds.h"
 #include "main.h"
 #include <stdio.h>
 
@@ -46,11 +45,6 @@ void drive_update(void)
     switch (s_state) {
 
     case DRIVE_IDLE:
-        if (g_fw_pending) {
-            printf("[DRIVE] 새 펌웨어 대기 중 → 재부팅\r\n");
-            HAL_Delay(200);
-            NVIC_SystemReset();
-        }
         if (g_button_pressed) {
             g_button_pressed = 0;
             s_state    = DRIVE_RUNNING;

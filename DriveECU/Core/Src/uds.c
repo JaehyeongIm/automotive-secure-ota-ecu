@@ -15,7 +15,6 @@
 #define SEC_MASK    0xDEADBEEFUL
 #define BUF_SIZE    512U
 
-volatile uint8_t g_fw_pending = 0;  /* TransferExit 완료 후 세트 → IDLE 시 재부팅 */
 
 static uint8_t  g_state = STATE_DEFAULT;
 static uint32_t g_seed;
@@ -41,7 +40,6 @@ void uds_init(void)
     g_state         = STATE_DEFAULT;
     g_pending_ready = 0;
     g_pending_len   = 0;
-    g_fw_pending    = 0;
 }
 
 /* Called from CAN interrupt — copy only, no processing */
@@ -63,7 +61,8 @@ static void handle(const uint8_t *req, uint16_t len)
     case 0x10: {                                /* DiagnosticSessionControl */
         if (len < 2) { nrc(sid, 0x13); break; }
         if (req[1] == 0x01) {
-            g_state = STATE_DEFAULT;
+            g_state      = STATE_DEFAULT;
+            g_ota_active = 0;
             uint8_t r[] = {0x50, 0x01};
             printf("[UDS] Default session\r\n");
             isotp_send(r, sizeof(r));
@@ -136,9 +135,11 @@ static void handle(const uint8_t *req, uint16_t len)
         printf("[UDS] Target Slot %c  addr=0x%08lX  size=%lu\r\n",
                g_target_slot == 0 ? 'A' : 'B', g_fw_addr, g_fw_size);
 
+        g_ota_active = 1;
         HAL_StatusTypeDef er = (g_target_slot == 0)
             ? ota_flash_erase_slot_a()
             : ota_flash_erase_slot_b();
+        g_ota_active = 0;
         if (er != HAL_OK) { nrc(sid, 0x72); break; }
 
         g_fw_written = 0;
@@ -184,9 +185,9 @@ static void handle(const uint8_t *req, uint16_t len)
 
         uint8_t r[] = {0x77};
         isotp_send(r, sizeof(r));
-        g_fw_pending = 1;
-        g_state      = STATE_DEFAULT;
-        printf("[UDS] FW ready Slot %c — IDLE 시 재부팅\r\n", g_target_slot == 0 ? 'A' : 'B');
+        printf("[UDS] FW Slot %c 완료 → 재부팅\r\n", g_target_slot == 0 ? 'A' : 'B');
+        HAL_Delay(100);
+        NVIC_SystemReset();
         break;
     }
 
