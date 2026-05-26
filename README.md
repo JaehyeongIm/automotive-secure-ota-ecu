@@ -63,8 +63,6 @@ Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/CD 서버로, STM32F446RE 2대를 �
 
 ### Uptane 지연 활성화 (Deferred Activation)
 OTA 다운로드는 주행 중에도 가능하며, 펌웨어 활성화(재부팅)는 ECU가 **DRIVE_IDLE** 상태에 진입할 때 자동으로 수행됩니다.  
-Flash Erase 구간(~4초)에만 모터가 정지되고, TransferData 구간에서는 주행이 유지됩니다.
-
 ---
 
 ## App 버전 (DriveECU)

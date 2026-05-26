@@ -57,3 +57,6 @@ SlotB/
 
 # Claude Code
 .claude/
+
+# Microsoft Office temporary files
+~\$*.pptx
