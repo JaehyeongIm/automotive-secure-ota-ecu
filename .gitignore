@@ -44,13 +44,14 @@ jenkins_workspace/
 
 # STM32CubeIDE / STM32CubeMX
 *.ioc
-Debug/
 Release/
-SlotB/
 *.launch
 .cproject
 .project
 .settings/
+*ECU.list
+*.cyclo
+*.su
 
 # Compiler toolchain cache
 *.dep
