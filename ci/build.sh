@@ -43,7 +43,7 @@ perl -i -pe \
   's|-T"[^"]*STM32F446RETX_FLASH[^"]*\.ld"|-T"'"$LD_SCRIPT"'"|g' \
   "$BUILD_DIR/makefile"
 perl -i -pe \
-  's|/\S+STM32F446RETX_FLASH\S+\.ld|'"$LD_SCRIPT"'|g' \
+  's|/\S+STM32F446RETX_FLASH\S*\.ld|'"$LD_SCRIPT"'|g' \
   "$BUILD_DIR/makefile"
 
 make -C "$BUILD_DIR" -j"$(nproc)" all
