@@ -48,6 +48,11 @@ perl -i -pe \
 
 make -C "$BUILD_DIR" -j"$(nproc)" all
 
+# .bin이 없으면 .elf에서 직접 변환 (SensorECU makefile에 objcopy 단계 없음)
+if [ ! -f "$BUILD_DIR/$PROJ.bin" ]; then
+  arm-none-eabi-objcopy -O binary "$BUILD_DIR/$PROJ.elf" "$BUILD_DIR/$PROJ.bin"
+fi
+
 mkdir -p "$REPO/artifacts"
 cp "$BUILD_DIR/$PROJ.bin" "$REPO/artifacts/${ECU}_slot${SLOT}.bin"
 echo "[BUILD] Output: artifacts/${ECU}_slot${SLOT}.bin"
