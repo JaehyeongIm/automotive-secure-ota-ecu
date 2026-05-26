@@ -510,11 +510,10 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
     HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &rx_header, rx_data);
     if (rx_header.StdId == ISOTP_RX_CAN_ID) {
         isotp_can_rx(rx_data, (uint8_t)rx_header.DLC);
-        return;
     }
-    printf("[RX] ID:0x%03lX DLC:%lu Data:%02X %02X %02X %02X\r\n",
-           rx_header.StdId, rx_header.DLC,
-           rx_data[0], rx_data[1], rx_data[2], rx_data[3]);
+    /* Non-ISOTP frames are silently dropped.
+     * printf() here would block ~4ms (HAL_UART_Transmit with HAL_MAX_DELAY),
+     * causing RX FIFO overflow and ISO-TP SN mismatches during OTA. */
 }
 /* USER CODE END 4 */
 

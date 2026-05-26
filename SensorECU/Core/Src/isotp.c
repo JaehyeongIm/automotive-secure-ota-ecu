@@ -31,10 +31,7 @@ static void send_can(uint8_t *data, uint8_t dlc)
     hdr.IDE   = CAN_ID_STD;
     hdr.RTR   = CAN_RTR_DATA;
     hdr.DLC   = dlc;
-    uint32_t t = HAL_GetTick();
-    while (HAL_CAN_AddTxMessage(&hcan1, &hdr, data, &mb) != HAL_OK) {
-        if (HAL_GetTick() - t > 10) return;  /* 10ms 내 빈 mailbox 없으면 포기 */
-    }
+    HAL_CAN_AddTxMessage(&hcan1, &hdr, data, &mb);
 }
 
 void isotp_can_rx(const uint8_t *frame, uint8_t dlc)
