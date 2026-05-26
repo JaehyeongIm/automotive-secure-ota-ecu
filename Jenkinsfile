@@ -1,6 +1,10 @@
 pipeline {
     agent any
 
+    triggers {
+        githubPush()
+    }
+
     environment {
         CAN_IF      = 'can0'
         // Jenkins > Manage Credentials에 Secret File로 등록한 ECDSA 개인키.
