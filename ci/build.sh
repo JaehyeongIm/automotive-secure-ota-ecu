@@ -38,9 +38,12 @@ echo "[BUILD] ECU=$PROJ  SLOT=$SLOT  BUILD_DIR=$BUILD_DIR"
 echo "[BUILD] Linker: $LD_SCRIPT"
 
 # Patch the hardcoded absolute linker-script path in the CubeIDE makefile.
-# The regex matches any absolute path to an STM32 .ld file (idempotent).
+# Two forms exist: -T"..." linker flag, and bare path in dependency rules.
 perl -i -pe \
   's|-T"[^"]*STM32F446RETX_FLASH[^"]*\.ld"|-T"'"$LD_SCRIPT"'"|g' \
+  "$BUILD_DIR/makefile"
+perl -i -pe \
+  's|/\S+STM32F446RETX_FLASH\S+\.ld|'"$LD_SCRIPT"'|g' \
   "$BUILD_DIR/makefile"
 
 make -C "$BUILD_DIR" -j"$(nproc)" all
