@@ -96,7 +96,6 @@ int __io_putchar(int ch)
   */
 int main(void)
 {
-
   /* USER CODE BEGIN 1 */
   SCB->VTOR = (uint32_t)&g_pfnVectors;
   __enable_irq();
