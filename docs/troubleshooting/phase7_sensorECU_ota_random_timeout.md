@@ -3,7 +3,7 @@
 ## Phase 7 — SensorECU OTA 랜덤 블록 타임아웃 (ISS-OTA-004)
 
 **날짜:** 2026-05-26  
-**상태:** 해결 완료 (4차 수정 적용 후 파이프라인 정상 통과 확인)
+**상태:** 원인 재분석 중 — hcsr04 가설 약화, CF 간격이 실제 원인일 가능성 높음 (2026-05-27)
 
 ---
 
@@ -150,7 +150,7 @@ hcan1.Init.AutoRetransmission = ENABLE;
 
 ---
 
-### 현재 상태 (4차 수정 적용)
+### 현재 상태 (4차 수정 적용 후 재검증)
 
 적용된 수정:
 1. ✅ ISR 내 printf 제거
@@ -158,11 +158,42 @@ hcan1.Init.AutoRetransmission = ENABLE;
 3. ✅ AutoRetransmission = ENABLE
 4. ✅ OTA 중 hcsr04 차단 + CF 간격 1ms → 5ms
 
-실패 블록 번호 이력: 3, 12, 20, 62, 15, **62** (최근). 4차 수정 후 검증 대기.
+실패 블록 번호 이력: 3, 12, 20, 62, 15, **62** (최근). 4차 수정 후 파이프라인 SUCCESS 확인.
 
 ---
 
-### 근본 원인 (확정)
+### 원인 재분석 (2026-05-27) — CF 간격이 실제 원인일 가능성
+
+4차 수정은 두 가지를 동시에 적용했다: **(a) hcsr04 차단** + **(b) CF 간격 1ms → 5ms**. 이후 추가 검증에서 다음이 확인됐다.
+
+| 테스트 조건 | 결과 |
+|---|---|
+| hcsr04 차단 없음 + CF 5ms | **성공** (117블록 타임아웃 없음) |
+| hcsr04 차단 없음 + CF 0.003s | 실패 |
+| hcsr04 차단 없음 + CF 0.001s | 실패 |
+
+**hcsr04 차단 없이 CF 5ms만으로 OTA가 성공했다.** 이는 hcsr04 블로킹이 근본 원인이 아닐 수 있음을 시사한다.
+
+#### CF 간격이 결정적인 이유
+
+500kbps CAN에서 프레임 1개 전송 시간 ≈ 222μs. CF 간격이 5ms면 다음 프레임 도착 전까지 메일박스 3개가 모두 비워질 시간이 충분하다.
+
+```
+CF 간격 1ms: 1ms 안에 배경 트래픽(0x201, 0x200) + OTA 응답(0x7E9) 경합
+             → 3개 메일박스 동시 포화 가능 → 응답 소실
+             
+CF 간격 5ms: 각 프레임 사이 5ms 여유
+             → 배경 트래픽(100ms + 50ms 주기)은 5ms 창에 평균 0.1개
+             → 메일박스 포화 거의 불가능 → 응답 안정 전달
+```
+
+hcsr04가 30ms 블로킹을 해도, 그 30ms 동안 배경 CAN 트래픽은 최대 1~2개에 불과해 3개 메일박스를 포화시키지 못한다. **CF 1ms 간격이 메일박스 포화의 직접 원인이었을 가능성이 높다.**
+
+> 이 가설을 명확히 특정하기 위해 `--cf-delay` 파라미터와 `TX_FAIL_DURING_OTA` 진단 코드를 추가하여 검증 중 (phase8 관련 작업과 병행).
+
+---
+
+### 근본 원인 (가설 수정)
 
 #### TX 메일박스 동시 점유 → `HAL_CAN_AddTxMessage` HAL_ERROR → 응답 소실
 
@@ -236,7 +267,7 @@ time.sleep(0.005)
 
 ---
 
-### 교훈 (확정된 것)
+### 교훈
 
 #### ISR에서 절대 블로킹 함수 호출 금지
 
@@ -262,8 +293,9 @@ time.sleep(0.005)
 ### 관련 파일
 
 - `SensorECU/Core/Src/main.c` — ISR `printf` 제거, `AutoRetransmission = ENABLE`
-- `SensorECU/Core/Src/isotp.c` — ISR 내 재시도 루프 롤백
-- `tools/ota_client.py` — CF 간격 `time.sleep(0.001)` 사용 중
+- `SensorECU/Core/Src/isotp.c` — ISR 내 재시도 루프 롤백, TX fail 카운터 추가
+- `SensorECU/Core/Src/uds.c` — `TX_FAIL_DURING_OTA` 진단 출력 추가
+- `tools/ota_client.py` — `--cf-delay` 인자 추가 (기본 0.005s)
 
 ---
 
@@ -271,3 +303,4 @@ time.sleep(0.005)
 
 - [phase6_rc_car_assembly_can_failure.md](phase6_rc_car_assembly_can_failure.md) — 직전 트러블슈팅
 - [phase5_slot_b_can_failure.md](phase5_slot_b_can_failure.md) — ISR 내 `__enable_irq()` 누락 사례
+- [phase8_no_heartbeat_after_failed_ota.md](phase8_no_heartbeat_after_failed_ota.md) — OTA 실패 후 하트비트 없음 (파생 이슈)
