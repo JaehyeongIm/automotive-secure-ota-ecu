@@ -12,4 +12,6 @@ void isotp_init(isotp_complete_cb_t cb);
 void isotp_can_rx(const uint8_t *frame, uint8_t dlc);
 void isotp_send(const uint8_t *data, uint16_t len);
 
+extern volatile uint8_t g_isotp_tx_fail_count;
+
 #endif

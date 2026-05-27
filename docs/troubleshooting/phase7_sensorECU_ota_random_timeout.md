@@ -3,7 +3,7 @@
 ## Phase 7 — SensorECU OTA 랜덤 블록 타임아웃 (ISS-OTA-004)
 
 **날짜:** 2026-05-26  
-**상태:** 진행 중 (4차 수정 적용 — 검증 대기)
+**상태:** 해결 완료 (4차 수정 적용 후 파이프라인 정상 통과 확인)
 
 ---
 
@@ -231,6 +231,8 @@ time.sleep(0.005)
 ```
 
 **효과**: OTA 중 메인 루프는 `IWDG_Refresh → uds_process()` 반복만 실행. TX 메일박스는 TIM3 0x201 heartbeat(100ms 주기) 1개만 간헐적으로 사용 → `isotp_send()` 호출 시 항상 여유 메일박스 존재. OTA 완료 시 `NVIC_SystemReset()`으로 재부팅하므로 hcsr04 일시 정지는 문제 없음.
+
+**검증 결과**: 4차 수정 적용 후 파이프라인 실행 → 117블록 타임아웃 없이 전송 완료, SlotB 부팅 확인. `Finished: SUCCESS`
 
 ---
 

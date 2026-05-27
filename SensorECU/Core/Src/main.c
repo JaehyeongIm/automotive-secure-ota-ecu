@@ -171,7 +171,13 @@ int main(void)
     HAL_IWDG_Refresh(&hiwdg);
     uds_process();
 
-    if (!uds_ota_active() && HAL_GetTick() - s_measure_tick >= 50) {
+    static uint8_t s_last_tx_fail = 0;
+    if (g_isotp_tx_fail_count != s_last_tx_fail) {
+        printf("[CAN TX FAIL] mailbox full count=%u\r\n", g_isotp_tx_fail_count);
+        s_last_tx_fail = g_isotp_tx_fail_count;
+    }
+
+    if (HAL_GetTick() - s_measure_tick >= 50) {
       s_measure_tick = HAL_GetTick();
       uint16_t dist  = hcsr04_measure_cm();
       s_distance_cm  = dist;

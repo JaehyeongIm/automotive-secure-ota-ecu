@@ -16,6 +16,7 @@ typedef struct {
 
 static Ctx_t               s_ctx;
 static isotp_complete_cb_t s_cb;
+volatile uint8_t           g_isotp_tx_fail_count = 0;
 
 void isotp_init(isotp_complete_cb_t cb)
 {
@@ -31,7 +32,9 @@ static void send_can(uint8_t *data, uint8_t dlc)
     hdr.IDE   = CAN_ID_STD;
     hdr.RTR   = CAN_RTR_DATA;
     hdr.DLC   = dlc;
-    HAL_CAN_AddTxMessage(&hcan1, &hdr, data, &mb);
+    if (HAL_CAN_AddTxMessage(&hcan1, &hdr, data, &mb) != HAL_OK) {
+        g_isotp_tx_fail_count++;
+    }
 }
 
 void isotp_can_rx(const uint8_t *frame, uint8_t dlc)
