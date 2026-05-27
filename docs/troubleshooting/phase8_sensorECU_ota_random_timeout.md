@@ -1,6 +1,6 @@
 # Troubleshooting Log
 
-## Phase 7 — SensorECU OTA 랜덤 블록 타임아웃 (ISS-OTA-004)
+## Phase 8 — SensorECU OTA 랜덤 블록 타임아웃 (ISS-OTA-004)
 
 **날짜:** 2026-05-26  
 **상태:** 원인 재분석 중 — hcsr04 가설 약화, CF 간격이 실제 원인일 가능성 높음 (2026-05-27)
@@ -301,6 +301,6 @@ time.sleep(0.005)
 
 ### 관련 문서
 
-- [phase6_rc_car_assembly_can_failure.md](phase6_rc_car_assembly_can_failure.md) — 직전 트러블슈팅
+- [phase9_rc_car_assembly_can_failure.md](phase9_rc_car_assembly_can_failure.md) — 직전 트러블슈팅
 - [phase5_slot_b_can_failure.md](phase5_slot_b_can_failure.md) — ISR 내 `__enable_irq()` 누락 사례
 - [phase8_no_heartbeat_after_failed_ota.md](phase8_no_heartbeat_after_failed_ota.md) — OTA 실패 후 하트비트 없음 (파생 이슈)

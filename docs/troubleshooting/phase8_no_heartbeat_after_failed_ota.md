@@ -221,4 +221,4 @@ STM32CubeProgrammer에서:
 
 ### 관련 문서
 
-- [phase7_sensorECU_ota_random_timeout.md](phase7_sensorECU_ota_random_timeout.md) — OTA 랜덤 타임아웃 (CF 간격 문제)
+- [phase8_sensorECU_ota_random_timeout.md](phase8_sensorECU_ota_random_timeout.md) — OTA 랜덤 타임아웃 (CF 간격 문제)
