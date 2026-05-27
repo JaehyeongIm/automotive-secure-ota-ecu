@@ -148,7 +148,7 @@ class OTAClient:
             self._send_cf(data[offset:offset + 7], sn)
             sn = (sn + 1) & 0x0F
             offset += 7
-            time.sleep(0.001)
+            time.sleep(0.005)
 
     def request(self, data: bytes, timeout: float = 5.0) -> bytes:
         self._isotp_send(data)

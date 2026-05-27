@@ -3,7 +3,7 @@
 ## Phase 7 — SensorECU OTA 랜덤 블록 타임아웃 (ISS-OTA-004)
 
 **날짜:** 2026-05-26  
-**상태:** 진행 중 (3차 수정까지 적용, 여전히 재현됨)
+**상태:** 진행 중 (4차 수정 적용 — 검증 대기)
 
 ---
 
@@ -150,47 +150,87 @@ hcan1.Init.AutoRetransmission = ENABLE;
 
 ---
 
-### 현재 상태 (3차 수정까지 적용 후에도 재현)
+### 현재 상태 (4차 수정 적용)
 
 적용된 수정:
 1. ✅ ISR 내 printf 제거
 2. ✅ isotp.c 재시도 루프 롤백
 3. ✅ AutoRetransmission = ENABLE
+4. ✅ OTA 중 hcsr04 차단 + CF 간격 1ms → 5ms
 
-그럼에도 여전히 랜덤 블록에서 타임아웃 발생. 실패 블록 번호: 3, 12, 20, 62, **15** (최근).
-
----
-
-### 미확인 잔여 원인 후보
-
-현재 코드 분석으로는 정확한 원인을 특정하지 못하는 상태. 다음 후보들이 남아 있음:
-
-#### 후보 A: `hcsr04_measure_cm()` 30ms 블로킹 (SensorECU vs DriveECU 구조 차이)
-
-- DriveECU main loop: `uds_process()`만 실행 (블로킹 없음)
-- SensorECU main loop: 매 50ms마다 `hcsr04_measure_cm()` 호출 (최대 30ms 블로킹)
-- hcsr04 블로킹 중 ISR는 정상 실행되지만, main loop이 멈춰 있는 동안 추가 간섭 가능성
-
-#### 후보 B: CF 전송 간격 1ms 마진 부족
-
-- `ota_client.py`의 `time.sleep(0.001)`: Linux 비실시간 스케줄러에서 실제 간격이 불규칙
-- Jenkins(Java) + Python 동시 실행 시 RPi5 CPU 경합 → time.sleep 정확도 저하
-- 1ms 간격은 CAN RX FIFO 3슬롯 기준으로 마진이 거의 없음
-
-#### 후보 C: 진단 정보 부족
-
-- ECU UART 출력에서 실패 시점에 어떤 로그가 출력되는지 확인 불가
-- SN 불일치 발생 여부 / TX 응답 전송 여부 / flash_write HAL_ERROR 여부 모름
+실패 블록 번호 이력: 3, 12, 20, 62, 15, **62** (최근). 4차 수정 후 검증 대기.
 
 ---
 
-### 다음 진단/수정 방향 (미적용)
+### 근본 원인 (확정)
 
-| 우선순위 | 방향 | 내용 |
-|---|---|---|
-| 1 | OTA 중 hcsr04 정지 | `uds_ota_active()` 플래그 추가, `g_state == STATE_DOWNLOADING`이면 hcsr04 스킵 |
-| 2 | CF 전송 간격 증가 | `ota_client.py` `time.sleep(0.001)` → `time.sleep(0.005)` |
-| 3 | ECU 진단 로그 추가 | `isotp_can_rx` SN 불일치 발생 시 volatile 플래그 세팅 → main loop에서 출력 |
+#### TX 메일박스 동시 점유 → `HAL_CAN_AddTxMessage` HAL_ERROR → 응답 소실
+
+`[UDS] Block 62` 로그 출력 후 타임아웃 발생 → `handle()` 내 `printf`까지는 정상 실행됐음을 의미. 즉, `isotp_send()` → `send_can()` → `HAL_CAN_AddTxMessage()` 시점에 TX 메일박스 3개가 모두 점유된 상태.
+
+**구체적 시나리오:**
+
+```
+T+0ms  : 50ms 틱 → hcsr04_measure_cm() 진입 (최대 30ms 블로킹)
+T+Xms  : TIM3 ISR 발화 → HAL_CAN_AddTxMessage(0x201) → mailbox[0] 점유
+T+30ms : hcsr04 완료 → HAL_CAN_AddTxMessage(0x200 obs_data) → mailbox[1] 점유
+         DriveECU 0x100 중재로 0x200/0x201 전송 지연 → mailbox 점유 유지
+T+30ms+ε: 블록 N 마지막 CF 수신 → g_pending_ready=1
+T+33ms : uds_process() → handle() → isotp_send() 호출 시:
+         직전 FC(0x7E9)가 DriveECU 0x100에 중재 패배하여 mailbox[2]에서 재전송 대기 중
+         → HAL_CAN_AddTxMessage(응답 0x7E9) → HAL_ERROR (3개 모두 점유)
+         → send_can()은 리턴값 무시 → 응답 프레임 소실
+T+5s   : RPi5 타임아웃 → ISOTPError("Receive timeout")
+```
+
+**확률적 발생 이유**: hcsr04 50ms 주기와 블록 처리 ~40ms 타이밍이 무작위로 겹칠 때만 발생.
+
+**DriveECU 중재 단독으로는 OTA 실패하지 않음**: AutoRetransmission=ENABLE 상태에서 중재 패배 후 재전송까지 ~444μs 소요. RPi5 5초 타임아웃 대비 무시 가능한 시간. 단, 재전송 대기 중 메일박스를 계속 점유하므로 다른 프레임이 동시에 쌓이면 3개가 모두 차는 조건이 됨.
+
+---
+
+### 4차 수정 내용
+
+#### ④ OTA 중 hcsr04 차단 + CF 간격 증가 → 4차 수정 적용, 검증 대기
+
+**수정 내용**:
+
+`SensorECU/Core/Src/uds.c` — `uds_ota_active()` 추가:
+
+```c
+int uds_ota_active(void)
+{
+    return g_state == STATE_DOWNLOADING;
+}
+```
+
+`SensorECU/Core/Inc/uds.h` — 선언 추가:
+
+```c
+int uds_ota_active(void);
+```
+
+`SensorECU/Core/Src/main.c` — hcsr04 블록 조건 추가:
+
+```c
+// 수정 전
+if (HAL_GetTick() - s_measure_tick >= 50) {
+
+// 수정 후
+if (!uds_ota_active() && HAL_GetTick() - s_measure_tick >= 50) {
+```
+
+`tools/ota_client.py` — CF 간격 증가:
+
+```python
+# 수정 전
+time.sleep(0.001)
+
+# 수정 후
+time.sleep(0.005)
+```
+
+**효과**: OTA 중 메인 루프는 `IWDG_Refresh → uds_process()` 반복만 실행. TX 메일박스는 TIM3 0x201 heartbeat(100ms 주기) 1개만 간헐적으로 사용 → `isotp_send()` 호출 시 항상 여유 메일박스 존재. OTA 완료 시 `NVIC_SystemReset()`으로 재부팅하므로 hcsr04 일시 정지는 문제 없음.
 
 ---
 

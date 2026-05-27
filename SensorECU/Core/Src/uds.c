@@ -192,6 +192,11 @@ static void handle(const uint8_t *req, uint16_t len)
     }
 }
 
+int uds_ota_active(void)
+{
+    return g_state == STATE_DOWNLOADING;
+}
+
 void uds_process(void)
 {
     if (!g_pending_ready) return;

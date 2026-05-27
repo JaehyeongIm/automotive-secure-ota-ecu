@@ -171,7 +171,7 @@ int main(void)
     HAL_IWDG_Refresh(&hiwdg);
     uds_process();
 
-    if (HAL_GetTick() - s_measure_tick >= 50) {
+    if (!uds_ota_active() && HAL_GetTick() - s_measure_tick >= 50) {
       s_measure_tick = HAL_GetTick();
       uint16_t dist  = hcsr04_measure_cm();
       s_distance_cm  = dist;
