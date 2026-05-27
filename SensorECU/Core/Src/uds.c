@@ -21,6 +21,7 @@ static uint32_t g_fw_size;
 static uint32_t g_fw_written;
 static uint8_t  g_block_seq;
 static uint8_t  g_target_slot;
+static uint8_t  g_tx_fail_baseline;
 
 static uint8_t          g_pending_buf[BUF_SIZE];
 static uint16_t         g_pending_len;
@@ -129,6 +130,7 @@ static void handle(const uint8_t *req, uint16_t len)
         }
 
         if (g_fw_size == 0 || g_fw_size > slot_max) { nrc(sid, 0x31); break; }
+        g_tx_fail_baseline = g_isotp_tx_fail_count;
         printf("[UDS] Target Slot %c  addr=0x%08lX  size=%lu\r\n",
                g_target_slot == 0 ? 'A' : 'B', g_fw_addr, g_fw_size);
 
@@ -180,7 +182,9 @@ static void handle(const uint8_t *req, uint16_t len)
 
         uint8_t r[] = {0x77};
         isotp_send(r, sizeof(r));
-        printf("[UDS] OTA done, rebooting to Slot %c\r\n", g_target_slot == 0 ? 'A' : 'B');
+        printf("[UDS] OTA done, rebooting to Slot %c  TX_FAIL_DURING_OTA=%u\r\n",
+               g_target_slot == 0 ? 'A' : 'B',
+               (uint8_t)(g_isotp_tx_fail_count - g_tx_fail_baseline));
         HAL_Delay(100);
         NVIC_SystemReset();
         break;

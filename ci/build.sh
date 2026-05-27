@@ -46,6 +46,7 @@ perl -i -pe \
   's|/\S+STM32F446RETX_FLASH\S*\.ld|'"$LD_SCRIPT"'|g' \
   "$BUILD_DIR/makefile"
 
+make -C "$BUILD_DIR" clean
 make -C "$BUILD_DIR" -j"$(nproc)" all
 
 # .bin이 없으면 .elf에서 직접 변환 (SensorECU makefile에 objcopy 단계 없음)

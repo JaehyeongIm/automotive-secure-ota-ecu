@@ -108,6 +108,7 @@ pipeline {
                             --ecu sensor \
                             --channel ${CAN_IF} \
                             --interface socketcan \
+                            --cf-delay 0.003 \
                             artifacts/sensor_slot${target}_signed.bin
                     """
 

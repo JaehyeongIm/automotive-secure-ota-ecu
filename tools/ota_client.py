@@ -35,11 +35,12 @@ class UDSError(Exception):
 
 
 class OTAClient:
-    def __init__(self, bus: can.BusABC, ecu: str = 'drive'):
+    def __init__(self, bus: can.BusABC, ecu: str = 'drive', cf_delay: float = 0.005):
         self.bus      = bus
         self.ecu      = ecu
         self.ISOTP_TX = ECU_IDS[ecu]['tx']
         self.ISOTP_RX = ECU_IDS[ecu]['rx']
+        self.cf_delay = cf_delay
 
     # ------------------------------------------------------- idle detection --
 
@@ -148,7 +149,7 @@ class OTAClient:
             self._send_cf(data[offset:offset + 7], sn)
             sn = (sn + 1) & 0x0F
             offset += 7
-            time.sleep(0.005)
+            time.sleep(self.cf_delay)
 
     def request(self, data: bytes, timeout: float = 5.0) -> bytes:
         self._isotp_send(data)
@@ -236,6 +237,8 @@ def main() -> None:
     parser.add_argument("--bitrate", type=int, default=500000)
     parser.add_argument("--idle-timeout", type=float, default=120.0,
                         help="ECU IDLE 대기 최대 시간(초). 0이면 즉시 진행 (default: 120)")
+    parser.add_argument("--cf-delay", type=float, default=0.005,
+                        help="ISO-TP Consecutive Frame 전송 간격(초) (default: 0.005)")
     parser.add_argument("firmware", help="Signed firmware .bin file")
     args = parser.parse_args()
 
@@ -250,7 +253,7 @@ def main() -> None:
                                 channel=args.channel,
                                 bitrate=args.bitrate)
     try:
-        client = OTAClient(bus, ecu=args.ecu)
+        client = OTAClient(bus, ecu=args.ecu, cf_delay=args.cf_delay)
         if args.idle_timeout > 0:
             client.wait_for_idle(timeout=args.idle_timeout)
         client.session_extended()
