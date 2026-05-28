@@ -23,6 +23,7 @@ Usage (OTA만):
 """
 
 import argparse
+import shutil
 import subprocess
 import sys
 import time
@@ -50,6 +51,11 @@ def run_unit_tests() -> None:
     print(f"\n{'═'*60}")
     print("  Phase 1: 단위 테스트 (ceedling test:all)")
     print(f"{'═'*60}\n")
+    if shutil.which("ceedling") is None:
+        print("[ERROR] ceedling 을 찾을 수 없습니다.")
+        print("        설치: gem install ceedling")
+        print("        설치 후 PATH에 추가: export PATH=\"$HOME/.local/share/gem/ruby/*/bin:$PATH\"")
+        sys.exit(1)
     result = subprocess.run(["ceedling", "test:all"])
     if result.returncode != 0:
         print("\n[FAIL] 단위 테스트 실패 — OTA 테스트를 진행하지 않습니다.")
