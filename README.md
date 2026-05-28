@@ -135,6 +135,57 @@ OTA 다운로드는 주행 중에도 가능하며, 펌웨어 활성화(재부팅
 
 ---
 
+## 테스트 가이드
+
+### 사전 준비
+
+```bash
+# Ruby + Ceedling (C 단위 테스트)
+gem install ceedling
+
+# Python 의존성 (CAN / OTA 통합 테스트)
+pip install python-can
+
+# arm 크로스컴파일러 (자동 빌드 시)
+sudo apt install gcc-arm-none-eabi   # Raspberry Pi / Ubuntu
+# macOS: brew install --cask gcc-arm-embedded
+```
+
+---
+
+### 전체 테스트 — 한 번에 실행
+
+```bash
+# 자동 빌드+서명 포함 (권장)
+python3 ci/test_all.py \
+    --channel can0 \
+    --key <개인키 파일 이름>
+
+# 이미 빌드된 펌웨어 파일 직접 지정
+python3 ci/test_all.py \
+    --channel can0 \
+    --fw-drive-a  artifacts/drive_slotA_signed.bin \
+    --fw-drive-b  artifacts/drive_slotB_signed.bin \
+    --fw-sensor-a artifacts/sensor_slotA_signed.bin \
+    --fw-sensor-b artifacts/sensor_slotB_signed.bin
+```
+
+실행 순서:
+1. **Phase 1** — `ceedling test:all` (C 단위 테스트)
+2. **Phase 2** — 3라운드 × (DriveECU OTA → SensorECU OTA)
+
+Phase 1이 실패하면 Phase 2를 진행하지 않습니다.
+
+| 옵션 | 설명 |
+|---|---|
+| `--count N` | OTA 반복 횟수 (기본 3) |
+| `--cf-delay N` | ISO-TP CF 간격 초 (기본 0.005) |
+| `--skip-unit` | 단위 테스트 건너뜀 |
+| `--skip-ota` | OTA 통합 테스트 건너뜀 |
+| `--interface slcan` | USB-CAN (slcan) 사용 시 |
+
+---
+
 ## 문서
 
 - [SRS-001](docs/SRS-001_CAN_Secure_OTA_Pipeline_v1.4.md) — 소프트웨어 요구사항 명세서
