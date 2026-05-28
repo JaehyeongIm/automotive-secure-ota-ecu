@@ -47,21 +47,68 @@ HB_SILENCE_WAIT  = 3.0
 # Phase 1 helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
-def run_unit_tests() -> None:
+def run_unit_tests() -> str:
+    """단위 테스트 실행. 반환: 요약 문자열 (최종 출력용)."""
     print(f"\n{'═'*60}")
     print("  Phase 1: 단위 테스트 (ceedling test:all)")
-    print(f"{'═'*60}\n")
+    print(f"{'═'*60}")
     if shutil.which("ceedling") is None:
         print("[ERROR] ceedling 을 찾을 수 없습니다.")
         print("        1) Ruby 설치:  sudo apt install -y ruby-full")
         print("        2) Ceedling:   gem install ceedling")
         print("        3) PATH 추가:  export PATH=\"$(ruby -e 'puts Gem.user_dir')/bin:$PATH\"")
         sys.exit(1)
-    result = subprocess.run(["ceedling", "test:all"])
+    result = subprocess.run(["ceedling", "test:all"],
+                            capture_output=True, text=True)
+
+    # OVERALL TEST SUMMARY 섹션 추출
+    summary = _parse_ceedling_summary(result.stdout)
+
     if result.returncode != 0:
-        print("\n[FAIL] 단위 테스트 실패 — OTA 테스트를 진행하지 않습니다.")
+        # 실패 시 FAILED TEST SUMMARY 섹션도 출력
+        print(_extract_section(result.stdout, "FAILED TEST SUMMARY"))
+        print(f"\n[FAIL] 단위 테스트 실패 — OTA 테스트를 진행하지 않습니다.")
+        print(summary)
         sys.exit(result.returncode)
-    print("\n[PASS] 단위 테스트 완료")
+
+    print(f"[PASS] 단위 테스트 완료")
+    return summary
+
+
+def _parse_ceedling_summary(output: str) -> str:
+    """ceedling 출력에서 OVERALL TEST SUMMARY 한 줄 추출."""
+    lines = output.splitlines()
+    in_summary = False
+    parts = {}
+    for line in lines:
+        if "OVERALL TEST SUMMARY" in line:
+            in_summary = True
+            continue
+        if in_summary:
+            for key in ("TESTED", "PASSED", "FAILED", "IGNORED"):
+                if line.strip().startswith(key):
+                    parts[key] = line.strip().split()[-1]
+            if len(parts) == 4:
+                break
+    if parts:
+        return (f"  TESTED:{parts['TESTED']:>4}  PASSED:{parts['PASSED']:>4}"
+                f"  FAILED:{parts['FAILED']:>4}  IGNORED:{parts['IGNORED']:>4}")
+    return "  (요약 없음)"
+
+
+def _extract_section(output: str, header: str) -> str:
+    """출력에서 특정 헤더 섹션을 추출."""
+    lines = output.splitlines()
+    result_lines = []
+    in_section = False
+    for line in lines:
+        if header in line:
+            in_section = True
+        if in_section:
+            result_lines.append(line)
+            if in_section and line.strip() == "" and len(result_lines) > 2:
+                break
+    return "\n".join(result_lines)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -72,14 +119,17 @@ def build_firmware(key_path: str) -> tuple:
     """drive+sensor A/B 빌드 및 서명. (fw_da, fw_db, fw_sa, fw_sb) 반환."""
     for ecu in ("drive", "sensor"):
         for slot in ("A", "B"):
-            print(f"[BUILD] {ecu} Slot {slot} ...", flush=True)
-            subprocess.run(["bash", "ci/build.sh", ecu, slot], check=True)
+            print(f"[BUILD] {ecu} Slot {slot} ...", end="", flush=True)
+            subprocess.run(["bash", "ci/build.sh", ecu, slot], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             raw    = f"artifacts/{ecu}_slot{slot}.bin"
             signed = f"artifacts/{ecu}_slot{slot}_signed.bin"
             subprocess.run(
                 ["python3", "tools/sign_firmware.py", raw, key_path, "--out", signed],
                 check=True,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
+            print(" done")
     return (
         _read("artifacts/drive_slotA_signed.bin"),
         _read("artifacts/drive_slotB_signed.bin"),
@@ -246,8 +296,9 @@ def main():
     args = parser.parse_args()
 
     # ── Phase 1: 단위 테스트 ──────────────────────────────────────────────────
+    unit_summary = None
     if not args.skip_unit:
-        run_unit_tests()
+        unit_summary = run_unit_tests()
 
     # ── Phase 2: OTA 통합 테스트 ─────────────────────────────────────────────
     if args.skip_ota:
@@ -308,11 +359,15 @@ def main():
     # ── 최종 요약 ──────────────────────────────────────────────────────────────
     passed = sum(1 for _, ok in results if ok)
     print(f"\n{'═'*60}")
-    print(f"  최종 결과  ({args.count}라운드 × 2 ECU = {args.count*2}회 OTA)")
+    print(f"  최종 결과")
     print(f"{'═'*60}")
+    if unit_summary:
+        print(f"  [단위 테스트]")
+        print(unit_summary)
+    print(f"\n  [OTA 통합 테스트]  ({args.count}라운드 × 2 ECU)")
     for i, ok in results:
         print(f"  Round {i:2d}: {'PASS' if ok else 'FAIL'}")
-    print(f"\n  합계: {passed}/{args.count} 라운드 통과")
+    print(f"\n  OTA 합계: {passed}/{args.count} 라운드 통과")
     print(f"{'═'*60}")
 
     sys.exit(0 if passed == args.count else 1)
