@@ -1,306 +1,443 @@
 # Troubleshooting Log
 
-## Phase 8 — SensorECU OTA 랜덤 블록 타임아웃 (ISS-OTA-004)
+## Phase 8 — SensorECU OTA 랜덤 타임아웃 (ISS-OTA-004)
 
-**날짜:** 2026-05-26  
-**상태:** 원인 재분석 중 — hcsr04 가설 약화, CF 간격이 실제 원인일 가능성 높음 (2026-05-27)
+**최초 관측:** 2026-05-26  
+**최종 정리:** 2026-05-28  
+**상태:** 해결 완료
 
 ---
 
 ### 현상
 
-SensorECU OTA 전송 중 특정 블록에서 `ISOTPError: Receive timeout`으로 파이프라인 실패.
+SensorECU OTA가 아래 두 형태로 불규칙하게 실패했다.
 
-- 실패 블록 번호가 매 실행마다 다름 (3, 12, 20, 62, 15 등 관측)
-- 동일 바이너리 재시도 시 성공하는 경우 있음 → **확률적 오류**
-- DriveECU OTA는 정상 동작
+1. `RequestDownload(0x34)` 직후 `Receive timeout`
+2. `RequestTransferExit(0x37)`까지 끝났는데 재부팅 후 heartbeat가 돌아오지 않음
 
+실패 블록 번호가 매번 달라 보여 처음에는 CAN 혼잡, TX 메일박스 포화, `AutoRetransmission`, CF 간격 문제처럼 보였다.
+
+대표 증상:
+
+```text
+[UDS] RequestDownload  size=29840 bytes
+[FAIL] Receive timeout
 ```
-[UDS] TransferData: 117 chunks x 256 bytes
-[UDS]    12%  block=14
-[UDS]    12%  block=15
-[OTA] ERROR: Receive timeout     ← block 16 응답 없음
+
+또는
+
+```text
+[UDS][37] queue 0x77
+[UDS] OTA done, rebooting to Slot B
+... 이후 Slot B heartbeat 없음
 ```
 
 ---
 
-### 시스템 구성
+### 왜 어려웠나
 
-```
-RPi5 (OTA 클라이언트)
-  ↕ CAN 버스 (500kbps)
-SensorECU (STM32F446RE)  ←── OTA 수신 중
-DriveECU (STM32F446RE)   ←── 동시에 CAN 버스에서 heartbeat 전송 중
-```
+이번 이슈가 특히 어려웠던 이유는 증상과 실제 원인 사이의 거리가 멀었기 때문이다.
 
-| 항목 | 값 |
-|---|---|
-| CAN 비트레이트 | 500kbps |
-| CAN 프레임 전송 시간 | ~222μs |
-| ISO-TP CF 간격 (`ota_client.py time.sleep`) | ~1ms |
-| 블록당 CF 수 (258바이트 UDS payload) | 36개 |
-| CF 버스트 총 소요 시간 | ~36ms |
-| ECU CAN RX FIFO 슬롯 수 | 3슬롯 |
-| `ReceiveFifoLocked` 설정 | DISABLE (oldest 덮어씀) |
-| DriveECU 0x100 heartbeat 주기 | ~100ms |
-| SensorECU TIM3 0x201 주기 | ~100ms |
-| SensorECU hcsr04 측정 주기 | 50ms (최대 30ms 블로킹) |
+#### 1. CubeIDE 직접 플래시는 정상인데 OTA만 실패했다
 
----
+로컬에서 ST-Link / CubeIDE로 펌웨어를 직접 플래시했을 때는 앱이 정상 동작했다. 그래서 자연스럽게 다음과 같이 생각하기 쉬웠다.
 
-### ISO-TP 전송 흐름 (정상 케이스)
+- 펌웨어 자체는 정상
+- OTA 전송 경로나 CAN 타이밍이 문제
 
-```
-OTA Client (RPi5)              SensorECU (ECU)
-      │                              │
-      │──── FF (First Frame) ───────>│  ISR: s_ctx 초기화, FC 전송
-      │<─── FC (Flow Control) ───────│
-      │                              │
-      │──── CF#1 ──────────────────>│  ISR: s_ctx.buf에 누적
-      │──── CF#2 ──────────────────>│  ISR
-      │  ...  (1ms 간격, 총 36개)   │
-      │──── CF#36 ─────────────────>│  ISR: ISO-TP 완성 → g_pending_ready=1
-      │                              │  Main loop: uds_process() → handle()
-      │                              │    ota_flash_write() ~1ms
-      │                              │    printf() ~1ms
-      │<─── UDS Response (SF) ───────│  isotp_send() → send_can()
-      │                              │
-      │  (다음 블록 반복)             │
-```
+하지만 실제로는 **펌웨어 소스가 아니라 slot artifact 생성 과정**이 문제였다. 즉, "직접 플래시한 이미지"와 "OTA로 전달된 이미지"의 생성 경로가 달랐고, 버그는 그 차이에 숨어 있었다.
 
-**타임아웃 발생 조건**: ECU가 UDS Response를 전송하지 않거나, 전송해도 OTA 클라이언트가 수신하지 못할 때.
+#### 2. 실패가 비결정적으로 보였다
 
----
+관측된 현상은 매우 비일관적이었다.
 
-### 원인 분석 이력
+- 파이프라인 1회차는 성공하고 3회차부터 실패
+- `RequestDownload` 에서 바로 timeout
+- `TransferData` 중 서로 다른 block 번호에서 timeout
+- `0x77` 까지 끝났는데 reboot 후 heartbeat 없음
 
----
+이런 패턴 때문에 처음에는 운이 나쁜 CAN 타이밍 문제처럼 보였다.
 
-#### ① TX 메일박스 경합 가설 → 배제
+#### 3. 증상은 CAN 문제처럼 보이는 신호를 계속 만들었다
 
-**가설**: `send_can()`에서 TX 메일박스 3개가 모두 가득 찰 때 FC 전송 실패
+실패 로그에는 실제로 다음 같은 단서가 있었다.
 
-**시도**: `send_can()` 내부에 최대 10ms HAL_OK 재시도 루프 추가
+- `CAN RX FIFO0 FULL`
+- `CAN RX FIFO0 OVERRUN`
+- `CAN ERROR`
+- heartbeat timeout
+- `Receive timeout`
 
-**결과**: 더 자주 실패 (블록 12 타임아웃 → 블록 3으로 이동, 악화)
+이 신호들은 모두 진짜였지만, **근본 원인**은 아니었다. 그래서 메일박스, `AutoRetransmission`, CF 간격, 센서 측정 블로킹 같은 가설이 반복해서 유력해 보였다.
 
-**배제 근거**:  
-`send_can()`은 `isotp_can_rx()` 내부에서 호출되며, 이 함수는 `HAL_CAN_RxFifo0MsgPendingCallback`(CAN RX ISR) 컨텍스트에서 실행된다. ISR 내부에서 10ms를 블로킹하면 그 동안 CF 프레임 10개가 3슬롯 FIFO에 쌓여 오버플로우된다. → **ISR에서 절대 블로킹 금지** → 완전 롤백
+#### 4. 호스트 로그만으로는 원인을 구분할 수 없었다
+
+처음에는 Raspberry Pi 터미널 로그만 가지고 원인을 찾으려 했다. 하지만 호스트 관점에서 보이는 것은 아래 정도뿐이다.
+
+- `0x74`를 못 받았다
+- `0x77`를 받았지만 heartbeat가 안 돌아왔다
+- 몇 번째 block에서 timeout 났다
+
+이 정보만으로는 아래 셋을 구분하기 어렵다.
+
+1. OTA 전송 자체가 깨졌는가
+2. ECU가 쓰기/응답 단계에서 죽었는가
+3. reboot 후 잘못된 이미지를 부팅했는가
+
+#### 5. AI 보조 분석도 입력이 부족하면 잘못된 가설을 강화했다
+
+이번 사례에서 중요한 교훈은, **어떤 AI 도구를 쓰느냐보다 어떤 증거를 주느냐가 더 중요했다**는 점이다.
+
+- 호스트 로그만 준 상태에서는 CAN/메일박스 쪽 가설이 계속 강화됐다
+- "원인을 맞혀 달라"보다 "어떤 로그를 더 넣어야 가설을 구분할 수 있나"를 묻는 방향이 더 효과적이었다
+- UART/Bootloader 진단 로그를 추가한 뒤에야 원인이 빠르게 좁혀졌다
+
+즉, 이번 해결의 전환점은 AI가 답을 바로 낸 것이 아니라, **진단 가능성을 높이는 로그를 먼저 설계한 것**이었다.
 
 ---
 
-#### ② ISR 내부 printf 블로킹 → 1차 수정 적용, 부분 개선
+### 최종 원인
 
-**파일**: `SensorECU/Core/Src/main.c`
+근본 원인은 CAN 타이밍이 아니라 **SensorECU slot 산출물 생성 오류**였다.
 
-**버그**: `HAL_CAN_RxFifo0MsgPendingCallback`에서 비-ISOTP 프레임에 대해 `printf()` 호출
+`SensorECU`는 Slot A와 Slot B를 같은 `Debug` 디렉터리에서 빌드한다. 그런데 `ci/build.sh`는 한동안 다음 조건으로 `.bin` 생성을 건너뛰고 있었다.
 
-```c
-// 버그 코드
-void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
-{
-    HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &rx_header, rx_data);
-    if (rx_header.StdId == ISOTP_RX_CAN_ID) {
-        isotp_can_rx(rx_data, (uint8_t)rx_header.DLC);
-        return;
-    }
-    printf("[RX] ID:0x%03lX DLC:%lu ...\r\n", ...);  // ← ISR에서 ~3.5ms 블로킹
-}
-```
+- `make clean` 후 새 ELF 생성
+- 기존 `SensorECU.bin` 이 이미 있으면 `objcopy` 생략
 
-**장애 시나리오**:
-- DriveECU 0x100 heartbeat 수신 → ISR에서 `printf` → `HAL_UART_Transmit(HAL_MAX_DELAY)` → ~3.5ms 블로킹
-- 그 동안 CF 프레임 3~4개 도착 → FIFO(3슬롯) 오버플로우 → oldest 프레임 소실
-- SN 불일치 감지 → `s_ctx.active = 0` → ISO-TP 세션 중단
-- ECU가 ISO-TP 메시지를 완성하지 못함 → UDS 응답 미전송 → 5초 타임아웃
+이때 `make clean`은 `.elf`, `.o` 등은 지우지만 `SensorECU.bin`은 지우지 않았다. 그 결과:
 
-**수정 내용**: 비-ISOTP 프레임은 묵시적으로 드롭
+1. Slot A 빌드가 `Debug/SensorECU.bin` 생성
+2. Slot B 빌드는 ELF만 새로 링크
+3. 기존 `SensorECU.bin`이 남아 있어서 Slot B용 `objcopy` 생략
+4. `artifacts/sensor_slotB.bin`에 **Slot A용 raw bin** 이 복사됨
 
-```c
-// 수정 후
-void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
-{
-    HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &rx_header, rx_data);
-    if (rx_header.StdId == ISOTP_RX_CAN_ID) {
-        isotp_can_rx(rx_data, (uint8_t)rx_header.DLC);
-    }
-}
-```
-
-**결과**: 실패 블록 3~20 → 62로 이동. **부분 개선, 완전 해결 안 됨.**
+즉, **Slot B 이미지라고 서명하고 OTA한 파일이 실제로는 Slot A 주소로 링크된 바이너리**였다.
 
 ---
 
-#### ③ CAN 중재 충돌 + AutoRetransmission=DISABLE → 2차 수정 적용, 여전히 실패
+### 실제 해결 과정
 
-**가설**: DriveECU 0x100(높은 우선순위)이 SensorECU 0x7E9 UDS 응답과 동시에 전송되면 중재 패배 → `AutoRetransmission=DISABLE`이므로 재전송 없이 응답 소실
+이번 이슈는 "원인을 바로 찾았다"기보다, 잘못된 가설을 하나씩 제거하면서 **관측 지점을 늘린 끝에** 해결됐다.
 
-**확률 계산**:
-- OTA 총 시간: 117블록 × ~50ms = ~5.85초
-- DriveECU heartbeat 횟수: ~59회
-- 충돌 확률: ~222μs / 50ms × 59 ≈ 23% (관측 50~70%와 같은 차수)
+#### 1. 처음에는 전송 계층 문제로 봤다
 
-**수정 내용**: `MX_CAN1_Init()`에서 `AutoRetransmission = ENABLE`
+초기 해석은 다음 순서였다.
 
-```c
-hcan1.Init.AutoRetransmission = ENABLE;
+1. CAN TX 메일박스 경합
+2. `AutoRetransmission = DISABLE`
+3. CF 간격 부족
+4. hcsr04 측정 블로킹
+
+이 해석이 설득력 있어 보였던 이유는, timeout과 heartbeat 소실이 실제로 transport 문제처럼 보였기 때문이다.
+
+#### 2. "원인을 맞히기"보다 "가설을 구분하는 로그"를 넣기 시작했다
+
+전환점은 SensorECU UART에 아래 진단 로그를 추가한 것이었다.
+
+- `0x34` 시작, erase 시작/완료, `0x74` 큐잉 로그
+- `0x37` 시작, 메타데이터 기록 결과, `0x77` 큐잉 로그
+- OTA 중 TX fail 여부 (`TX_FAIL_DURING_OTA`)
+- CAN FIFO full / overrun / error 스냅샷
+- Bootloader의 `SP`, `PC`, 선택된 slot 로그
+
+이 로그가 들어가면서 비로소 다음이 구분됐다.
+
+- OTA 데이터 전송은 끝났는가
+- ECU가 reboot 전에 죽었는가
+- reboot 후 어떤 slot을 선택했고, 실제 어디로 jump 했는가
+
+#### 3. 빌드 산출물 자체를 비교했다
+
+추가 로그를 본 뒤, Raspberry Pi 빌드 출력에서 다음 이상 징후가 확인됐다.
+
+- `sensor_slotA.bin` 과 `sensor_slotB.bin` 의 SHA-256 동일
+- 그런데 Slot A/B linker origin은 서로 다름
+
+이 시점부터 원인은 transport가 아니라 build artifact 생성 쪽으로 급격히 좁혀졌다.
+
+#### 4. Bootloader jump 주소가 결정적 증거가 됐다
+
+실패 시:
+
+```text
+[BL] Slot B selected
+[BL] Jump to 0x08040000  SP=0x20020000  PC=0x080138CD
 ```
 
-**결과**: 여전히 실패 (블록 15 타임아웃). **해결 안 됨.**
+성공 시:
+
+```text
+[BL] Slot B selected
+[BL] Jump to 0x08040000  SP=0x20020000  PC=0x08044145
+```
+
+이 차이는 "전송이 실패했다"가 아니라, **잘못된 이미지를 성공적으로 전송해 놓고 reboot 후 잘못 실행했다**는 뜻이었다.
+
+#### 5. `ci/build.sh` 수정 후 증상이 한 번에 정리됐다
+
+shared build dir에서 stale `.bin` 을 재사용하지 않도록 바꾼 뒤:
+
+- `count=1` 통과
+- `count=3` 통과
+- `0x77` 후 heartbeat 복귀
+- Slot A/B jump address 정상화
+
+즉 그동안 separate issue처럼 보였던 timeout, reboot 후 heartbeat 없음, safe-state 복구 필요 현상이 모두 하나의 build 문제로 연결됐다.
 
 ---
 
-### 현재 상태 (4차 수정 적용 후 재검증)
+### 왜 랜덤 타임아웃처럼 보였는가
 
-적용된 수정:
-1. ✅ ISR 내 printf 제거
-2. ✅ isotp.c 재시도 루프 롤백
-3. ✅ AutoRetransmission = ENABLE
-4. ✅ OTA 중 hcsr04 차단 + CF 간격 1ms → 5ms
+이 빌드 문제는 OTA 단계에 따라 서로 다른 형태로 드러났다.
 
-실패 블록 번호 이력: 3, 12, 20, 62, 15, **62** (최근). 4차 수정 후 파이프라인 SUCCESS 확인.
+#### 1. `0x34` 직후 timeout
 
----
+메타데이터상 `active_slot=1` 이면 다음 OTA 타깃은 Slot A가 된다. 그런데 이전 OTA로 기록된 Slot B 이미지가 실제로는 Slot A 주소에 의존하고 있으면, Slot A erase가 **실행 중인 코드 경로를 건드릴 수 있다**.
 
-### 원인 재분석 (2026-05-27) — CF 간격이 실제 원인일 가능성
+이 경우 ECU가 `0x74` 응답 전에 리셋되거나 멈춰서, 호스트에서는 단순히 `Receive timeout`으로 보인다.
 
-4차 수정은 두 가지를 동시에 적용했다: **(a) hcsr04 차단** + **(b) CF 간격 1ms → 5ms**. 이후 추가 검증에서 다음이 확인됐다.
+#### 2. `0x77`까지 성공했는데 reboot 후 heartbeat 없음
 
-| 테스트 조건 | 결과 |
-|---|---|
-| hcsr04 차단 없음 + CF 5ms | **성공** (117블록 타임아웃 없음) |
-| hcsr04 차단 없음 + CF 0.003s | 실패 |
-| hcsr04 차단 없음 + CF 0.001s | 실패 |
+이 경우 OTA 데이터 전송과 메타데이터 기록은 성공한다. 하지만 재부팅 후 부트로더가 Slot B를 선택해도, Slot B 벡터 테이블 안 reset handler가 Slot A 주소를 가리키고 있으면 앱이 정상적으로 올라오지 못한다.
 
-**hcsr04 차단 없이 CF 5ms만으로 OTA가 성공했다.** 이는 hcsr04 블로킹이 근본 원인이 아닐 수 있음을 시사한다.
-
-#### CF 간격이 결정적인 이유
-
-500kbps CAN에서 프레임 1개 전송 시간 ≈ 222μs. CF 간격이 5ms면 다음 프레임 도착 전까지 메일박스 3개가 모두 비워질 시간이 충분하다.
-
-```
-CF 간격 1ms: 1ms 안에 배경 트래픽(0x201, 0x200) + OTA 응답(0x7E9) 경합
-             → 3개 메일박스 동시 포화 가능 → 응답 소실
-             
-CF 간격 5ms: 각 프레임 사이 5ms 여유
-             → 배경 트래픽(100ms + 50ms 주기)은 5ms 창에 평균 0.1개
-             → 메일박스 포화 거의 불가능 → 응답 안정 전달
-```
-
-hcsr04가 30ms 블로킹을 해도, 그 30ms 동안 배경 CAN 트래픽은 최대 1~2개에 불과해 3개 메일박스를 포화시키지 못한다. **CF 1ms 간격이 메일박스 포화의 직접 원인이었을 가능성이 높다.**
-
-> 이 가설을 명확히 특정하기 위해 `--cf-delay` 파라미터와 `TX_FAIL_DURING_OTA` 진단 코드를 추가하여 검증 중 (phase8 관련 작업과 병행).
+그래서 호스트 쪽에서는 `0x77`까지 받은 뒤 `Slot B heartbeat timeout`으로 관측된다.
 
 ---
 
-### 근본 원인 (가설 수정)
+### 오진했던 가설
 
-#### TX 메일박스 동시 점유 → `HAL_CAN_AddTxMessage` HAL_ERROR → 응답 소실
+다음 가설들은 증상 설명에는 일부 도움이 됐지만, 이번 장애의 근본 원인은 아니었다.
 
-`[UDS] Block 62` 로그 출력 후 타임아웃 발생 → `handle()` 내 `printf`까지는 정상 실행됐음을 의미. 즉, `isotp_send()` → `send_can()` → `HAL_CAN_AddTxMessage()` 시점에 TX 메일박스 3개가 모두 점유된 상태.
+- CAN TX 메일박스 포화
+- `AutoRetransmission = DISABLE`
+- CF 간격(`--cf-delay`) 부족
+- hcsr04 측정 블로킹
+- CAN bus-off 또는 host CAN 인터페이스 불안정
 
-**구체적 시나리오:**
+이 가설들이 약해진 이유:
 
-```
-T+0ms  : 50ms 틱 → hcsr04_measure_cm() 진입 (최대 30ms 블로킹)
-T+Xms  : TIM3 ISR 발화 → HAL_CAN_AddTxMessage(0x201) → mailbox[0] 점유
-T+30ms : hcsr04 완료 → HAL_CAN_AddTxMessage(0x200 obs_data) → mailbox[1] 점유
-         DriveECU 0x100 중재로 0x200/0x201 전송 지연 → mailbox 점유 유지
-T+30ms+ε: 블록 N 마지막 CF 수신 → g_pending_ready=1
-T+33ms : uds_process() → handle() → isotp_send() 호출 시:
-         직전 FC(0x7E9)가 DriveECU 0x100에 중재 패배하여 mailbox[2]에서 재전송 대기 중
-         → HAL_CAN_AddTxMessage(응답 0x7E9) → HAL_ERROR (3개 모두 점유)
-         → send_can()은 리턴값 무시 → 응답 프레임 소실
-T+5s   : RPi5 타임아웃 → ISOTPError("Receive timeout")
-```
+- 수정 전 실패 로그에서도 `Slot A`와 `Slot B` 산출물 SHA-256이 완전히 동일했다.
+- 수정 후에도 UART에 `CAN RX FIFO0 FULL` / `OVERRUN` 로그는 남아 있었지만 OTA는 `count=1`, `count=3` 모두 통과했다.
+- `can0_before.txt`, `can0_after.txt` 모두 `ERROR-ACTIVE`, `bus-off=0` 상태였다.
 
-**확률적 발생 이유**: hcsr04 50ms 주기와 블록 처리 ~40ms 타이밍이 무작위로 겹칠 때만 발생.
-
-**DriveECU 중재 단독으로는 OTA 실패하지 않음**: AutoRetransmission=ENABLE 상태에서 중재 패배 후 재전송까지 ~444μs 소요. RPi5 5초 타임아웃 대비 무시 가능한 시간. 단, 재전송 대기 중 메일박스를 계속 점유하므로 다른 프레임이 동시에 쌓이면 3개가 모두 차는 조건이 됨.
+즉 FIFO 경고는 **남아 있는 robustness 이슈**일 수는 있어도, 이번 phase 8 장애의 주원인은 아니었다.
 
 ---
 
-### 4차 수정 내용
+### 결정적 증거
 
-#### ④ OTA 중 hcsr04 차단 + CF 간격 증가 → 4차 수정 적용, 검증 대기
+#### 1. 실패 시 Slot A/B raw bin 해시가 동일
 
-**수정 내용**:
+실패 당시 Raspberry Pi 빌드 로그:
 
-`SensorECU/Core/Src/uds.c` — `uds_ota_active()` 추가:
-
-```c
-int uds_ota_active(void)
-{
-    return g_state == STATE_DOWNLOADING;
-}
+```text
+[SIGN] SHA-256: c08b6473bdece1097c1ff2b774a1e517ea4e36d5ea0d37bc51b04ef0844109cf
 ```
 
-`SensorECU/Core/Inc/uds.h` — 선언 추가:
+이 값이 `sensor_slotA.bin` 과 `sensor_slotB.bin` 에서 동일하게 나왔다.
 
-```c
-int uds_ota_active(void);
+하지만 linker origin은 서로 다르다.
+
+- Slot A: `SensorECU/STM32F446RETX_FLASH.ld` → `FLASH ORIGIN = 0x08010000`
+- Slot B: `SensorECU/STM32F446RETX_FLASH_SlotB.ld` → `FLASH ORIGIN = 0x08040000`
+
+정상이라면 raw bin 해시가 같을 수 없다.
+
+#### 2. 실패 시 Bootloader가 Slot B를 고르는데 PC는 Slot A 범위
+
+실패 UART 로그:
+
+```text
+[BL] Slot B selected
+[BL] Jump to 0x08040000  SP=0x20020000  PC=0x080138CD
 ```
 
-`SensorECU/Core/Src/main.c` — hcsr04 블록 조건 추가:
+Slot B를 부팅하는데 reset handler PC가 `0x080138CD` 인 것은, Slot B 플래시에 들어 있는 이미지가 Slot A 주소로 링크됐다는 뜻이다.
 
-```c
-// 수정 전
-if (HAL_GetTick() - s_measure_tick >= 50) {
+#### 3. 수정 후 PC가 각 슬롯 범위로 정상화
 
-// 수정 후
-if (!uds_ota_active() && HAL_GetTick() - s_measure_tick >= 50) {
+해결 후 UART 로그:
+
+```text
+[BL] Slot B selected
+[BL] Jump to 0x08040000  SP=0x20020000  PC=0x08044145
+[SensorECU v1] Start, Slot=1
 ```
 
-`tools/ota_client.py` — CF 간격 증가:
-
-```python
-# 수정 전
-time.sleep(0.001)
-
-# 수정 후
-time.sleep(0.005)
+```text
+[BL] Slot A selected
+[BL] Jump to 0x08010000  SP=0x20020000  PC=0x08014145
+[SensorECU v1] Start, Slot=0
 ```
 
-**효과**: OTA 중 메인 루프는 `IWDG_Refresh → uds_process()` 반복만 실행. TX 메일박스는 TIM3 0x201 heartbeat(100ms 주기) 1개만 간헐적으로 사용 → `isotp_send()` 호출 시 항상 여유 메일박스 존재. OTA 완료 시 `NVIC_SystemReset()`으로 재부팅하므로 hcsr04 일시 정지는 문제 없음.
-
-**검증 결과**: 4차 수정 적용 후 파이프라인 실행 → 117블록 타임아웃 없이 전송 완료, SlotB 부팅 확인. `Finished: SUCCESS`
+이제 reset handler가 선택된 슬롯 범위와 일치한다.
 
 ---
 
-### 교훈
+### 수정 내용
 
-#### ISR에서 절대 블로킹 함수 호출 금지
+`ci/build.sh`에서 shared build dir에 남아 있는 stale `.bin` 을 재사용하지 않도록 수정했다.
 
-| 금지 패턴 | 이유 |
-|---|---|
-| `printf()` in ISR | `HAL_UART_Transmit(HAL_MAX_DELAY)` → 수ms 블로킹 → FIFO 오버플로우 |
-| `HAL_Delay()` in ISR | SysTick 동급/하위 우선순위 시 영원히 대기 |
-| 재시도 루프 in ISR | 루프 기간 동안 동급/하위 인터럽트 차단 |
+수정 전:
 
-#### STM32F4 CAN FIFO 동작
+```bash
+if [ ! -f "$BUILD_DIR/$PROJ.bin" ]; then
+  arm-none-eabi-objcopy -O binary "$BUILD_DIR/$PROJ.elf" "$BUILD_DIR/$PROJ.bin"
+fi
+```
 
-- `ReceiveFifoLocked = DISABLE`: FIFO 가득 찬 상태에서 새 프레임 도착 시 oldest 프레임이 새 프레임에 덮어씌워짐
-- 결과: oldest 프레임 소실 → ISO-TP SN 순서 깨짐 → `s_ctx.active = 0` → 세션 중단
+수정 후:
 
-#### CAN AutoRetransmission
+```bash
+make -C "$BUILD_DIR" clean
+make -C "$BUILD_DIR" -j"$(nproc)" all
 
-- OTA처럼 신뢰성이 중요한 전송: `ENABLE` 권장
-- 중재 패배(arbitration loss)만으로는 ECU가 error passive/bus-off로 가지 않음
-- `ENABLE` 시 중재 패배 후 버스 IDLE 되는 순간 (~222μs 후) 자동 재전송
+# Shared build dirs can leave a stale .bin behind, so always regenerate from
+# the freshly linked ELF for the selected slot.
+arm-none-eabi-objcopy -O binary "$BUILD_DIR/$PROJ.elf" "$BUILD_DIR/$PROJ.bin"
+```
+
+핵심은 **slot별 ELF를 링크한 직후 항상 그 ELF에서 raw bin을 다시 생성**하는 것이다.
+
+---
+
+### 검증 결과
+
+2026-05-28 재검증:
+
+- `count=1` OTA 테스트 통과
+- `count=3` OTA 테스트 통과
+- `ota_stress.log` 기준 `3/3 통과`
+- 매 iteration에서 `0x77` 수신 후 heartbeat 대기 `OK`
+- UART 기준 `TX_FAIL_DURING_OTA=0`
+
+요약:
+
+```text
+Iteration 1: PASS
+Iteration 2: PASS
+Iteration 3: PASS
+합계: 3/3 통과
+```
+
+---
+
+### 남은 메모
+
+UART에는 여전히 아래 로그가 간헐적으로 보인다.
+
+```text
+[CAN RX FIFO0 FULL]
+[CAN RX FIFO0 OVERRUN]
+[CAN ERROR]
+```
+
+하지만 현재 로그 기준으로는:
+
+- OTA 전송 완료
+- `0x77` 응답 정상
+- 슬롯 전환 후 부팅 정상
+- heartbeat 복귀 정상
+
+따라서 이는 **별도 성능/안정성 개선 과제**로 보고, phase 8 장애의 원인과는 분리해서 다루는 것이 맞다.
+
+---
+
+### 다음에 같은 문제를 푸는 방법
+
+다음에 "직접 플래시는 되는데 OTA만 비결정적으로 실패"하는 문제가 나오면, 아래 순서로 접근한다.
+
+#### 1. 먼저 실패 단계를 세 구간으로 나눈다
+
+문제를 한 덩어리로 보지 말고 아래 세 구간으로 나눈다.
+
+1. **artifact 생성**: 어떤 이미지를 만들었는가
+2. **transport / write**: ECU가 그 이미지를 어디까지 받았는가
+3. **post-reboot**: reboot 후 실제 어떤 주소로 jump 했는가
+
+이 세 구간을 분리하지 않으면, build 문제를 transport 문제로 오해하기 쉽다.
+
+#### 2. 최소 수집 로그 세트를 고정한다
+
+다음 장애부터는 아래 로그를 항상 같이 모은다.
+
+- Raspberry Pi `ota_stress.log`
+- `candump_sensor_ota.log`
+- `can0_before.txt`
+- `can0_after.txt`
+- SensorECU UART 로그
+- 가능하면 Bootloader UART 로그
+
+특히 **Bootloader의 selected slot / SP / PC 로그**는 필수다.
+
+#### 3. Slot A/B artifact부터 먼저 검증한다
+
+CAN 분석 전에 먼저 아래를 확인한다.
+
+- `sensor_slotA.bin` 과 `sensor_slotB.bin` 해시가 다른가
+- 각 slot ELF/vector table의 reset handler가 해당 slot 주소 범위에 있는가
+- signing 대상이 기대한 slot artifact와 일치하는가
+
+직접 플래시는 되는데 OTA만 안 되면, transport보다 먼저 **artifact lineage**를 의심하는 편이 더 빠르다.
+
+#### 4. `0x74`, `0x77`, heartbeat를 각각 다른 단계의 증거로 본다
+
+- `0x74` 없음 → erase 이전/직후 문제 가능성
+- `0x77` 있음 → OTA write/metadata 단계는 대체로 통과
+- reboot 후 heartbeat 없음 → post-reboot 이미지/slot 선택 문제 가능성 높음
+
+이 셋을 한 종류의 timeout으로 묶어버리면 원인 분리가 안 된다.
+
+#### 5. AI에게는 "답"보다 "구분 실험"을 요청한다
+
+다음처럼 묻는 편이 효과적이다.
+
+- "이 증상을 build / transport / boot 중 어디로 나누면 좋을까?"
+- "이 가설들을 구분하려면 어떤 로그를 추가해야 하나?"
+- "이 로그에서 빠진 결정적 관측점은 무엇인가?"
+
+이 방식이 "원인을 바로 맞혀 달라"보다 훨씬 재현성이 높다.
+
+---
+
+### 재발 방지 대책
+
+#### 1. Build 파이프라인 방어
+
+- slot별 ELF에서 raw `.bin`을 항상 재생성한다
+- CI에서 `sensor_slotA.bin` 과 `sensor_slotB.bin` 해시가 동일하면 실패 처리한다
+- 가능하면 slot별 vector table의 reset handler가 기대 주소 범위에 있는지 자동 검사한다
+
+#### 2. OTA 검증 자동화
+
+- `count=1` smoke test와 `count=3` 반복 테스트를 둘 다 유지한다
+- A→B, B→A 왕복 OTA를 기본 regression 시나리오로 둔다
+- `0x77` 수신만이 아니라 reboot 후 expected slot heartbeat까지 성공 조건에 포함한다
+
+#### 3. 관측성 유지
+
+- `0x34` / `0x37` / boot jump 진단 로그는 완전히 제거하지 말고 유지한다
+- 필요하면 `DEBUG_OTA_DIAG` 같은 compile-time flag로 관리한다
+- host 로그와 UART 로그를 같은 테스트 세트로 보관하는 습관을 유지한다
+
+#### 4. 문서화 원칙
+
+- 증상 문서와 최종 원인 문서를 분리하지 말고, "왜 오해했는가"까지 같이 남긴다
+- 복구 절차가 원인처럼 보일 때는, 복구가 왜 먹혔는지도 별도로 적는다
+- AI가 틀렸는지보다, 어떤 로그를 줬을 때 틀렸는지를 기록한다
 
 ---
 
 ### 관련 파일
 
-- `SensorECU/Core/Src/main.c` — ISR `printf` 제거, `AutoRetransmission = ENABLE`
-- `SensorECU/Core/Src/isotp.c` — ISR 내 재시도 루프 롤백, TX fail 카운터 추가
-- `SensorECU/Core/Src/uds.c` — `TX_FAIL_DURING_OTA` 진단 출력 추가
-- `tools/ota_client.py` — `--cf-delay` 인자 추가 (기본 0.005s)
+- `ci/build.sh` — slot별 `.bin` 산출물 생성
+- `SensorECU/STM32F446RETX_FLASH.ld` — Slot A 링크 주소
+- `SensorECU/STM32F446RETX_FLASH_SlotB.ld` — Slot B 링크 주소
+- `Bootloader/Core/Src/bootloader.c` — 부트 시 vector table의 `SP/PC` 읽기
 
 ---
 
 ### 관련 문서
 
-- [phase9_rc_car_assembly_can_failure.md](phase9_rc_car_assembly_can_failure.md) — 직전 트러블슈팅
-- [phase5_slot_b_can_failure.md](phase5_slot_b_can_failure.md) — ISR 내 `__enable_irq()` 누락 사례
-- [phase8_no_heartbeat_after_failed_ota.md](phase8_no_heartbeat_after_failed_ota.md) — OTA 실패 후 하트비트 없음 (파생 이슈)
+- [phase8_no_heartbeat_after_failed_ota.md](phase8_no_heartbeat_after_failed_ota.md) — 같은 빌드 문제에서 파생된 heartbeat 소실 증상
