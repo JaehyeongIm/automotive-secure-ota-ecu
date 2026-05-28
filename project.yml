@@ -1,7 +1,7 @@
 ---
 :project:
   :use_exceptions: FALSE
-  :use_test_preprocessor: TRUE
+  :use_test_preprocessor: :all
   :test_file_prefix: test_
   :build_root: build/test
 
@@ -39,7 +39,3 @@
         - -Wno-unused-parameter
         - -DUNIT_TEST
 
-:plugins:
-  :enabled:
-    - stdout_pretty_tests_report
-    - module_generator
