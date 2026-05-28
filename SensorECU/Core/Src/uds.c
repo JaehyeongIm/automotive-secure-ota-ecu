@@ -131,12 +131,17 @@ static void handle(const uint8_t *req, uint16_t len)
 
         if (g_fw_size == 0 || g_fw_size > slot_max) { nrc(sid, 0x31); break; }
         g_tx_fail_baseline = g_isotp_tx_fail_count;
-        printf("[UDS] Target Slot %c  addr=0x%08lX  size=%lu\r\n",
-               g_target_slot == 0 ? 'A' : 'B', g_fw_addr, g_fw_size);
+        printf("[UDS][34] start active=%u target=%c addr=0x%08lX size=%lu max=%lu\r\n",
+               active, g_target_slot == 0 ? 'A' : 'B',
+               (unsigned long)g_fw_addr, (unsigned long)g_fw_size, (unsigned long)slot_max);
 
+        uint32_t erase_t0 = HAL_GetTick();
+        printf("[UDS][34] erase start slot=%c\r\n", g_target_slot == 0 ? 'A' : 'B');
         HAL_StatusTypeDef er = (g_target_slot == 0)
             ? ota_flash_erase_slot_a()
             : ota_flash_erase_slot_b();
+        printf("[UDS][34] erase done ret=%d dt=%lums\r\n",
+               (int)er, (unsigned long)(HAL_GetTick() - erase_t0));
         if (er != HAL_OK) { nrc(sid, 0x72); break; }
 
         g_fw_written = 0;
@@ -144,6 +149,7 @@ static void handle(const uint8_t *req, uint16_t len)
         g_state      = STATE_DOWNLOADING;
         /* maxBlockLen=258: 1 blockSeq + 256 data */
         uint8_t r[] = {0x74, 0x20, 0x01, 0x02};
+        printf("[UDS][34] queue 0x74 maxBlockLen=258\r\n");
         isotp_send(r, sizeof(r));
         break;
     }
@@ -163,6 +169,8 @@ static void handle(const uint8_t *req, uint16_t len)
         memcpy(padded, chunk, chunk_len);
 
         if (ota_flash_write(g_fw_addr + g_fw_written, padded, write_len) != HAL_OK) {
+            printf("[UDS][36] flash write fail block=%u addr=0x%08lX len=%u\r\n",
+                   bsq, (unsigned long)(g_fw_addr + g_fw_written), write_len);
             nrc(sid, 0x72); break;
         }
 
@@ -178,9 +186,17 @@ static void handle(const uint8_t *req, uint16_t len)
     case 0x37: {                                /* RequestTransferExit */
         if (g_state != STATE_DOWNLOADING) { nrc(sid, 0x22); break; }
 
-        if (ota_meta_write_pending(g_target_slot, g_fw_size) != HAL_OK) { nrc(sid, 0x72); break; }
+        printf("[UDS][37] start written=%lu size=%lu target=%c\r\n",
+               (unsigned long)g_fw_written, (unsigned long)g_fw_size,
+               g_target_slot == 0 ? 'A' : 'B');
+        uint32_t meta_t0 = HAL_GetTick();
+        HAL_StatusTypeDef meta_ret = ota_meta_write_pending(g_target_slot, g_fw_size);
+        printf("[UDS][37] metadata ret=%d dt=%lums\r\n",
+               (int)meta_ret, (unsigned long)(HAL_GetTick() - meta_t0));
+        if (meta_ret != HAL_OK) { nrc(sid, 0x72); break; }
 
         uint8_t r[] = {0x77};
+        printf("[UDS][37] queue 0x77\r\n");
         isotp_send(r, sizeof(r));
         printf("[UDS] OTA done, rebooting to Slot %c  TX_FAIL_DURING_OTA=%u\r\n",
                g_target_slot == 0 ? 'A' : 'B',

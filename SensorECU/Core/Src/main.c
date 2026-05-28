@@ -31,6 +31,25 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+typedef struct {
+    uint8_t  free_level;
+    uint32_t esr;
+    uint32_t tsr;
+    uint32_t error_code;
+} CAN_TxFailDiag_t;
+
+typedef struct {
+    uint8_t  fifo_fill;
+    uint32_t esr;
+    uint32_t error_code;
+} CAN_RxDiag_t;
+
+typedef struct {
+    uint8_t  fifo_fill;
+    uint32_t esr;
+    uint32_t tsr;
+    uint32_t error_code;
+} CAN_ErrorDiag_t;
 
 /* USER CODE END PTD */
 
@@ -65,6 +84,16 @@ static uint32_t tx_mailbox;
 static volatile uint16_t s_distance_cm  = 0;
 static volatile uint8_t  s_obstacle     = 0;
 static uint32_t          s_measure_tick = 0;
+static volatile uint8_t  s_hb_tx_fail_count;
+static volatile uint8_t  s_obs_tx_fail_count;
+static volatile uint8_t  s_can_rx0_full_count;
+static volatile uint8_t  s_can_rx0_overrun_count;
+static volatile uint8_t  s_can_error_count;
+static volatile CAN_TxFailDiag_t s_hb_tx_fail_diag;
+static volatile CAN_TxFailDiag_t s_obs_tx_fail_diag;
+static volatile CAN_RxDiag_t     s_can_rx0_full_diag;
+static volatile CAN_RxDiag_t     s_can_rx0_overrun_diag;
+static volatile CAN_ErrorDiag_t  s_can_error_diag;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -87,6 +116,72 @@ int __io_putchar(int ch)
 {
     HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
     return ch;
+}
+
+static uint32_t can_esr_tec(uint32_t esr)
+{
+    return (esr & CAN_ESR_TEC) >> CAN_ESR_TEC_Pos;
+}
+
+static uint32_t can_esr_rec(uint32_t esr)
+{
+    return (esr & CAN_ESR_REC) >> CAN_ESR_REC_Pos;
+}
+
+static uint32_t can_esr_lec(uint32_t esr)
+{
+    return (esr & CAN_ESR_LEC) >> CAN_ESR_LEC_Pos;
+}
+
+static void copy_snapshot(void *dst, const volatile void *src, uint32_t len)
+{
+    uint32_t primask = __get_PRIMASK();
+
+    __disable_irq();
+    memcpy(dst, (const void *)src, len);
+    if (!primask) {
+        __enable_irq();
+    }
+}
+
+static void capture_can_tx_fail(volatile CAN_TxFailDiag_t *diag, volatile uint8_t *count)
+{
+    diag->free_level = (uint8_t)HAL_CAN_GetTxMailboxesFreeLevel(&hcan1);
+    diag->esr        = CAN1->ESR;
+    diag->tsr        = CAN1->TSR;
+    diag->error_code = hcan1.ErrorCode;
+    (*count)++;
+}
+
+static void capture_can_rx_diag(volatile CAN_RxDiag_t *diag, volatile uint8_t *count)
+{
+    diag->fifo_fill  = (uint8_t)HAL_CAN_GetRxFifoFillLevel(&hcan1, CAN_RX_FIFO0);
+    diag->esr        = CAN1->ESR;
+    diag->error_code = hcan1.ErrorCode;
+    (*count)++;
+}
+
+static void capture_can_error_diag(CAN_HandleTypeDef *hcan)
+{
+    s_can_error_diag.fifo_fill  = (uint8_t)HAL_CAN_GetRxFifoFillLevel(hcan, CAN_RX_FIFO0);
+    s_can_error_diag.esr        = CAN1->ESR;
+    s_can_error_diag.tsr        = CAN1->TSR;
+    s_can_error_diag.error_code = hcan->ErrorCode;
+    s_can_error_count++;
+}
+
+static const char *isotp_tx_kind_name(uint8_t kind)
+{
+    if (kind == 1U) return "FC";
+    if (kind == 2U) return "UDS-SF";
+    return "UNKNOWN";
+}
+
+static const char *isotp_rx_abort_name(uint8_t reason)
+{
+    if (reason == 1U) return "CF_INACTIVE";
+    if (reason == 2U) return "SN_MISMATCH";
+    return "UNKNOWN";
 }
 /* USER CODE END 0 */
 
@@ -138,7 +233,15 @@ int main(void)
   filter.FilterActivation     = ENABLE;
   HAL_StatusTypeDef cr = HAL_CAN_ConfigFilter(&hcan1, &filter);
   HAL_StatusTypeDef sr = HAL_CAN_Start(&hcan1);
-  HAL_StatusTypeDef nr = HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING);
+  HAL_StatusTypeDef nr = HAL_CAN_ActivateNotification(
+      &hcan1,
+      CAN_IT_RX_FIFO0_MSG_PENDING |
+      CAN_IT_RX_FIFO0_FULL |
+      CAN_IT_RX_FIFO0_OVERRUN |
+      CAN_IT_ERROR_WARNING |
+      CAN_IT_ERROR_PASSIVE |
+      CAN_IT_BUSOFF |
+      CAN_IT_LAST_ERROR_CODE);
   printf("[CAN] ConfigFilter=%d Start=%d Notify=%d state=%lu ESR=0x%08lX\r\n",
          (int)cr, (int)sr, (int)nr, (uint32_t)hcan1.State, CAN1->ESR);
 
@@ -172,9 +275,102 @@ int main(void)
     uds_process();
 
     static uint8_t s_last_tx_fail = 0;
+    static uint8_t s_last_rx_abort = 0;
+    static uint8_t s_last_hb_tx_fail = 0;
+    static uint8_t s_last_obs_tx_fail = 0;
+    static uint8_t s_last_rx0_full = 0;
+    static uint8_t s_last_rx0_overrun = 0;
+    static uint8_t s_last_can_error = 0;
+
     if (g_isotp_tx_fail_count != s_last_tx_fail) {
-        printf("[CAN TX FAIL] mailbox full count=%u\r\n", g_isotp_tx_fail_count);
+        ISOTP_TxFailDiag_t diag;
+        isotp_diag_get_tx_fail(&diag);
+        printf("[ISOTP TX FAIL] count=%u kind=%s pci0=0x%02X data1=0x%02X data2=0x%02X"
+               " free=%u rx=%u/%u next_sn=%u"
+               " ESR=0x%08lX TSR=0x%08lX err=0x%08lX TEC=%lu REC=%lu LEC=%lu\r\n",
+               g_isotp_tx_fail_count, isotp_tx_kind_name(diag.kind),
+               diag.frame0, diag.frame1, diag.frame2,
+               diag.free_level, diag.received, diag.total_len, diag.next_sn,
+               (unsigned long)diag.esr, (unsigned long)diag.tsr, (unsigned long)diag.error_code,
+               (unsigned long)can_esr_tec(diag.esr),
+               (unsigned long)can_esr_rec(diag.esr),
+               (unsigned long)can_esr_lec(diag.esr));
         s_last_tx_fail = g_isotp_tx_fail_count;
+    }
+
+    if (g_isotp_rx_abort_count != s_last_rx_abort) {
+        ISOTP_RxAbortDiag_t diag;
+        isotp_diag_get_rx_abort(&diag);
+        printf("[ISOTP RX ABORT] count=%u reason=%s got=%u expected=%u"
+               " rx=%u/%u\r\n",
+               g_isotp_rx_abort_count, isotp_rx_abort_name(diag.reason),
+               diag.got_sn, diag.expected_sn, diag.received, diag.total_len);
+        s_last_rx_abort = g_isotp_rx_abort_count;
+    }
+
+    if (s_hb_tx_fail_count != s_last_hb_tx_fail) {
+        CAN_TxFailDiag_t diag;
+        copy_snapshot(&diag, &s_hb_tx_fail_diag, sizeof(diag));
+        printf("[CAN TX FAIL][HB] count=%u free=%u ESR=0x%08lX TSR=0x%08lX"
+               " err=0x%08lX TEC=%lu REC=%lu LEC=%lu\r\n",
+               s_hb_tx_fail_count, diag.free_level,
+               (unsigned long)diag.esr, (unsigned long)diag.tsr, (unsigned long)diag.error_code,
+               (unsigned long)can_esr_tec(diag.esr),
+               (unsigned long)can_esr_rec(diag.esr),
+               (unsigned long)can_esr_lec(diag.esr));
+        s_last_hb_tx_fail = s_hb_tx_fail_count;
+    }
+
+    if (s_obs_tx_fail_count != s_last_obs_tx_fail) {
+        CAN_TxFailDiag_t diag;
+        copy_snapshot(&diag, &s_obs_tx_fail_diag, sizeof(diag));
+        printf("[CAN TX FAIL][OBS] count=%u free=%u ESR=0x%08lX TSR=0x%08lX"
+               " err=0x%08lX TEC=%lu REC=%lu LEC=%lu\r\n",
+               s_obs_tx_fail_count, diag.free_level,
+               (unsigned long)diag.esr, (unsigned long)diag.tsr, (unsigned long)diag.error_code,
+               (unsigned long)can_esr_tec(diag.esr),
+               (unsigned long)can_esr_rec(diag.esr),
+               (unsigned long)can_esr_lec(diag.esr));
+        s_last_obs_tx_fail = s_obs_tx_fail_count;
+    }
+
+    if (s_can_rx0_full_count != s_last_rx0_full) {
+        CAN_RxDiag_t diag;
+        copy_snapshot(&diag, &s_can_rx0_full_diag, sizeof(diag));
+        printf("[CAN RX FIFO0 FULL] count=%u fill=%u ESR=0x%08lX err=0x%08lX"
+               " TEC=%lu REC=%lu LEC=%lu\r\n",
+               s_can_rx0_full_count, diag.fifo_fill,
+               (unsigned long)diag.esr, (unsigned long)diag.error_code,
+               (unsigned long)can_esr_tec(diag.esr),
+               (unsigned long)can_esr_rec(diag.esr),
+               (unsigned long)can_esr_lec(diag.esr));
+        s_last_rx0_full = s_can_rx0_full_count;
+    }
+
+    if (s_can_rx0_overrun_count != s_last_rx0_overrun) {
+        CAN_RxDiag_t diag;
+        copy_snapshot(&diag, &s_can_rx0_overrun_diag, sizeof(diag));
+        printf("[CAN RX FIFO0 OVERRUN] count=%u fill=%u ESR=0x%08lX err=0x%08lX"
+               " TEC=%lu REC=%lu LEC=%lu\r\n",
+               s_can_rx0_overrun_count, diag.fifo_fill,
+               (unsigned long)diag.esr, (unsigned long)diag.error_code,
+               (unsigned long)can_esr_tec(diag.esr),
+               (unsigned long)can_esr_rec(diag.esr),
+               (unsigned long)can_esr_lec(diag.esr));
+        s_last_rx0_overrun = s_can_rx0_overrun_count;
+    }
+
+    if (s_can_error_count != s_last_can_error) {
+        CAN_ErrorDiag_t diag;
+        copy_snapshot(&diag, &s_can_error_diag, sizeof(diag));
+        printf("[CAN ERROR] count=%u fill=%u ESR=0x%08lX TSR=0x%08lX err=0x%08lX"
+               " TEC=%lu REC=%lu LEC=%lu\r\n",
+               s_can_error_count, diag.fifo_fill,
+               (unsigned long)diag.esr, (unsigned long)diag.tsr, (unsigned long)diag.error_code,
+               (unsigned long)can_esr_tec(diag.esr),
+               (unsigned long)can_esr_rec(diag.esr),
+               (unsigned long)can_esr_lec(diag.esr));
+        s_last_can_error = s_can_error_count;
     }
 
     if (HAL_GetTick() - s_measure_tick >= 50) {
@@ -189,7 +385,9 @@ int main(void)
                              (uint8_t)(dist >> 8), (uint8_t)dist,
                              0, 0, 0, 0, 0};
       uint32_t mb;
-      HAL_CAN_AddTxMessage(&hcan1, &obs_header, obs_data, &mb);
+      if (HAL_CAN_AddTxMessage(&hcan1, &obs_header, obs_data, &mb) != HAL_OK) {
+          capture_can_tx_fail(&s_obs_tx_fail_diag, &s_obs_tx_fail_count);
+      }
     }
   }
   /* USER CODE END 3 */
@@ -508,6 +706,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
     if (HAL_CAN_AddTxMessage(&hcan1, &tx_header, tx_data, &tx_mailbox) == HAL_OK) {
         HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+    } else {
+        capture_can_tx_fail(&s_hb_tx_fail_diag, &s_hb_tx_fail_count);
     }
 }
 
@@ -520,6 +720,21 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
     /* Non-ISOTP frames are silently dropped.
      * printf() here would block ~4ms (HAL_UART_Transmit with HAL_MAX_DELAY),
      * causing RX FIFO overflow and ISO-TP SN mismatches during OTA. */
+}
+
+void HAL_CAN_RxFifo0FullCallback(CAN_HandleTypeDef *hcan)
+{
+    (void)hcan;
+    capture_can_rx_diag(&s_can_rx0_full_diag, &s_can_rx0_full_count);
+}
+
+void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *hcan)
+{
+    capture_can_error_diag(hcan);
+
+    if ((hcan->ErrorCode & HAL_CAN_ERROR_RX_FOV0) != 0U) {
+        capture_can_rx_diag(&s_can_rx0_overrun_diag, &s_can_rx0_overrun_count);
+    }
 }
 /* USER CODE END 4 */
 

@@ -8,7 +8,7 @@ OTA 타임아웃 발생 임계값 탐색을 위한 반복 스트레스 테스트
 Usage (자동 빌드+서명, 3회 반복):
     python3 ci/ota_stress_test.py \\
         --channel can0 \\
-        --key keys/ecdsa_private.pem \\
+        --key <ECDSA 비밀키 경로> \\
         --count 3
 
 Usage (기존 펌웨어 파일 직접 지정, 5회, CF 간격 0.003s):
@@ -29,10 +29,12 @@ import can
 sys.path.insert(0, 'tools')
 from ota_client import ISOTPError, OTAClient, UDSError
 
-HB_CAN_ID   = 0x201   # SensorECU heartbeat
-HB_SLOT_IDX = 1       # heartbeat data[1] = active_slot
-REBOOT_WAIT = 30.0    # NVIC_SystemReset 후 heartbeat 복구 최대 대기(초)
-SLOW_THRESH = 2.0     # 블록 소요 시간 경고 임계값(초)
+HB_CAN_ID         = 0x201   # SensorECU heartbeat
+HB_SLOT_IDX       = 1       # heartbeat data[1] = active_slot
+REBOOT_WAIT       = 45.0    # NVIC_SystemReset 후 heartbeat 복구 최대 대기(초)
+SLOW_THRESH       = 2.0     # 블록 소요 시간 경고 임계값(초)
+HB_SILENCE_THRESH = 0.5     # 이 시간 이상 HB 없으면 ECU 리셋 완료로 판단(초)
+HB_SILENCE_WAIT   = 3.0     # Phase1 최대 대기(초)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -116,15 +118,32 @@ def read_slot(bus: can.BusABC, timeout: float = 10.0):
 
 
 def wait_for_slot(bus: can.BusABC, expected: int, timeout: float = REBOOT_WAIT):
-    """재부팅 후 expected slot의 heartbeat 대기."""
+    """재부팅 후 expected slot의 heartbeat 대기.
+
+    Phase 1: heartbeat가 멈출 때까지 대기(ECU 리셋 확인) — 리셋 전 버퍼 frame 무시
+    Phase 2: 재부팅 완료 후 expected slot heartbeat 탐지
+    """
     print(f"    [WAIT] Slot {expected} heartbeat 대기 (최대 {timeout:.0f}초)...",
           end="", flush=True)
-    deadline = time.monotonic() + timeout
+    t_start  = time.monotonic()
+    deadline = t_start + timeout
+
+    # Phase 1: heartbeat 소멸 대기 (ECU가 실제로 리셋됐는지 확인)
+    last_hb_time     = t_start
+    silence_deadline = t_start + HB_SILENCE_WAIT
+    while time.monotonic() < min(deadline, silence_deadline):
+        msg = bus.recv(timeout=0.2)
+        if msg and msg.arbitration_id == HB_CAN_ID:
+            last_hb_time = time.monotonic()
+        if time.monotonic() - last_hb_time > HB_SILENCE_THRESH:
+            break  # heartbeat 중단 → ECU 리셋 중
+
+    # Phase 2: 재부팅 후 target slot heartbeat 대기
     while time.monotonic() < deadline:
         msg = bus.recv(timeout=1.0)
         if msg and msg.arbitration_id == HB_CAN_ID and len(msg.data) > HB_SLOT_IDX:
             if int(msg.data[HB_SLOT_IDX]) == expected:
-                elapsed = timeout - (deadline - time.monotonic())
+                elapsed = time.monotonic() - t_start
                 print(f" OK  ({elapsed:.1f}s)")
                 return True
     print(" TIMEOUT")
