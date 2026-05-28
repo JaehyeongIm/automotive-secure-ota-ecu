@@ -49,10 +49,9 @@ perl -i -pe \
 make -C "$BUILD_DIR" clean
 make -C "$BUILD_DIR" -j"$(nproc)" all
 
-# .bin이 없으면 .elf에서 직접 변환 (SensorECU makefile에 objcopy 단계 없음)
-if [ ! -f "$BUILD_DIR/$PROJ.bin" ]; then
-  arm-none-eabi-objcopy -O binary "$BUILD_DIR/$PROJ.elf" "$BUILD_DIR/$PROJ.bin"
-fi
+# Shared build dirs can leave a stale .bin behind, so always regenerate from
+# the freshly linked ELF for the selected slot.
+arm-none-eabi-objcopy -O binary "$BUILD_DIR/$PROJ.elf" "$BUILD_DIR/$PROJ.bin"
 
 mkdir -p "$REPO/artifacts"
 cp "$BUILD_DIR/$PROJ.bin" "$REPO/artifacts/${ECU}_slot${SLOT}.bin"
