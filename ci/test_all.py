@@ -60,13 +60,12 @@ def run_unit_tests() -> str:
         sys.exit(1)
     result = subprocess.run(["ceedling", "test:all"],
                             capture_output=True, text=True)
+    combined = result.stdout + result.stderr
 
-    # OVERALL TEST SUMMARY 섹션 추출
-    summary = _parse_ceedling_summary(result.stdout)
+    summary = _parse_ceedling_summary(combined)
 
     if result.returncode != 0:
-        # 실패 시 FAILED TEST SUMMARY 섹션도 출력
-        print(_extract_section(result.stdout, "FAILED TEST SUMMARY"))
+        print(_extract_section(combined, "FAILED TEST SUMMARY"))
         print(f"\n[FAIL] 단위 테스트 실패 — OTA 테스트를 진행하지 않습니다.")
         print(summary)
         sys.exit(result.returncode)
@@ -76,21 +75,14 @@ def run_unit_tests() -> str:
 
 
 def _parse_ceedling_summary(output: str) -> str:
-    """ceedling 출력에서 OVERALL TEST SUMMARY 한 줄 추출."""
-    lines = output.splitlines()
-    in_summary = False
+    """ceedling 출력에서 TESTED/PASSED/FAILED/IGNORED 값을 추출."""
+    import re
     parts = {}
-    for line in lines:
-        if "OVERALL TEST SUMMARY" in line:
-            in_summary = True
-            continue
-        if in_summary:
-            for key in ("TESTED", "PASSED", "FAILED", "IGNORED"):
-                if line.strip().startswith(key):
-                    parts[key] = line.strip().split()[-1]
-            if len(parts) == 4:
-                break
-    if parts:
+    for key in ("TESTED", "PASSED", "FAILED", "IGNORED"):
+        m = re.search(rf'{key}[:\s]+(\d+)', output)
+        if m:
+            parts[key] = m.group(1)
+    if len(parts) == 4:
         return (f"  TESTED:{parts['TESTED']:>4}  PASSED:{parts['PASSED']:>4}"
                 f"  FAILED:{parts['FAILED']:>4}  IGNORED:{parts['IGNORED']:>4}")
     return "  (요약 없음)"
