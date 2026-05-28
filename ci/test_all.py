@@ -118,7 +118,8 @@ def wait_for_drive_idle(bus: can.BusABC, timeout: float = 60.0) -> bool:
 def wait_for_slot(bus: can.BusABC, hb_id: int, expected: int,
                   timeout: float = REBOOT_WAIT) -> bool:
     """재부팅 후 expected slot heartbeat 대기 (2-phase)."""
-    print(f"    [WAIT] HB={hb_id:#05x}  Slot={expected}  (최대 {timeout:.0f}초)...",
+    slot_label = 'B' if expected == 1 else 'A'
+    print(f"    [WAIT] HB={hb_id:#05x}  Slot={slot_label}  (최대 {timeout:.0f}초)...",
           end="", flush=True)
     t_start  = time.monotonic()
     deadline = t_start + timeout
@@ -152,12 +153,13 @@ def run_ota_one(bus: can.BusABC, ecu_name: str, fw_a: bytes, fw_b: bytes,
     ECU 1회 OTA 수행.
     반환: (success: bool, slot_after: int)
     """
-    target  = 1 - current_slot
-    fw      = fw_b if target == 1 else fw_a
-    hb_id   = SENSOR_HB_ID if ecu_name == 'sensor' else DRIVE_HB_ID
-    label   = 'B' if target == 1 else 'A'
+    target       = 1 - current_slot
+    fw           = fw_b if target == 1 else fw_a
+    hb_id        = SENSOR_HB_ID if ecu_name == 'sensor' else DRIVE_HB_ID
+    label        = 'B' if target == 1 else 'A'
+    current_label = 'B' if current_slot == 1 else 'A'
 
-    print(f"\n    [{ecu_name.upper()}] Slot {current_slot} → Slot {label}"
+    print(f"\n    [{ecu_name.upper()}] Slot {current_label} → Slot {label}"
           f"  ({len(fw):,} bytes)")
 
     client = OTAClient(bus, ecu=ecu_name, cf_delay=cf_delay)
@@ -198,7 +200,9 @@ def run_round(bus: can.BusABC, idx: int,
     반환: (success: bool, drive_slot_after: int, sensor_slot_after: int)
     """
     print(f"\n{'─'*60}")
-    print(f"  Round {idx}  DriveECU Slot{drive_slot}  SensorECU Slot{sensor_slot}")
+    dl = 'B' if drive_slot == 1 else 'A'
+    sl = 'B' if sensor_slot == 1 else 'A'
+    print(f"  Round {idx}  DriveECU Slot{dl}  SensorECU Slot{sl}")
     print(f"{'─'*60}")
 
     # DriveECU OTA 전 IDLE 확인
