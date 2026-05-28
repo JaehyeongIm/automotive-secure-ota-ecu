@@ -5,22 +5,13 @@ OTA 반복 통합 테스트
 CAN Bus-Off 자동 복구(AutoBusOff=ENABLE) 패치 검증 및
 OTA 타임아웃 발생 임계값 탐색을 위한 반복 스트레스 테스트.
 
-사전 준비:
-    bash ci/build.sh sensor A
-    python3 tools/sign_firmware.py artifacts/sensor_slotA.bin <key> \\
-        --out artifacts/sensor_slotA_signed.bin
-    bash ci/build.sh sensor B
-    python3 tools/sign_firmware.py artifacts/sensor_slotB.bin <key> \\
-        --out artifacts/sensor_slotB_signed.bin
-
-Usage (3회 반복):
+Usage (자동 빌드+서명, 3회 반복):
     python3 ci/ota_stress_test.py \\
         --channel can0 \\
-        --fw-a artifacts/sensor_slotA_signed.bin \\
-        --fw-b artifacts/sensor_slotB_signed.bin \\
+        --key keys/ecdsa_private.pem \\
         --count 3
 
-Usage (5회, CF 간격 0.003s):
+Usage (기존 펌웨어 파일 직접 지정, 5회, CF 간격 0.003s):
     python3 ci/ota_stress_test.py \\
         --channel can0 \\
         --fw-a artifacts/sensor_slotA_signed.bin \\
@@ -29,6 +20,7 @@ Usage (5회, CF 간격 0.003s):
 """
 
 import argparse
+import subprocess
 import sys
 import time
 
@@ -86,6 +78,29 @@ class TimedOTAClient(OTAClient):
 
         print()
         return slow
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+
+def build_firmware(key_path: str) -> tuple:
+    """ci/build.sh + sign_firmware.py로 SlotA/B 펌웨어 빌드 및 서명."""
+    for slot in ("A", "B"):
+        print(f"[BUILD] SensorECU Slot {slot} 빌드 중...", flush=True)
+        subprocess.run(["bash", "ci/build.sh", "sensor", slot], check=True)
+
+        raw    = f"artifacts/sensor_slot{slot}.bin"
+        signed = f"artifacts/sensor_slot{slot}_signed.bin"
+        print(f"[SIGN]  {raw} 서명 중...", flush=True)
+        subprocess.run(
+            ["python3", "tools/sign_firmware.py", raw, key_path, "--out", signed],
+            check=True,
+        )
+
+    with open("artifacts/sensor_slotA_signed.bin", "rb") as f:
+        fw_a = f.read()
+    with open("artifacts/sensor_slotB_signed.bin", "rb") as f:
+        fw_b = f.read()
+    return fw_a, fw_b
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -194,22 +209,28 @@ def main():
     parser.add_argument("--interface", default="socketcan",
                         choices=["slcan", "socketcan"])
     parser.add_argument("--bitrate",   type=int, default=500_000)
-    parser.add_argument("--fw-a",      required=True,
-                        help="Slot A 타겟 서명 펌웨어")
-    parser.add_argument("--fw-b",      required=True,
-                        help="Slot B 타겟 서명 펌웨어")
+    parser.add_argument("--key",       help="ECDSA 개인키 .pem — 지정 시 자동 빌드+서명")
+    parser.add_argument("--fw-a",      help="Slot A 타겟 서명 펌웨어 (--key 미사용 시 필수)")
+    parser.add_argument("--fw-b",      help="Slot B 타겟 서명 펌웨어 (--key 미사용 시 필수)")
     parser.add_argument("--count",     type=int, default=3,
                         help="반복 횟수 (기본: 3)")
     parser.add_argument("--cf-delay",  type=float, default=0.005,
                         help="ISO-TP CF 간격(초) (기본: 0.005)")
     args = parser.parse_args()
 
-    with open(args.fw_a, "rb") as f: fw_a = f.read()
-    with open(args.fw_b, "rb") as f: fw_b = f.read()
+    if args.key:
+        fw_a, fw_b = build_firmware(args.key)
+        fw_a_path, fw_b_path = "artifacts/sensor_slotA_signed.bin", "artifacts/sensor_slotB_signed.bin"
+    else:
+        if not args.fw_a or not args.fw_b:
+            parser.error("--key 없이 실행할 경우 --fw-a 와 --fw-b 가 필요합니다.")
+        with open(args.fw_a, "rb") as f: fw_a = f.read()
+        with open(args.fw_b, "rb") as f: fw_b = f.read()
+        fw_a_path, fw_b_path = args.fw_a, args.fw_b
 
     print(f"[STRESS] OTA 반복 테스트  count={args.count}  cf_delay={args.cf_delay}s")
-    print(f"         fw-a: {args.fw_a}  ({len(fw_a):,} bytes)")
-    print(f"         fw-b: {args.fw_b}  ({len(fw_b):,} bytes)")
+    print(f"         fw-a: {fw_a_path}  ({len(fw_a):,} bytes)")
+    print(f"         fw-b: {fw_b_path}  ({len(fw_b):,} bytes)")
 
     if args.interface == "socketcan":
         bus = can.interface.Bus(interface="socketcan", channel=args.channel)
