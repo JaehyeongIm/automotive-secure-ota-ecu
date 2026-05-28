@@ -141,13 +141,15 @@ OTA 다운로드는 주행 중에도 가능하며, 펌웨어 활성화(재부팅
 
 ```bash
 # Ruby + Ceedling (C 단위 테스트)
+sudo apt install -y ruby-full
 gem install ceedling
+export PATH="$(ruby -e 'puts Gem.user_dir')/bin:$PATH"   # ~/.bashrc 에도 추가
 
 # Python 의존성 (CAN / OTA 통합 테스트)
 pip install python-can
 
 # arm 크로스컴파일러 (자동 빌드 시)
-sudo apt install gcc-arm-none-eabi   # Raspberry Pi / Ubuntu
+sudo apt install -y gcc-arm-none-eabi   # Raspberry Pi / Ubuntu
 # macOS: brew install --cask gcc-arm-embedded
 ```
 

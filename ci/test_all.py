@@ -53,8 +53,9 @@ def run_unit_tests() -> None:
     print(f"{'═'*60}\n")
     if shutil.which("ceedling") is None:
         print("[ERROR] ceedling 을 찾을 수 없습니다.")
-        print("        설치: gem install ceedling")
-        print("        설치 후 PATH에 추가: export PATH=\"$HOME/.local/share/gem/ruby/*/bin:$PATH\"")
+        print("        1) Ruby 설치:  sudo apt install -y ruby-full")
+        print("        2) Ceedling:   gem install ceedling")
+        print("        3) PATH 추가:  export PATH=\"$(ruby -e 'puts Gem.user_dir')/bin:$PATH\"")
         sys.exit(1)
     result = subprocess.run(["ceedling", "test:all"])
     if result.returncode != 0:
