@@ -1,0 +1,44 @@
+---
+:project:
+  :use_exceptions: FALSE
+  :use_test_preprocessor: TRUE
+  :test_file_prefix: test_
+  :build_root: build/test
+
+:paths:
+  :test:
+    - test/unit
+  :source:
+    - SensorECU/Core/Src
+  :include:
+    - test/support
+    - SensorECU/Core/Inc
+  :support:
+    - test/support
+
+:defines:
+  :common:
+    - UNIT_TEST
+
+:cmock:
+  :mock_prefix: mock_
+  :when_no_prototypes: :warn
+  :enforce_strict_ordering: TRUE
+  :plugins:
+    - :ignore
+    - :callback
+
+:flags:
+  :test:
+    :compile:
+      :*:
+        - -std=c99
+        - -Wall
+        - -Wno-unused-parameter
+
+:plugins:
+  :load_paths:
+    - "#{Ceedling.load_path}"
+  :enabled:
+    - stdout_pretty_tests_report
+    - module_generator
