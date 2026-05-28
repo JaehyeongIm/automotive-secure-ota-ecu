@@ -1,4 +1,6 @@
 #include "bootloader.h"
+
+#ifndef UNIT_TEST
 #include "ecdsa_pubkey.h"
 #include "main.h"
 #include <stdio.h>
@@ -51,51 +53,51 @@ static void safe_state(void)
         printf("[BL] Waiting...\r\n");
     }
 }
+#endif /* UNIT_TEST */
 
+/* 메타데이터만으로 부팅 주소를 결정한다.
+   HAL/ECDSA 없이 순수 로직만 포함 — 호스트 단위 테스트 가능. */
+uint32_t bootloader_select_boot_addr(const OTA_Metadata_t *meta)
+{
+    if (meta->magic != METADATA_MAGIC)
+        return SLOT_A_ADDR;
+
+    if (meta->active_slot == 0) {
+        if (meta->slot_a_status == SLOT_CONFIRMED || meta->slot_a_status == SLOT_PENDING)
+            return SLOT_A_ADDR;
+        if (meta->slot_b_status == SLOT_CONFIRMED)
+            return SLOT_B_ADDR;
+        return 0;  /* 두 슬롯 모두 유효하지 않음 → safe_state 진입 */
+    } else {
+        if (meta->slot_b_status == SLOT_CONFIRMED || meta->slot_b_status == SLOT_PENDING)
+            return SLOT_B_ADDR;
+        if (meta->slot_a_status == SLOT_CONFIRMED)
+            return SLOT_A_ADDR;
+        return 0;
+    }
+}
+
+#ifndef UNIT_TEST
 void bootloader_run(void)
 {
     OTA_Metadata_t *meta = (OTA_Metadata_t *)METADATA_ADDR;
-    uint32_t boot_addr;
 
     printf("[BL] Bootloader v1.0\r\n");
 
-    if (meta->magic != METADATA_MAGIC) {
-        printf("[BL] No metadata, defaulting to Slot A\r\n");
-        boot_addr = SLOT_A_ADDR;
-    } else {
+    if (meta->magic == METADATA_MAGIC)
         printf("[BL] active_slot=%lu  A=0x%08lX  B=0x%08lX\r\n",
                meta->active_slot, meta->slot_a_status, meta->slot_b_status);
+    else
+        printf("[BL] No metadata, defaulting to Slot A\r\n");
 
-        if (meta->active_slot == 0) {
-            if (meta->slot_a_status == SLOT_CONFIRMED ||
-                meta->slot_a_status == SLOT_PENDING) {
-                boot_addr = SLOT_A_ADDR;
-                printf("[BL] Slot A selected\r\n");
-            } else if (meta->slot_b_status == SLOT_CONFIRMED) {
-                boot_addr = SLOT_B_ADDR;
-                printf("[BL] Slot A invalid, fallback to Slot B\r\n");
-            } else {
-                safe_state();
-                return;
-            }
-        } else {
-            if (meta->slot_b_status == SLOT_CONFIRMED ||
-                meta->slot_b_status == SLOT_PENDING) {
-                boot_addr = SLOT_B_ADDR;
-                printf("[BL] Slot B selected\r\n");
-            } else if (meta->slot_a_status == SLOT_CONFIRMED) {
-                boot_addr = SLOT_A_ADDR;
-                printf("[BL] Slot B invalid, fallback to Slot A\r\n");
-            } else {
-                safe_state();
-                return;
-            }
-        }
+    uint32_t boot_addr = bootloader_select_boot_addr(meta);
+    if (boot_addr == 0) {
+        safe_state();
+        return;
     }
 
     if (!is_valid_app(boot_addr)) {
         printf("[BL] No valid app at 0x%08lX, trying fallback\r\n", boot_addr);
-        /* PENDING 슬롯이 손상된 경우 반대 슬롯으로 폴백 */
         if (boot_addr == SLOT_B_ADDR && meta->slot_a_status == SLOT_CONFIRMED) {
             boot_addr = SLOT_A_ADDR;
             printf("[BL] Fallback to Slot A\r\n");
@@ -146,3 +148,4 @@ void bootloader_run(void)
 
     jump_to_app(boot_addr);
 }
+#endif /* UNIT_TEST */

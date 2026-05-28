@@ -24,6 +24,7 @@ typedef struct {
     uint32_t slot_b_size;
 } OTA_Metadata_t;
 
-void bootloader_run(void);
+void     bootloader_run(void);
+uint32_t bootloader_select_boot_addr(const OTA_Metadata_t *meta);
 
 #endif /* BOOTLOADER_H */

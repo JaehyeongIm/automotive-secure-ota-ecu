@@ -10,9 +10,11 @@
     - test/unit
   :source:
     - SensorECU/Core/Src
+    - Bootloader/Core/Src
   :include:
     - test/support
     - SensorECU/Core/Inc
+    - Bootloader/Core/Inc
   :support:
     - test/support
 
@@ -35,6 +37,7 @@
         - -std=c99
         - -Wall
         - -Wno-unused-parameter
+        - -DUNIT_TEST
 
 :plugins:
   :load_paths:
