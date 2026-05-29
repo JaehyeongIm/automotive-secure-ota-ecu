@@ -46,6 +46,11 @@ perl -i -pe \
   's|/\S+STM32F446RETX_FLASH\S*\.ld|'"$LD_SCRIPT"'|g' \
   "$BUILD_DIR/makefile"
 
+# -fcyclomatic-complexity 는 CubeIDE 1.16+ 가 생성하는 플래그로,
+# 구버전 arm-none-eabi-gcc 에서 지원하지 않으므로 빌드 전 제거한다.
+find "$BUILD_DIR" -name "*.mk" -exec \
+  perl -i -pe 's/ -fcyclomatic-complexity//g' {} +
+
 make -C "$BUILD_DIR" clean
 make -C "$BUILD_DIR" -j"$(nproc)" all
 
