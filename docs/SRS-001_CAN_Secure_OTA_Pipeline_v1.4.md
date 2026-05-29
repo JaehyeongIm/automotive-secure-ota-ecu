@@ -9,7 +9,7 @@
 | 작성일 | 2026-05-25 |
 | 작성 목적 | Dual ECU 버튼 트리거 직진 주행 + 장애물 회피 OTA 데모 시스템 소프트웨어 요구사항 정의 |
 | 주요 대상 | Raspberry Pi 5 Gateway, STM32F446RE ECU 2대, CAN Bus, Custom Bootloader, RC 차량 데모 플랫폼 |
-| 범위 변경 | 1.7 대비 주행 방식 변경(라인트레이싱 → 버튼 트리거 직진), App v1/v2/v3 3단계 OTA 구조 확정, Uptane 지연 활성화 도입, 장애물 임계값 단일화(10cm) |
+| 범위 변경 | 1.7 대비 주행 방식 변경(라인트레이싱 → 버튼 트리거 직진), App v1/v2 2단계 OTA 구조 확정, Uptane 지연 활성화 도입, 장애물 임계값 단일화(10cm) |
 
 ---
 
@@ -48,7 +48,7 @@
 | A/B Slot 및 Rollback | 비활성 Slot 대상 업데이트, Self-test 기반 Confirmed 처리, 실패 시 자동 복구 |
 | Secure OTA | SHA-256 무결성 검증, ECDSA 서명 검증, Anti-rollback, ECU ID 검증 |
 | 위협 시나리오 검증 | 변조, 위조, 다운그레이드, Replay, 미인증 명령, CAN Flood 공격 방어 검증 |
-| 시스템 실증 | 버튼 트리거 직진 주행 차량 플랫폼을 통한 App v1/v2/v3 OTA 적용 결과 기능 검증 |
+| 시스템 실증 | 버튼 트리거 직진 주행 차량 플랫폼을 통한 App v1/v2 OTA 적용 결과 기능 검증 |
 | 요구사항 추적성 | SRS 요구사항에서 설계, 구현, 테스트, 트러블슈팅까지 양방향 추적 관리 |
 | 계측 기반 검증 | 오실로스코프, 로직분석기, ST-LINK를 활용한 신호 수준 검증 및 원인 분석 |
 
@@ -72,7 +72,7 @@
 10. 전자서명 기반 펌웨어 인증성 검증
 11. Anti-rollback 정책 구현
 12. ECU ID / HW ID 기반 대상 검증
-13. 버튼 트리거 직진 주행 App v1/v2/v3 업데이트 실증 (장애물 감지 반응 단계별 차이 실증)
+13. 버튼 트리거 직진 주행 App v1/v2 업데이트 실증 (장애물 감지 반응 단계별 차이 실증)
 14. 공격자 시나리오 기반 보안 테스트
 15. 정상/비정상 업데이트 로그 수집 및 테스트 리포트 작성
 16. ASPICE-inspired 요구사항 기반 개발 프로세스 적용
@@ -315,8 +315,7 @@
 | FR-DRV-001 | Drive ECU는 TB6612FNG를 통해 좌우 모터를 PWM 제어해야 한다. | Must | PWM 기반 좌우 모터 속도 제어 및 후진 방향 제어가 가능해야 한다. |
 | FR-DRV-002 | Drive ECU는 B1(USER) 버튼 입력을 EXTI 인터럽트로 감지하여 주행을 시작해야 한다. | Must | B1 버튼 누름 후 300ms 디바운스 처리 후 g_button_pressed 플래그가 설정되어 DRIVE_IDLE → DRIVE_RUNNING 전이가 발생해야 한다. |
 | FR-DRV-003 | Drive ECU App v1은 버튼 트리거 직진 주행 중 장애물이 10cm 이내 감지되면 즉시 정지해야 한다. | Must | 주행 시작 후 최대 3000ms 직진하며, 10cm 이하 장애물 감지 시(g_obstacle_flag) 즉시 모터를 정지하고 DRIVE_IDLE로 복귀해야 한다. |
-| FR-DRV-004 | Drive ECU App v2는 30cm 이내 감속 + 10cm 이내 정지 비례제어를 구현해야 한다. | Should | 10~30cm 구간에서 거리에 비례하여 SLOW_SPEED(300)~BASE_SPEED(600) 사이로 속도를 조정하고, 10cm 이하에서 정지 후 DRIVE_IDLE로 복귀해야 한다. |
-| FR-DRV-005 | Drive ECU App v3는 v2 감속 로직에 더해 정지 후 자동 후진 복귀를 구현해야 한다. | Should | 10cm 이하 정지 후 300ms 대기, 600ms 후진(SLOW_SPEED), DRIVE_IDLE 복귀 순서로 동작해야 한다. |
+| FR-DRV-004 | Drive ECU App v2는 v1 정지 후 자동 후진 복귀를 구현해야 한다. | Should | 10cm 이하 정지 후 300ms 대기, 600ms 후진(SLOW_SPEED), DRIVE_IDLE 복귀 순서로 동작해야 한다. |
 | FR-DRV-006 | Drive ECU는 현재 App Version과 Slot 정보를 CAN으로 보고해야 한다. | Must | CAN ID 0x100 heartbeat에 APP_VERSION, 활성 슬롯, 주행 상태, 장애물 상태가 포함되어야 한다. |
 | FR-DRV-007 | Drive ECU는 OTA 다운로드(TransferData) 진행 중에도 주행 기능을 유지해야 한다. | Must | RequestDownload(0x34) 수신 후 g_ota_active=1 구간(Flash Erase ~4초)에만 모터가 정지되며, 그 외 TransferData 구간에서는 drive_update()가 정상 실행되어야 한다. |
 | FR-DRV-008 | Drive ECU는 DRIVE_IDLE 상태 진입 시 g_fw_pending 플래그를 확인하여 재부팅으로 펌웨어를 활성화해야 한다. | Must | TransferExit(0x37) 완료 후 g_fw_pending=1이 설정되고, 다음 DRIVE_IDLE 진입 시 NVIC_SystemReset()이 호출되어 Bootloader가 새 슬롯으로 부팅해야 한다. (Uptane 지연 활성화) |
@@ -328,7 +327,7 @@
 | FR-SEN-001 | Sensor ECU는 HC-SR04 초음파 거리센서 입력을 읽어야 한다. | Must | Trigger/Echo GPIO 방식으로 거리값을 주기적으로 측정할 수 있어야 한다. |
 | FR-SEN-002 | Sensor ECU는 장애물 감지 임계값 10cm를 사용해야 한다. | Must | 측정 거리가 10cm 이하일 때 obstacle_detected=1 및 실제 거리값(cm)을 CAN ID 0x200으로 송신해야 한다. Drive ECU는 이 값으로 g_obstacle_flag 및 g_distance_cm을 갱신한다. |
 | FR-SEN-003 | Sensor ECU는 100ms 주기로 Alive/Heartbeat 메시지를 CAN으로 송신해야 한다. | Should | Drive ECU 또는 Gateway가 300ms 이내 Heartbeat를 수신하지 못하면 Sensor ECU를 dead로 간주할 수 있어야 한다. |
-| FR-SEN-004 | Sensor ECU는 측정한 거리값(cm)을 CAN ID 0x200 페이로드 byte[1:2]에 포함하여 송신해야 한다. | Must | Drive ECU가 수신한 g_distance_cm 값이 Sensor ECU 실측값과 일치해야 한다. Drive ECU의 v2/v3 비례 감속 로직이 이 값을 직접 사용한다. |
+| FR-SEN-004 | Sensor ECU는 측정한 거리값(cm)을 CAN ID 0x200 페이로드 byte[1:2]에 포함하여 송신해야 한다. | Must | Drive ECU가 수신한 g_distance_cm 값이 Sensor ECU 실측값과 일치해야 한다. |
 | FR-SEN-005 | Sensor ECU는 현재 App Version과 Slot 정보를 CAN으로 보고해야 한다. | Must | CAN ID 0x201 heartbeat에 APP_VERSION, 활성 슬롯 정보가 포함되어야 한다. |
 
 ### 7.7 CI/CD 파이프라인 요구사항
@@ -460,7 +459,7 @@ Jenkins 기반 CI/CD 파이프라인은 Raspberry Pi 5에서 운용되며, Git p
 | NFR-MNT-001 | CAN / ISO-TP / UDS 메시지 명세는 문서로 관리해야 한다. | Must | SDD-001 또는 CAN-001에 CAN ID, ISO-TP 프레임 구조, UDS SID/NRC 명세가 포함되어야 한다. |
 | NFR-MNT-002 | Bootloader 상태 전이는 다이어그램으로 문서화해야 한다. | Must | SDD-001에 Bootloader 상태 전이 다이어그램이 포함되어야 한다. |
 | NFR-MNT-003 | 테스트 케이스와 결과는 추적 가능해야 한다. | Must | 요구사항 ID와 테스트 ID가 매핑되어야 한다. |
-| NFR-MNT-004 | App v1/v2/v3 변경점은 릴리즈 노트로 관리해야 한다. | Should | v1(즉시 정지), v2(비례 감속+정지), v3(v2+자동 후진 복귀) 기능 차이가 문서화되어야 한다. |
+| NFR-MNT-004 | App v1/v2 변경점은 릴리즈 노트로 관리해야 한다. | Should | v1(즉시 정지), v2(자동 후진 복귀) 기능 차이가 문서화되어야 한다. |
 
 ### 10.4 안전성 요구사항
 
@@ -721,8 +720,7 @@ STM32F446RE Linker Script 및 실제 구현 기준으로 확정된 파티션.
 | TC-NOR-003 | FR-CAN-002~009 | UDS-style 업데이트 전체 절차 수행 | 새 Slot에 이미지 설치 |
 | TC-NOR-004 | FR-AB-004 | 새 App Self-test 및 Confirm | 새 Slot confirmed 처리 |
 | TC-NOR-005 | FR-DRV-002, FR-DRV-003 | Drive ECU App v1: B1 버튼 누름 → 직진 → 10cm 장애물 즉시 정지 | 버튼 후 주행 시작, 10cm 이하 장애물 감지 시 즉시 모터 정지, DRIVE_IDLE 복귀 |
-| TC-NOR-006 | FR-DRV-004, FR-DRV-007, FR-DRV-008 | App v2 OTA 후: 30cm 감속 + 10cm 정지 비례제어 확인 및 주행 중 다운로드 + IDLE 활성화 | v1 대비 30cm 구간에서 감속 동작 확인, OTA 다운로드 완료 후 DRIVE_IDLE 진입 시 자동 재부팅 및 슬롯 전환 확인 |
-| TC-NOR-007 | FR-DRV-005, FR-SEN-002, FR-SEN-004 | App v3 OTA 후: 감속+정지+자동 후진 복귀 동작 확인 | 장애물 10cm 이하 정지 → 300ms 대기 → 600ms 후진 → DRIVE_IDLE 복귀 순서 동작 확인 |
+| TC-NOR-006 | FR-DRV-004, FR-DRV-007, FR-DRV-008 | App v2 OTA 후: 자동 후진 복귀 동작 확인 및 주행 중 다운로드 + IDLE 활성화 | 장애물 10cm 이하 정지 → 300ms 대기 → 600ms 후진 → DRIVE_IDLE 복귀 순서 동작 확인, OTA 다운로드 완료 후 DRIVE_IDLE 진입 시 자동 재부팅 및 슬롯 전환 확인 |
 
 ### 15.2 실패 복구 테스트 (SWE.6 — 시스템 수준)
 
@@ -876,8 +874,8 @@ TSR-001  (SUP.9)
 5. Hash, Signature, Version, ECU ID 검증이 수행된다.
 6. 검증 성공 후 새 Slot으로 부팅하고 Self-test 후 Confirmed 처리된다.
 7. 업데이트 실패 또는 전원 차단 시 기존 Confirmed Slot으로 복구된다.
-8. Drive ECU App v1(즉시 정지)/v2(비례 감속+정지)/v3(감속+정지+자동 후진)의 장애물 반응 동작 차이가 확인된다.
-9. Sensor ECU의 장애물 거리 메시지(CAN 0x200)가 Drive ECU의 g_distance_cm에 반영되어 v2/v3 비례 감속 로직이 동작한다.
+8. Drive ECU App v1(즉시 정지)/v2(자동 후진 복귀)의 장애물 반응 동작 차이가 확인된다.
+9. Sensor ECU의 장애물 거리 메시지(CAN 0x200)가 Drive ECU의 g_distance_cm에 반영된다.
 9-1. OTA 다운로드 완료 후 펌웨어 활성화가 DRIVE_IDLE 상태에서 자동으로 수행된다. (Uptane 지연 활성화)
 10. 변조, unsigned, downgrade, replay, unauthorized update, CAN flood 공격 시나리오가 거부 또는 안전 실패 처리된다.
 11. 요구사항-설계-구현-테스트 추적성 문서와 테스트 로그가 남는다.
@@ -952,8 +950,8 @@ TSR-001  (SUP.9)
 
 | 날짜 | 작업 내용 | 산출물 |
 |---|---|---|
-| 05/30 ~ 05/31 | Drive ECU App v1(즉시 정지) + App v2(비례 감속) + App v3(감속+후진) 구현, 장애물 임계값 10cm 고정 (FR-DRV-001~008, FR-SEN-002~004) | v1/v2/v3 버튼 트리거 주행 및 장애물 반응 동작 확인 |
-| 06/01 | OTA로 App v1→v2→v3 순차 배포 및 장애물 반응 차이 실증, Uptane 지연 활성화 확인 (FR-DRV-007, FR-DRV-008) | TC-NOR-005~007 PASS |
+| 05/30 ~ 05/31 | Drive ECU App v1(즉시 정지) + App v2(자동 후진 복귀) 구현, 장애물 임계값 10cm 고정 (FR-DRV-001~008, FR-SEN-002~004) | v1/v2 버튼 트리거 주행 및 장애물 반응 동작 확인 |
+| 06/01 | OTA로 App v1→v2 순차 배포 및 장애물 반응 차이 실증, Uptane 지연 활성화 확인 (FR-DRV-007, FR-DRV-008) | TC-NOR-005~006 PASS |
 | 06/02 ~ 06/03 | 보안 공격 시나리오 테스트 10종 수행 (SR-ATK-001~010) | TC-SEC-001~010 PASS |
 | 06/04 | Jenkins Stage 4~5 완성 (서명 자동화 + OTA 자동 배포) (FR-CICD-006~009) | TC-CICD-001~003 PASS |
 | 06/05 ~ 06/06 | 필수 문서 7종 완성 (SAD, SDD, RTM, TP, TR, TSR) + 최종 검토 | 필수 문서 7종 완료 |
@@ -964,7 +962,7 @@ TSR-001  (SUP.9)
 |---|---|---|
 | MS-001 | 2026-05-22 | Bootloader에서 App jump 성공, Jenkins 빌드 파이프라인 동작 |
 | MS-002 | 2026-05-29 | 전체 OTA 흐름 성공 (SHA-256/ECDSA 검증 포함), Rollback 동작 확인 |
-| MS-003 | 2026-06-01 | App v1/v2/v3 OTA 실증 완료 (버튼 트리거 주행 + 장애물 반응 단계별 차이 확인, Uptane 지연 활성화 확인) |
+| MS-003 | 2026-06-01 | App v1/v2 OTA 실증 완료 (버튼 트리거 주행 + 장애물 반응 단계별 차이 확인, Uptane 지연 활성화 확인) |
 | MS-004 | 2026-06-04 | 보안 공격 시나리오 10종 통과, Jenkins 전체 파이프라인 완성 |
 | MS-005 | 2026-06-06 | 필수 문서 7종 완성, 프로젝트 1차 완료 |
 
@@ -1009,4 +1007,5 @@ TSR-001  (SUP.9)
 | 1.5 | 2026-05-16 | Jenkins 기반 CI/CD 파이프라인 요구사항 추가(FR-CICD-001~009), 시스템 구성 다이어그램 업데이트, CI/CD 테스트 케이스 추가(TC-CICD-001~003), RTM 업데이트, Section 21 개발 일정 신규 추가(3주 일정, 마일스톤 5종) |
 | 1.6 | 2026-05-16 | CAN ID 테이블 추가(Section 13.2), ISO-TP/Security Access 파라미터 수치화(Section 6.2, 13.6), 키 관리 요구사항 추가(SR-KEY-001~004), IWDG 8000ms/WRP(FR-BL-012~013), Safe State 정의(NFR-SAFE-004), NFR-PERF-003 ≤10ms 수치화, UVR-001(SWE.4) 필수 문서 추가, TC SWE 레벨 구분, UN R156 Out of Scope 명시 |
 | 2.0 | 2026-05-25 | 주행 방식 전면 변경(라인트레이싱 → 버튼 트리거 직진): FR-DRV 전체 재작성(001~008), 라인센서 제거, B1 USER 버튼 추가, App v1/v2/v3 3단계 OTA 구조 확정(즉시 정지/비례 감속/자동 후진), Uptane 지연 활성화 도입(FR-DRV-007, FR-DRV-008, FR-CICD-007 갱신), 장애물 임계값 단일화 10cm(FR-SEN-002 갱신, FR-SEN-004 재정의), NFR-SAFE-001 갱신(다운로드 중 주행 허용), 성공 기준 §18 item 8~9 갱신, TC-NOR-005~007 갱신, 시스템 개요 §3.1/3.2 갱신 |
+| 2.1 | 2026-05-29 | App 버전 구조 변경: 비례 감속(v2) 제거, 자동 후진 복귀를 v2로 통합. FR-DRV-004 갱신(v2=자동 후진 복귀), FR-DRV-005 삭제, FR-SEN-004 수용 기준 갱신, NFR-MNT-004 갱신, 성공 기준 §18 item 8~9 갱신, TC-NOR-006~007 통합(TC-NOR-006), 일정 §21.2~21.3 갱신 |
 

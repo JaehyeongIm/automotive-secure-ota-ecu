@@ -70,8 +70,7 @@ OTA 다운로드는 주행 중에도 가능하며, 펌웨어 활성화(재부팅
 | 버전 | 동작 |
 |---|---|
 | v1 | 버튼 트리거 직진 주행, 10 cm 이내 장애물 감지 시 즉시 정지 |
-| v2 | 10–30 cm 구간 비례 감속, 10 cm 이하 정지 |
-| v3 | v2 로직 + 정지 후 자동 후진 복귀 (300 ms 대기 → 600 ms 후진) |
+| v2 | v1 로직 + 정지 후 자동 후진 복귀 (300 ms 대기 → 600 ms 후진) |
 
 ---
 
@@ -102,7 +101,7 @@ OTA 다운로드는 주행 중에도 가능하며, 펌웨어 활성화(재부팅
 
 ```
 ├── Bootloader/          STM32 Custom Secure Bootloader
-├── DriveECU/            Drive ECU 펌웨어 (App v1/v2/v3, Slot A/B 링커)
+├── DriveECU/            Drive ECU 펌웨어 (App v1/v2, Slot A/B 링커)
 ├── SensorECU/           Sensor/Body ECU 펌웨어
 ├── tools/
 │   ├── ota_client.py    UDS/ISO-TP OTA 전송 클라이언트
@@ -190,26 +189,22 @@ Phase 1이 실패하면 Phase 2를 진행하지 않습니다.
 
 ### OTA 시연 — App 버전 업데이트
 
-DriveECU App을 v1 → v2 → v3 순서로 OTA하여 주행 동작 변화를 시연합니다.
+DriveECU App을 v1 → v2 순서로 OTA하여 주행 동작 변화를 시연합니다.
 
 | 버전 | 동작 |
 |---|---|
 | v1 | 직진 주행, 10 cm 이내 장애물 감지 시 **즉시 정지** |
-| v2 | 10–30 cm 구간 비례 **감속**, 10 cm 이하 정지 |
-| v3 | v2 로직 + 정지 후 **자동 후진 복귀** (300 ms 대기 → 600 ms 후진) |
+| v2 | v1 로직 + 정지 후 **자동 후진 복귀** (300 ms 대기 → 600 ms 후진) |
 
 ```bash
-# v1 → v2 → v3 순서로 전부 시연
+# v1 → v2 순서로 전부 시연
 python3 ci/demo_ota.py \
     --channel can0 \
     --key <개인키 파일> \
-    --versions 1 2 3
+    --versions 1 2
 
-# 특정 버전만 (예: v3만)
-python3 ci/demo_ota.py --channel can0 --key <개인키 파일> --versions 3
-
-# v2 → v3만
-python3 ci/demo_ota.py --channel can0 --key <개인키 파일> --versions 2 3
+# 특정 버전만 (예: v2만)
+python3 ci/demo_ota.py --channel can0 --key <개인키 파일> --versions 2
 ```
 
 **실행 순서:**
@@ -219,7 +214,7 @@ python3 ci/demo_ota.py --channel can0 --key <개인키 파일> --versions 2 3
 
 | 옵션 | 설명 |
 |---|---|
-| `--versions 1 2 3` | OTA할 버전 (스페이스로 구분, 순서대로 실행) |
+| `--versions 1 2` | OTA할 버전 (스페이스로 구분, 순서대로 실행) |
 | `--cf-delay N` | ISO-TP CF 간격(초) (기본 0.005) |
 | `--interface slcan` | USB-CAN (slcan) 사용 시 |
 
@@ -332,7 +327,7 @@ Jenkins → New Item → Pipeline (또는 기존 Job 설정)
 
 # 2. 커밋 + 푸시
 git add DriveECU/Core/Inc/drive.h
-git commit -m "feat: DriveECU app v3 — 자동 후진 복귀 활성화"
+git commit -m "feat: DriveECU app v2 — 자동 후진 복귀 활성화"
 git push origin main
 
 # 3. Jenkins 파이프라인 자동 실행 확인
