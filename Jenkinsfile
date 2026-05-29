@@ -32,7 +32,42 @@ pipeline {
             }
         }
 
-        // ── 2. DriveECU OTA ────────────────────────────────────────────────────
+        // ── 2. 정적 분석 ──────────────────────────────────────────────────────
+        // 변경된 ECU의 Core/Src만 검사한다. HAL/CMSIS Drivers/는 생성 코드라 제외.
+        // --error-exitcode=1: error 등급 이상 발견 시 파이프라인 중단.
+        // --suppress=missingIncludeSystem: Jenkins 환경에 HAL 헤더가 없어 발생하는
+        //   include not found 경고를 억제한다 (빌드 결과물이 아닌 정적 분석 한계).
+        stage('Static Analysis') {
+            when { expression { env.DRIVE_CHANGED == 'true' || env.SENSOR_CHANGED == 'true' } }
+            steps {
+                script {
+                    if (env.DRIVE_CHANGED == 'true') {
+                        echo '[cppcheck] DriveECU'
+                        sh """
+                            cppcheck \
+                                --error-exitcode=1 \
+                                --suppress=missingIncludeSystem \
+                                --inline-suppr \
+                                -I DriveECU/Core/Inc \
+                                DriveECU/Core/Src
+                        """
+                    }
+                    if (env.SENSOR_CHANGED == 'true') {
+                        echo '[cppcheck] SensorECU'
+                        sh """
+                            cppcheck \
+                                --error-exitcode=1 \
+                                --suppress=missingIncludeSystem \
+                                --inline-suppr \
+                                -I SensorECU/Core/Inc \
+                                SensorECU/Core/Src
+                        """
+                    }
+                }
+            }
+        }
+
+        // ── 3. DriveECU OTA ────────────────────────────────────────────────────
         stage('Flash DriveECU') {
             when { expression { env.DRIVE_CHANGED == 'true' } }
             steps {
@@ -98,7 +133,7 @@ pipeline {
                 }
             }
         }
-        // ── 3. SensorECU OTA ───────────────────────────────────────────────────
+        // ── 4. SensorECU OTA ───────────────────────────────────────────────────
         // DriveECU OTA가 성공한 후 순차 실행한다.
         // 두 ECU를 동시에 OTA하지 않는다 (한쪽 ECU가 OTA 중일 때 차량이 멈춘 상태여야 안전).
         stage('Flash SensorECU') {
