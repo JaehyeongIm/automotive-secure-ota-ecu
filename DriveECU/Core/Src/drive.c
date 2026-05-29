@@ -3,8 +3,8 @@
 #include "main.h"
 #include <stdio.h>
 
-#define BASE_SPEED    400   /* 직진 속도 (0–999) */
-#define SLOW_SPEED    200   /* 감속 속도 — v2, v3 */
+#define BASE_SPEED    500   /* 직진 속도 (0–999) */
+#define SLOW_SPEED    280   /* 감속 속도 — v2, v3 */
 #define STOP_DIST_CM   10   /* 정지 거리 (cm) */
 #define SLOW_DIST_CM   60   /* 감속 시작 거리 (cm) — v2, v3 */
 #define FORWARD_MS   6000   /* 전진 시간 (ms) — 실측 후 캘리브레이션 필요 */
