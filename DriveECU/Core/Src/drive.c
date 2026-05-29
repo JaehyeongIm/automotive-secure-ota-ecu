@@ -10,6 +10,12 @@
 #define FORWARD_MS   6000   /* 전진 시간 (ms) — 실측 후 캘리브레이션 필요 */
 #define REVERSE_MS    600   /* 후진 복귀 시간 (ms) — v3 */
 
+/* 직진 보정: 한쪽으로 쏠릴 때 조정 (+값=해당 모터 더 빠름, 범위 -100~100) */
+#define TRIM_L          0
+#define TRIM_R          0
+/* 소프트 스타트: 출발 후 이 시간(ms) 동안 SLOW_SPEED → 목표 속도로 선형 증가 */
+#define RAMP_MS       400
+
 volatile uint8_t  g_ota_active     = 0;
 volatile uint8_t  g_obstacle_flag  = 0;
 volatile uint8_t  g_driving_state  = 0;
@@ -25,6 +31,23 @@ typedef enum {
 
 static DriveState s_state    = DRIVE_IDLE;
 static uint32_t   s_state_ts = 0;
+
+/* 소프트 스타트 적용 후 트림 보정한 속도로 전진 */
+static void drive_set_fwd(uint16_t target, uint32_t elapsed_ms)
+{
+    uint16_t sp;
+    if (elapsed_ms < RAMP_MS) {
+        sp = SLOW_SPEED + (uint16_t)((uint32_t)(target - SLOW_SPEED) * elapsed_ms / RAMP_MS);
+    } else {
+        sp = target;
+    }
+
+    int32_t l = (int32_t)sp + TRIM_L;
+    int32_t r = (int32_t)sp + TRIM_R;
+    if (l < 0) l = 0;
+    if (r < 0) r = 0;
+    motor_set((uint16_t)l, (uint16_t)r);
+}
 
 void drive_init(void)
 {
@@ -53,9 +76,11 @@ void drive_update(void)
         }
         break;
 
-    case DRIVE_RUNNING:
+    case DRIVE_RUNNING: {
+        uint32_t elapsed = now - s_state_ts;
+
         /* 1m 시간 완료 → 정상 정지 */
-        if (now - s_state_ts >= FORWARD_MS) {
+        if (elapsed >= FORWARD_MS) {
             motor_stop();
             g_driving_state = 0;
             s_state = DRIVE_IDLE;
@@ -72,10 +97,10 @@ void drive_update(void)
             printf("[DRIVE] 장애물(10cm) 감지 → 정지\r\n");
             break;
         }
-        motor_set(BASE_SPEED, BASE_SPEED);
+        drive_set_fwd(BASE_SPEED, elapsed);
 
 #elif APP_VERSION == 2
-        /* 10cm 이내: 정지 / 10~30cm: 거리 비례 감속 / 30cm 이상: 정속 */
+        /* 10cm 이내: 정지 / 10~60cm: 거리 비례 감속 / 60cm 이상: 정속 */
         if (g_distance_cm <= STOP_DIST_CM) {
             motor_stop();
             g_driving_state = 0;
@@ -87,9 +112,9 @@ void drive_update(void)
                 (uint32_t)(BASE_SPEED - SLOW_SPEED)
                 * (g_distance_cm - STOP_DIST_CM)
                 / (SLOW_DIST_CM  - STOP_DIST_CM));
-            motor_set(sp, sp);
+            drive_set_fwd(sp, elapsed);
         } else {
-            motor_set(BASE_SPEED, BASE_SPEED);
+            drive_set_fwd(BASE_SPEED, elapsed);
         }
 
 #elif APP_VERSION == 3
@@ -106,13 +131,14 @@ void drive_update(void)
                 (uint32_t)(BASE_SPEED - SLOW_SPEED)
                 * (g_distance_cm - STOP_DIST_CM)
                 / (SLOW_DIST_CM  - STOP_DIST_CM));
-            motor_set(sp, sp);
+            drive_set_fwd(sp, elapsed);
         } else {
-            motor_set(BASE_SPEED, BASE_SPEED);
+            drive_set_fwd(BASE_SPEED, elapsed);
         }
 #endif
         g_driving_state = 1;
         break;
+    }
 
     case DRIVE_STOPPED:
         /* 300ms 대기 후 후진 시작 (v3 전용) */
