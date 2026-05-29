@@ -230,6 +230,140 @@ python3 ci/demo_ota.py --channel can0 --key <개인키 파일> --versions 2 3
 
 ---
 
+### git push → Jenkins OTA 시연 (핵심 시연)
+
+`git push` 한 번으로 Jenkins가 변경된 ECU를 감지해 자동으로 OTA를 수행합니다.  
+Raspberry Pi에 Jenkins가 실행 중이어야 하며, ngrok으로 GitHub webhook을 수신합니다.
+
+---
+
+#### 1단계 — ngrok 설치 및 실행 (Raspberry Pi)
+
+```bash
+# ngrok 설치
+curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
+sudo apt update && sudo apt install ngrok
+
+# ngrok 인증 (https://dashboard.ngrok.com 에서 authtoken 발급)
+ngrok config add-authtoken <YOUR_AUTHTOKEN>
+
+# Jenkins 포트(8080) 외부 노출
+ngrok http 8080
+```
+
+ngrok 실행 후 출력되는 `Forwarding` URL을 복사합니다.
+
+```
+Forwarding  https://xxxx-xxx-xxx-xxx.ngrok-free.app -> http://localhost:8080
+```
+
+---
+
+#### 2단계 — Jenkins 설정
+
+**Jenkins URL 등록**
+
+Jenkins → Dashboard → Manage Jenkins → System → Jenkins URL
+
+```
+https://xxxx-xxx-xxx-xxx.ngrok-free.app
+```
+
+저장 후 Jenkins를 재시작하지 않아도 됩니다.
+
+**GitHub Plugin 설치 확인**
+
+Manage Jenkins → Plugins → Installed plugins 에서 `GitHub` 플러그인이 있는지 확인.  
+없으면 Available plugins에서 `GitHub` 검색 후 설치.
+
+**OTA 개인키 등록**
+
+Manage Jenkins → Credentials → System → Global → Add Credentials
+
+| 항목 | 값 |
+|---|---|
+| Kind | Secret file |
+| File | `ota-private-key.pem` 업로드 |
+| ID | `ota-private-key` |
+
+---
+
+#### 3단계 — GitHub Webhook 등록
+
+GitHub 레포지토리 → Settings → Webhooks → Add webhook
+
+| 항목 | 값 |
+|---|---|
+| Payload URL | `https://xxxx-xxx-xxx-xxx.ngrok-free.app/github-webhook/` |
+| Content type | `application/json` |
+| Which events | `Just the push event` |
+
+저장 후 Recent Deliveries에서 ✅ 200 응답 확인.
+
+---
+
+#### 4단계 — Jenkins Job 설정
+
+Jenkins → New Item → Pipeline (또는 기존 Job 설정)
+
+**General 탭**
+- ✅ GitHub project → Project url: `https://github.com/<user>/<repo>`
+
+**Build Triggers 탭**
+- ✅ GitHub hook trigger for GITScm polling
+
+**Pipeline 탭**
+- Definition: `Pipeline script from SCM`
+- SCM: Git → Repository URL: `https://github.com/<user>/<repo>.git`
+- Branch: `*/main`
+- Script Path: `Jenkinsfile`
+
+저장.
+
+---
+
+#### 5단계 — 시연 흐름 (개발자 PC에서)
+
+```bash
+# 1. App 버전 수정
+#    DriveECU/Core/Inc/drive.h 에서 APP_VERSION 변경
+#    예: #define APP_VERSION 2  →  3
+
+# 2. 커밋 + 푸시
+git add DriveECU/Core/Inc/drive.h
+git commit -m "feat: DriveECU app v3 — 자동 후진 복귀 활성화"
+git push origin main
+
+# 3. Jenkins 파이프라인 자동 실행 확인
+#    GitHub webhook → ngrok → Jenkins → 빌드 → 서명 → OTA → 슬롯 검증
+```
+
+Jenkins 빌드 콘솔에서 아래 순서로 진행됩니다:
+
+```
+[DriveECU] active=SlotA → target=SlotB
+[BUILD] ...
+[SIGN]  ...
+[OTA]  TransferData → RequestTransferExit
+[DriveECU] OTA 완료: SlotB 부팅 확인
+```
+
+---
+
+#### 파이프라인 동작 조건
+
+| 변경 파일 경로 | DriveECU OTA | SensorECU OTA |
+|---|---|---|
+| `DriveECU/` 하위 파일 | ✅ 실행 | — |
+| `SensorECU/` 하위 파일 | — | ✅ 실행 |
+| 둘 다 변경 | ✅ 실행 | ✅ 실행 (순차) |
+| 그 외 (`ci/`, `docs/` 등) | — | — |
+
+> ngrok 무료 플랜은 재시작 시 URL이 바뀝니다. 바뀔 때마다 GitHub Webhook URL을 업데이트하거나, ngrok 유료 플랜의 고정 도메인을 사용하세요.
+
+---
+
 ## 문서
 
 - [SRS-001](docs/SRS-001_CAN_Secure_OTA_Pipeline_v1.4.md) — 소프트웨어 요구사항 명세서

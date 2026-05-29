@@ -24,8 +24,8 @@ pipeline {
                         script: 'git diff --name-only HEAD~1 HEAD',
                         returnStdout: true
                     ).trim()
-                    env.DRIVE_CHANGED  = 'false'
-                    env.SENSOR_CHANGED = 'true'
+                    env.DRIVE_CHANGED  = changed.contains('DriveECU/')  ? 'true' : 'false'
+                    env.SENSOR_CHANGED = changed.contains('SensorECU/') ? 'true' : 'false'
                     echo "DriveECU changed:  ${env.DRIVE_CHANGED}"
                     echo "SensorECU changed: ${env.SENSOR_CHANGED}"
                 }
