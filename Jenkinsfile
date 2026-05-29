@@ -65,10 +65,9 @@ pipeline {
                             artifacts/drive_slot${target}_signed.bin
                     """
 
-                    // ECU 재부팅 대기 후 CAN 헤더에서 슬롯 전환 확인
-                    sleep 10
+                    // 재부팅 완료 후 슬롯 전환 확인 (2-phase: heartbeat 소멸 → 복구)
                     def newSlot = sh(
-                        script: "python3 ci/read_slot.py --ecu drive --channel ${CAN_IF}",
+                        script: "python3 ci/read_slot.py --ecu drive --channel ${CAN_IF} --wait-reboot",
                         returnStdout: true
                     ).trim()
                     if (newSlot != target) {
@@ -112,9 +111,8 @@ pipeline {
                             artifacts/sensor_slot${target}_signed.bin
                     """
 
-                    sleep 10
                     def newSlot = sh(
-                        script: "python3 ci/read_slot.py --ecu sensor --channel ${CAN_IF}",
+                        script: "python3 ci/read_slot.py --ecu sensor --channel ${CAN_IF} --wait-reboot",
                         returnStdout: true
                     ).trim()
                     if (newSlot != target) {
