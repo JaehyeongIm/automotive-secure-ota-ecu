@@ -32,7 +32,16 @@ pipeline {
             }
         }
 
-        // ── 2. 정적 분석 ──────────────────────────────────────────────────────
+        // ── 2. 단위 테스트 ────────────────────────────────────────────────────
+        // ceedling test:all 실패 시 이후 모든 스테이지(정적분석·빌드·OTA)를 차단한다.
+        stage('Unit Tests') {
+            when { expression { env.DRIVE_CHANGED == 'true' || env.SENSOR_CHANGED == 'true' } }
+            steps {
+                sh 'ceedling test:all'
+            }
+        }
+
+        // ── 3. 정적 분석 ──────────────────────────────────────────────────────
         // 변경된 ECU의 Core/Src만 검사한다. HAL/CMSIS Drivers/는 생성 코드라 제외.
         // --error-exitcode=1: error 등급 이상 발견 시 파이프라인 중단.
         // --suppress=missingIncludeSystem: Jenkins 환경에 HAL 헤더가 없어 발생하는
@@ -67,7 +76,7 @@ pipeline {
             }
         }
 
-        // ── 3. DriveECU OTA ────────────────────────────────────────────────────
+        // ── 4. DriveECU OTA ────────────────────────────────────────────────────
         stage('Flash DriveECU') {
             when { expression { env.DRIVE_CHANGED == 'true' } }
             steps {
@@ -133,7 +142,7 @@ pipeline {
                 }
             }
         }
-        // ── 4. SensorECU OTA ───────────────────────────────────────────────────
+        // ── 5. SensorECU OTA ───────────────────────────────────────────────────
         // DriveECU OTA가 성공한 후 순차 실행한다.
         // 두 ECU를 동시에 OTA하지 않는다 (한쪽 ECU가 OTA 중일 때 차량이 멈춘 상태여야 안전).
         stage('Flash SensorECU') {
