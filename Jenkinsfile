@@ -58,11 +58,32 @@ pipeline {
 
                     // UDS/ISO-TP over CAN (0x7E0→0x7E8) 으로 펌웨어 전송
                     sh """
+                        echo '=== [DriveECU] CAN 상태 (UDS 전송 전) ==='
+                        ip -details -stats link show ${CAN_IF} || true
+
+                        candump -t a ${CAN_IF} > artifacts/can_dump_drive.log 2>&1 &
+                        CANDUMP_PID=\$!
+                        echo "candump PID: \$CANDUMP_PID"
+
+                        set +e
                         python3 tools/ota_client.py \
                             --ecu drive \
                             --channel ${CAN_IF} \
                             --interface socketcan \
                             artifacts/drive_slot${target}_signed.bin
+                        OTA_EXIT=\$?
+                        set -e
+
+                        kill \$CANDUMP_PID 2>/dev/null || true
+                        wait \$CANDUMP_PID 2>/dev/null || true
+
+                        echo '=== [DriveECU] CAN 메시지 덤프 (전송 중) ==='
+                        cat artifacts/can_dump_drive.log || true
+
+                        echo '=== [DriveECU] CAN 상태 (UDS 전송 후) ==='
+                        ip -details -stats link show ${CAN_IF} || true
+
+                        exit \$OTA_EXIT
                     """
 
                     // 재부팅 완료 후 슬롯 전환 확인 (2-phase: heartbeat 소멸 → 복구)
@@ -103,12 +124,33 @@ pipeline {
 
                     // UDS/ISO-TP over CAN (0x7E1→0x7E9) 으로 펌웨어 전송
                     sh """
+                        echo '=== [SensorECU] CAN 상태 (UDS 전송 전) ==='
+                        ip -details -stats link show ${CAN_IF} || true
+
+                        candump -t a ${CAN_IF} > artifacts/can_dump_sensor.log 2>&1 &
+                        CANDUMP_PID=\$!
+                        echo "candump PID: \$CANDUMP_PID"
+
+                        set +e
                         python3 tools/ota_client.py \
                             --ecu sensor \
                             --channel ${CAN_IF} \
                             --interface socketcan \
                             --cf-delay 0.005 \
                             artifacts/sensor_slot${target}_signed.bin
+                        OTA_EXIT=\$?
+                        set -e
+
+                        kill \$CANDUMP_PID 2>/dev/null || true
+                        wait \$CANDUMP_PID 2>/dev/null || true
+
+                        echo '=== [SensorECU] CAN 메시지 덤프 (전송 중) ==='
+                        cat artifacts/can_dump_sensor.log || true
+
+                        echo '=== [SensorECU] CAN 상태 (UDS 전송 후) ==='
+                        ip -details -stats link show ${CAN_IF} || true
+
+                        exit \$OTA_EXIT
                     """
 
                     def newSlot = sh(
@@ -132,8 +174,8 @@ pipeline {
             echo '파이프라인 실패 — ECU는 이전 펌웨어 유지'
         }
         always {
-            // 서명된 바이너리를 Jenkins 빌드 아티팩트로 보관
-            archiveArtifacts artifacts: 'artifacts/*.bin', allowEmptyArchive: true
+            // 서명된 바이너리 및 CAN 덤프 로그를 Jenkins 빌드 아티팩트로 보관
+            archiveArtifacts artifacts: 'artifacts/*.bin, artifacts/can_dump_*.log', allowEmptyArchive: true
         }
     }
 }
