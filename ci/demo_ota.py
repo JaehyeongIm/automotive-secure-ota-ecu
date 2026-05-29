@@ -7,16 +7,12 @@ DriveECU App 버전 OTA 시연 테스트
 Usage (v1 단독):
     python3 ci/demo_ota.py --channel can0 --key ota-private-key.pem --versions 1
 
-Usage (v1 → v2 → v3 순서로):
-    python3 ci/demo_ota.py --channel can0 --key ota-private-key.pem --versions 1 2 3
-
-Usage (v2 → v3만):
-    python3 ci/demo_ota.py --channel can0 --key ota-private-key.pem --versions 2 3
+Usage (v1 → v2 순서로):
+    python3 ci/demo_ota.py --channel can0 --key ota-private-key.pem --versions 1 2
 
 버전 동작:
   v1: 직진 + 10 cm 장애물 감지 시 즉시 정지
-  v2: 10–30 cm 비례 감속 + 10 cm 정지
-  v3: v2 감속 + 정지 후 자동 후진 복귀
+  v2: 직진 + 10 cm 장애물 감지 시 정지 후 자동 후진 복귀
 """
 
 import argparse
@@ -38,8 +34,7 @@ HB_DRIVE_IDX     = 2   # data[2] = driving state (0=idle)
 DRIVE_H          = "DriveECU/Core/Inc/drive.h"
 VERSION_DESC     = {
     1: "직진 + 10 cm 장애물 감지 시 즉시 정지",
-    2: "10–30 cm 비례 감속 + 10 cm 정지",
-    3: "v2 감속 + 정지 후 자동 후진 복귀",
+    2: "직진 + 10 cm 장애물 감지 시 정지 후 자동 후진 복귀",
 }
 
 REBOOT_WAIT      = 45.0
@@ -217,9 +212,9 @@ def main():
     parser.add_argument("--key",       required=True,
                         help="ECDSA 개인키 .pem")
     parser.add_argument("--versions",  type=int, nargs="+",
-                        choices=[1, 2, 3], required=True,
-                        metavar="{1,2,3}",
-                        help="OTA할 버전 (예: --versions 1 2 3)")
+                        choices=[1, 2], required=True,
+                        metavar="{1,2}",
+                        help="OTA할 버전 (예: --versions 1 2)")
     parser.add_argument("--cf-delay",  type=float, default=0.005,
                         help="ISO-TP CF 간격(초) (기본: 0.005)")
     args = parser.parse_args()
