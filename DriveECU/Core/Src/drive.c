@@ -13,8 +13,11 @@
 /* 직진 보정: 한쪽으로 쏠릴 때 조정 (+값=해당 모터 더 빠름, 범위 -100~100) */
 #define TRIM_L          0
 #define TRIM_R          0
-/* 소프트 스타트: 출발 후 이 시간(ms) 동안 SLOW_SPEED → 목표 속도로 선형 증가 */
-#define RAMP_MS       400
+/* 킥 스타트: 정지 마찰을 동시에 극복하도록 출발 순간 짧게 고 PWM 인가 */
+#define KICK_SPEED    850
+#define KICK_MS        25
+/* 킥 이후 SLOW_SPEED → 목표 속도로 선형 증가하는 시간 (ms) */
+#define RAMP_MS       500
 
 volatile uint8_t  g_ota_active     = 0;
 volatile uint8_t  g_obstacle_flag  = 0;
@@ -32,12 +35,15 @@ typedef enum {
 static DriveState s_state    = DRIVE_IDLE;
 static uint32_t   s_state_ts = 0;
 
-/* 소프트 스타트 적용 후 트림 보정한 속도로 전진 */
+/* 킥 스타트 → 램프업 → 정속 순으로 전진 속도 결정 후 트림 보정 */
 static void drive_set_fwd(uint16_t target, uint32_t elapsed_ms)
 {
     uint16_t sp;
-    if (elapsed_ms < RAMP_MS) {
-        sp = SLOW_SPEED + (uint16_t)((uint32_t)(target - SLOW_SPEED) * elapsed_ms / RAMP_MS);
+    if (elapsed_ms < KICK_MS) {
+        sp = KICK_SPEED;
+    } else if (elapsed_ms < KICK_MS + RAMP_MS) {
+        uint32_t t = elapsed_ms - KICK_MS;
+        sp = SLOW_SPEED + (uint16_t)((uint32_t)(target - SLOW_SPEED) * t / RAMP_MS);
     } else {
         sp = target;
     }

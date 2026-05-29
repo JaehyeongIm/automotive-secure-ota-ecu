@@ -2,7 +2,7 @@
 #include <stdint.h>
 
 /* v1=직진+정지(10cm)  v2=감속(30cm)+정지(10cm)  v3=v2+자동후진복귀 */
-#define APP_VERSION 1
+#define APP_VERSION 2
 
 extern volatile uint8_t  g_ota_active;      /* OTA 세션 중 모터 정지 */
 extern volatile uint8_t  g_obstacle_flag;   /* CAN 0x200 data[0]: 장애물 플래그 */
