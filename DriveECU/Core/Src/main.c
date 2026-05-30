@@ -93,9 +93,8 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
   extern uint32_t g_pfnVectors;
-  __enable_irq();           /* 부트로더가 __disable_irq() 후 점프하므로 재활성화 */
-  SCB->VTOR = (uint32_t)&g_pfnVectors; /* 링커 심볼로 슬롯 무관하게 올바른 벡터 테이블 주소 설정 */
-
+  __enable_irq();
+  SCB->VTOR = (uint32_t)&g_pfnVectors;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/

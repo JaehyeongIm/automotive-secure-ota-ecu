@@ -26,19 +26,8 @@ python tools/ota_client.py --channel /dev/tty.usbmodem2069368D39451 DriveECU/Deb
 
 ### 진단 과정
 
-#### 1단계 — 포트 혼동
 
-처음에 CANable 포트를 잘못 지정했다.
-
-| 포트 | 실제 장치 |
-|---|---|
-| `/dev/tty.usbmodem21103` | DriveECU ST-Link UART |
-| `/dev/tty.usbmodem21203` | SensorECU ST-Link UART |
-| `/dev/tty.usbmodem2069368D39451` | **CANable (slcan)** ← 올바른 포트 |
-
-`ls /dev/tty.usb*` 명령으로 포트를 구분해야 한다.
-
-#### 2단계 — CAN 버스 모니터링
+#### 1단계 — CAN 버스 모니터링
 
 `can_monitor.py`로 버스 전체를 모니터링한 결과:
 
@@ -50,7 +39,7 @@ python tools/ota_client.py --channel /dev/tty.usbmodem2069368D39451 DriveECU/Deb
 - **0x201 (SensorECU)**: 정상 100ms 주기 송신 ✅
 - **0x100 (DriveECU)**: 버스에 전혀 없음 ❌
 
-#### 3단계 — ST-LINK 디버거로 MCU 내부 상태 확인
+#### 2단계 — ST-LINK 디버거로 MCU 내부 상태 확인
 
 CubeIDE Expressions 창에서 확인한 값:
 
@@ -64,7 +53,7 @@ CubeIDE Expressions 창에서 확인한 값:
 
 CAN, TIM2, NVIC 모두 정상으로 보였으나 TIM2 콜백 브레이크포인트가 걸리지 않음.
 
-#### 4단계 — 인터럽트 벡터 추적
+#### 3단계 — 인터럽트 벡터 추적
 
 Resume 후 Suspend로 강제 정지했을 때 콜스택:
 
