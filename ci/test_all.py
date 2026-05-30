@@ -23,6 +23,7 @@ Usage (OTA만):
 """
 
 import argparse
+import re
 import shutil
 import subprocess
 import sys
@@ -58,25 +59,45 @@ def run_unit_tests() -> str:
         print("        2) Ceedling:   gem install ceedling")
         print("        3) PATH 추가:  export PATH=\"$(ruby -e 'puts Gem.user_dir')/bin:$PATH\"")
         sys.exit(1)
-    result = subprocess.run(["ceedling", "test:all"],
-                            capture_output=True, text=True)
-    combined = result.stdout + result.stderr
 
+    # Unity 출력 형식: "test_file.c:LINE:test_name:PASS|FAIL|IGNORE[:message]"
+    result_re = re.compile(r'^\S+\.c:\d+:(\w+):(PASS|FAIL|IGNORE)(.*)')
+
+    proc = subprocess.Popen(
+        ["ceedling", "test:all"],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True,
+    )
+    all_lines: list[str] = []
+    while True:
+        line = proc.stdout.readline()
+        if not line:
+            break
+        stripped = line.rstrip()
+        all_lines.append(stripped)
+        m = result_re.match(stripped)
+        if m:
+            name, result, detail = m.groups()
+            label = f"[{result}]"
+            suffix = f"  {detail.strip().lstrip(':')}" if detail.strip() else ""
+            print(f"  {label:<8} {name}{suffix}")
+    proc.wait()
+
+    combined = "\n".join(all_lines)
     summary = _parse_ceedling_summary(combined)
 
-    if result.returncode != 0:
+    if proc.returncode != 0:
         print(_extract_section(combined, "FAILED TEST SUMMARY"))
         print(f"\n[FAIL] 단위 테스트 실패 — OTA 테스트를 진행하지 않습니다.")
         print(summary)
-        sys.exit(result.returncode)
+        sys.exit(proc.returncode)
 
-    print(f"[PASS] 단위 테스트 완료")
+    print(f"\n[PASS] 단위 테스트 완료")
     return summary
 
 
 def _parse_ceedling_summary(output: str) -> str:
     """ceedling 출력에서 TESTED/PASSED/FAILED/IGNORED 값을 추출."""
-    import re
     parts = {}
     for key in ("TESTED", "PASSED", "FAILED", "IGNORED"):
         m = re.search(rf'{key}[:\s]+(\d+)', output)
@@ -239,8 +260,9 @@ def run_round(bus: can.BusABC, idx: int,
               cf_delay: float) -> tuple:
     """
     1라운드: DriveECU OTA → SensorECU OTA
-    반환: (success: bool, drive_slot_after: int, sensor_slot_after: int)
+    반환: (success: bool, drive_slot_after: int, sensor_slot_after: int, elapsed: float)
     """
+    t_round = time.monotonic()
     print(f"\n{'─'*60}")
     dl = 'B' if drive_slot == 1 else 'A'
     sl = 'B' if sensor_slot == 1 else 'A'
@@ -257,11 +279,13 @@ def run_round(bus: can.BusABC, idx: int,
     ok_d, drive_slot  = run_ota_one(bus, 'drive',  fw_da, fw_db, cf_delay, drive_slot)
     ok_s, sensor_slot = run_ota_one(bus, 'sensor', fw_sa, fw_sb, cf_delay, sensor_slot)
 
+    elapsed = time.monotonic() - t_round
     success = ok_d and ok_s
     tag     = "PASS" if success else "FAIL"
     print(f"\n  Round {idx}: {tag}  "
-          f"drive={'OK' if ok_d else 'NG'}  sensor={'OK' if ok_s else 'NG'}")
-    return success, drive_slot, sensor_slot
+          f"drive={'OK' if ok_d else 'NG'}  sensor={'OK' if ok_s else 'NG'}"
+          f"  ({elapsed:.1f}s)")
+    return success, drive_slot, sensor_slot, elapsed
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -339,17 +363,17 @@ def main():
         print(f" DriveECU=Slot{drive_slot}  SensorECU=Slot{sensor_slot}")
 
         for i in range(1, args.count + 1):
-            ok, drive_slot, sensor_slot = run_round(
+            ok, drive_slot, sensor_slot, elapsed = run_round(
                 bus, i, drive_slot, sensor_slot,
                 fw_da, fw_db, fw_sa, fw_sb, args.cf_delay,
             )
-            results.append((i, ok))
+            results.append((i, ok, elapsed))
 
     finally:
         bus.shutdown()
 
     # ── 최종 요약 ──────────────────────────────────────────────────────────────
-    passed = sum(1 for _, ok in results if ok)
+    passed = sum(1 for _, ok, _ in results if ok)
     print(f"\n{'═'*60}")
     print(f"  최종 결과")
     print(f"{'═'*60}")
@@ -357,8 +381,8 @@ def main():
         print(f"  [단위 테스트]")
         print(unit_summary)
     print(f"\n  [OTA 통합 테스트]  ({args.count}라운드 × 2 ECU)")
-    for i, ok in results:
-        print(f"  Round {i:2d}: {'PASS' if ok else 'FAIL'}")
+    for i, ok, elapsed in results:
+        print(f"  Round {i:2d}: {'PASS' if ok else 'FAIL'}  ({elapsed:.1f}s)")
     print(f"\n  OTA 합계: {passed}/{args.count} 라운드 통과")
     print(f"{'═'*60}")
 
