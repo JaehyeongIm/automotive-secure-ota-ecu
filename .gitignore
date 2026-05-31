@@ -45,6 +45,7 @@ jenkins_workspace/
 # STM32CubeIDE / STM32CubeMX
 *.ioc
 Release/
+Debug/
 *.launch
 .cproject
 .project
