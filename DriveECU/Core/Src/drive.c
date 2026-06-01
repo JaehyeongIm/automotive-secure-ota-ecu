@@ -28,10 +28,11 @@
  * 2) 낮은 속도 유지로 차체 자세 안정화
  * 3) 목표 속도까지 선형 램프업
  */
-#define KICK_SPEED      820
-#define KICK_MS          40
-#define HOLD_MS         120
-#define RAMP_MS         600
+#define KICK_SPEED      999  /* 정지 마찰 극복 — 최대 출력 (820으로는 간헐적 출발 불발) */
+#define KICK_MS         250  /* 킥 지속 — 차체가 실제로 구르기 시작할 시간 (40ms는 너무 짧음) */
+#define LAUNCH_FLOOR    620  /* 킥 이후 유지 최저 출력 — 구름저항 위. 멈추면 ↑, 너무 튀면 ↓ */
+#define HOLD_MS         150
+#define RAMP_MS         500
 
 /* 가감속 변화량 제한 — 거리 변화나 시작 직후의 급격한 요잉 완화 */
 #define PWM_STEP_UP      90
@@ -110,12 +111,12 @@ static void drive_set_fwd(uint16_t target, uint32_t elapsed_ms)
         trim_l = LAUNCH_TRIM_L;
         trim_r = LAUNCH_TRIM_R;
     } else if (elapsed_ms < KICK_MS + HOLD_MS) {
-        base_pwm = SLOW_SPEED;
+        base_pwm = LAUNCH_FLOOR;
         trim_l = LAUNCH_TRIM_L;
         trim_r = LAUNCH_TRIM_R;
     } else if (elapsed_ms < KICK_MS + HOLD_MS + RAMP_MS) {
         uint32_t t = elapsed_ms - KICK_MS - HOLD_MS;
-        base_pwm = (uint16_t)lerp_i32(SLOW_SPEED, target, t, RAMP_MS);
+        base_pwm = (uint16_t)lerp_i32(LAUNCH_FLOOR, target, t, RAMP_MS);
         trim_l = lerp_i32(LAUNCH_TRIM_L, CRUISE_TRIM_L, t, RAMP_MS);
         trim_r = lerp_i32(LAUNCH_TRIM_R, CRUISE_TRIM_R, t, RAMP_MS);
     } else {
