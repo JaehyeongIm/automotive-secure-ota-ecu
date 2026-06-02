@@ -8,7 +8,7 @@
 
 ---
 
-### 현상
+### D2. 문제 정의 — 현상
 
 SensorECU OTA가 아래 두 형태로 불규칙하게 실패했다.
 
@@ -96,7 +96,7 @@ SensorECU OTA가 아래 두 형태로 불규칙하게 실패했다.
 
 ---
 
-### 최종 원인
+### D4. 근본 원인 (최종 원인)
 
 근본 원인은 CAN 타이밍이 아니라 **SensorECU slot 산출물 생성 오류**였다.
 
@@ -275,7 +275,7 @@ Slot B를 부팅하는데 reset handler PC가 `0x080138CD` 인 것은, Slot B �
 
 ---
 
-### 수정 내용
+### D5–D6. 시정 조치
 
 `ci/build.sh`에서 shared build dir에 남아 있는 stale `.bin` 을 재사용하지 않도록 수정했다.
 
@@ -302,7 +302,7 @@ arm-none-eabi-objcopy -O binary "$BUILD_DIR/$PROJ.elf" "$BUILD_DIR/$PROJ.bin"
 
 ---
 
-### 검증 결과
+### D5–D6. 검증 결과
 
 2026-05-28 재검증:
 
@@ -401,7 +401,7 @@ CAN 분석 전에 먼저 아래를 확인한다.
 
 ---
 
-### 재발 방지 대책
+### D7. 재발 방지 대책
 
 #### 1. Build 파이프라인 방어
 
@@ -440,4 +440,4 @@ CAN 분석 전에 먼저 아래를 확인한다.
 
 ### 관련 문서
 
-- [phase8_no_heartbeat_after_failed_ota.md](phase8_no_heartbeat_after_failed_ota.md) — 같은 빌드 문제에서 파생된 heartbeat 소실 증상
+- [ISS-OTA-005_no-heartbeat-after-failed-ota.md](ISS-OTA-005_no-heartbeat-after-failed-ota.md) — 같은 빌드 문제에서 파생된 heartbeat 소실 증상

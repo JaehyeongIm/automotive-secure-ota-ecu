@@ -1,6 +1,6 @@
 # Troubleshooting Log
 
-## Phase 4 — DriveECU 부트로더 연동 후 CAN 인터럽트 완전 불능
+## Phase 4 — DriveECU 부트로더 연동 후 CAN 인터럽트 완전 불능 (ISS-BL-001)
 
 **날짜:** 2026-05-18 ~ 2026-05-19
 **상태:** ✅ 해결됨
@@ -8,7 +8,7 @@
 
 ---
 
-### 초기 현상
+### D2. 문제 정의 — 초기 현상
 
 ```
 python tools/ota_client.py --channel /dev/tty.usbmodem2069368D39451 DriveECU/Debug/DriveECU_slotB.bin
@@ -24,7 +24,7 @@ python tools/ota_client.py --channel /dev/tty.usbmodem2069368D39451 DriveECU/Deb
 
 ---
 
-### 진단 과정
+### D4. 근본 원인 분석 — 진단 과정
 
 
 #### 1단계 — CAN 버스 모니터링
@@ -68,7 +68,7 @@ TIM2 인터럽트가 발생했는데 DriveECU의 `TIM2_IRQHandler` 대신 부트
 
 ---
 
-### 근본 원인 (총 3개, 순서대로 발견)
+### D4. 근본 원인 (총 3개, 순서대로 발견)
 
 #### 원인 1 — VTOR 오설정 (VECT_TAB_OFFSET = 0x00000000 기본값)
 
@@ -200,7 +200,7 @@ SCB->VTOR = 0x08010000U;
 
 ---
 
-### 최종 수정 코드
+### D5–D6. 시정 조치 (최종 수정 코드)
 
 `DriveECU/Core/Src/main.c`:
 ```c
@@ -239,7 +239,7 @@ int main(void)
 
 ---
 
-### 현상
+### D2. 문제 정의 — 현상 (Phase 4.5)
 
 Phase 4에서 CAN 통신을 복구한 뒤, OTA E2E 테스트를 위해 Slot B 빌드로 전환하는 과정에서 CAN 통신이 다시 망가졌다.
 
@@ -251,7 +251,7 @@ Phase 4에서 CAN 통신을 복구한 뒤, OTA E2E 테스트를 위해 Slot B �
 
 ---
 
-### 근본 원인 — 슬롯 주소 하드코딩
+### D4. 근본 원인 — 슬롯 주소 하드코딩
 
 `SCB->VTOR = 0x08010000U` 방식은 Slot A 주소를 소스에 직접 기록하므로, 링커 스크립트만 Slot B로 바꾸면 VTOR와 실제 바이너리 배치 주소가 불일치한다. 슬롯을 전환할 때마다 세 군데(링커 스크립트, VECT_TAB_OFFSET, SCB->VTOR)를 동시에 맞춰야 하므로 실수가 발생하기 쉽다.
 
@@ -264,7 +264,7 @@ Slot B 링커 스크립트 변경 시 수정이 필요한 위치:
 
 ---
 
-### 해결 — `g_pfnVectors` 링커 심볼 활용
+### D5–D6. 시정 조치 — `g_pfnVectors` 링커 심볼 활용
 
 하드코딩 대신 startup 파일의 벡터 테이블 심볼 주소를 직접 사용.
 
@@ -285,7 +285,7 @@ SCB->VTOR = (uint32_t)&g_pfnVectors;
 
 ---
 
-### 해결 확인
+### D5–D6. 검증 (해결 확인)
 
 리셋 버튼 후 정상 동작:
 
@@ -307,7 +307,7 @@ SCB->VTOR = (uint32_t)&g_pfnVectors;
 
 ---
 
-### 디버깅 시 주의사항
+### D7. 재발 방지 (디버깅 시 주의사항)
 
 **IWDG와 브레이크포인트:**
 브레이크포인트에서 8초 이상 멈추면 IWDG 만료로 MCU 리셋. 디버깅 시 임시 주석 처리 가능하나 완료 후 반드시 복원.

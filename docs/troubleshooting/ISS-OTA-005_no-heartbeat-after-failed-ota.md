@@ -14,7 +14,7 @@
 
 이번 phase 8 이슈의 최종 원인, 오진했던 가설, 진단 로그 추가 과정, 수정, 재발 방지 대책의 정본은 아래 문서에 정리한다.
 
-- [phase8_sensorECU_ota_random_timeout.md](phase8_sensorECU_ota_random_timeout.md)
+- [ISS-OTA-004_sensor-ota-random-timeout.md](ISS-OTA-004_sensor-ota-random-timeout.md)
 
 ---
 
@@ -111,4 +111,4 @@ heartbeat가 안 돌아오면 아래 순서로 먼저 본다.
 
 ### 정본 문서
 
-- [phase8_sensorECU_ota_random_timeout.md](phase8_sensorECU_ota_random_timeout.md) — phase 8 전체 분석, 최종 원인, 해결, 재발 방지 대책
+- [ISS-OTA-004_sensor-ota-random-timeout.md](ISS-OTA-004_sensor-ota-random-timeout.md) — phase 8 전체 분석, 최종 원인, 해결, 재발 방지 대책

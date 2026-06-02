@@ -6,7 +6,7 @@
 
 ---
 
-### 현상
+### D2. 문제 정의 — 현상
 
 RPi5에서 A/B OTA + ECDSA 서명 검증 성공 후 Slot B 펌웨어가 부팅됐으나 CAN 통신이 완전히 동작하지 않는다.
 
@@ -17,7 +17,7 @@ RPi5에서 A/B OTA + ECDSA 서명 검증 성공 후 Slot B 펌웨어가 부팅�
 
 ---
 
-### 재현 절차
+### D2. 재현 절차
 
 1. STM32CubeProgrammer로 Sector 2(0x08008000, Metadata) erase → 메타데이터 초기화
 2. Slot A(기본) 부팅, CAN 정상 동작 확인
@@ -39,7 +39,7 @@ RPi5에서 A/B OTA + ECDSA 서명 검증 성공 후 Slot B 펌웨어가 부팅�
 
 ---
 
-### 배제된 원인
+### D4. 근본 원인 분석 — 배제된 원인 (Is–Is Not)
 
 | 가설 | 배제 근거 |
 |---|---|
@@ -51,7 +51,7 @@ RPi5에서 A/B OTA + ECDSA 서명 검증 성공 후 Slot B 펌웨어가 부팅�
 
 ---
 
-### 근본 원인
+### D4. 근본 원인
 
 **`__enable_irq()` 누락 — 인터럽트 전역 비활성 상태로 Slot B 진입**
 
@@ -74,7 +74,7 @@ Slot B 바이너리(May 18 빌드)는 `USER CODE BEGIN 1`에 `__enable_irq()` �
 
 ---
 
-### 해결
+### D5–D6. 시정 조치 & 검증
 
 `SlotB/DriveECU.bin` (May 21 빌드, `__enable_irq()` 포함) OTA 후 정상 동작 확인:
 
@@ -180,4 +180,4 @@ if (now - s_last_tick >= 3000) {
 ### 관련 문서
 
 - [구현절차.md](../구현절차.md) — Phase 5B 상태
-- [phase5_bootloader_fallback_pending_invalid.md](phase5_bootloader_fallback_pending_invalid.md) — 직전 트러블슈팅 (Bootloader 폴백 버그)
+- [ISS-BL-002_fallback-pending-invalid.md](ISS-BL-002_fallback-pending-invalid.md) — 직전 트러블슈팅 (Bootloader 폴백 버그)

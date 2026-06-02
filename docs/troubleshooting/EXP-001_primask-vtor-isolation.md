@@ -1,4 +1,4 @@
-# PRIMASK / VTOR 원인 격리 실험
+# EXP-001: PRIMASK / VTOR 원인 격리 실험
 
 ## 목적
 
@@ -273,13 +273,13 @@ macOS quarantine 플래그로 인해 CubeIDE가 내장 GDB 실행을 차단.
 ```bash
 sudo xattr -cr /Applications/STM32CubeIDE.app
 ```
-→ [상세: local_cubeide_debug_setup.md](local_cubeide_debug_setup.md)
+→ [상세: ISS-IDE-001_cubeide-debug-launch.md](ISS-IDE-001_cubeide-debug-launch.md)
 
 ### 문제 2 — `.cproject` 유실로 "Unsupported build configuration"
 
 `git checkout` 시 이전에 추적됐다가 gitignore된 `.cproject` 삭제됨.
 `DriveECU.ioc` → Generate Code로 재생성.
-→ [상세: local_cubeide_debug_setup.md](local_cubeide_debug_setup.md)
+→ [상세: ISS-IDE-001_cubeide-debug-launch.md](ISS-IDE-001_cubeide-debug-launch.md)
 
 ### 문제 3 — printf가 UART 초기화 전 호출됨
 
@@ -380,6 +380,6 @@ SCB->VTOR = (uint32_t)&g_pfnVectors;
 
 ## 참고
 
-- [phase4_driveECU_bootloader_can_interrupt.md](phase4_driveECU_bootloader_can_interrupt.md) — 원인 발견 이력
-- [phase5_slot_b_can_failure.md](phase5_slot_b_can_failure.md) — Phase 5B 동일 원인 재발
-- [local_cubeide_debug_setup.md](local_cubeide_debug_setup.md) — 환경 구성 트러블슈팅
+- [ISS-BL-001_can-irq-after-bootloader.md](ISS-BL-001_can-irq-after-bootloader.md) — 원인 발견 이력
+- [ISS-CAN-003_slot-b-can-failure.md](ISS-CAN-003_slot-b-can-failure.md) — Phase 5B 동일 원인 재발
+- [ISS-IDE-001_cubeide-debug-launch.md](ISS-IDE-001_cubeide-debug-launch.md) — 환경 구성 트러블슈팅

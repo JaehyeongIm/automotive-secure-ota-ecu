@@ -10,7 +10,7 @@
 
 ---
 
-## 증상
+## D2. 문제 정의 — 증상
 
 CubeIDE에서 Debug 또는 Run 버튼을 누르면 두 가지 에러가 발생한다.
 
@@ -29,7 +29,7 @@ UART 출력 및 Jenkins 파이프라인 빌드는 정상 동작하므로 소스�
 
 ---
 
-## 진단 과정
+## D4. 근본 원인 분석 — 진단 과정
 
 ### 1단계 — GDB 바이너리 존재 여부 확인
 
@@ -89,7 +89,7 @@ git log --all --oneline --diff-filter=D -- "DriveECU/.cproject"
 
 ---
 
-## 근본 원인 (2가지)
+## D4. 근본 원인 (2가지)
 
 ### 원인 1 — macOS quarantine 플래그
 
@@ -124,7 +124,7 @@ Jenkins는 `.cproject`를 사용하지 않는다. `ci/build.sh`가 CubeIDE가 �
 
 ---
 
-## 해결
+## D5–D6. 시정 조치 & 검증
 
 ### 1 — quarantine 플래그 제거
 
@@ -150,7 +150,7 @@ CubeIDE에서 `DriveECU/DriveECU.ioc` 더블클릭 → **Project → Generate Co
 
 ---
 
-## 재발 방지
+## D7. 재발 방지
 
 **quarantine 재발생 방지:** CubeIDE 업데이트 시에도 동일하게 발생할 수 있다. 업데이트 후 Debug가 안 되면 동일한 `xattr -cr` 명령을 실행한다.
 

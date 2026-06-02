@@ -1,12 +1,12 @@
 # Troubleshooting Log
 
-## Phase 5A — RPi5 OTA 중단 후 Bootloader Safe State 진입
+## Phase 5A — RPi5 OTA 중단 후 Bootloader Safe State 진입 (ISS-BL-002)
 
 **날짜:** 2026-05-20
 
 ---
 
-### 현상
+### D2. 문제 정의 — 현상
 
 RPi5에서 `ota_client.py`로 DriveECU OTA를 시도한 후 DriveECU가 다음 상태가 됐다.
 
@@ -16,7 +16,7 @@ RPi5에서 `ota_client.py`로 DriveECU OTA를 시도한 후 DriveECU가 다음 �
 
 ---
 
-### 재현 절차
+### D2. 재현 절차
 
 1. RPi5에서 socketcan 인터페이스로 OTA 실행
 2. `RequestDownload` 단계에서 Receive timeout 발생 → OTA 중단
@@ -25,7 +25,7 @@ RPi5에서 `ota_client.py`로 DriveECU OTA를 시도한 후 DriveECU가 다음 �
 
 ---
 
-### 원인 분석
+### D4. 근본 원인 분석
 
 #### 1단계 — OTA 중단 시점 파악
 
@@ -76,7 +76,7 @@ if (!is_valid_app(boot_addr)) {
 
 ---
 
-### 수정 내용
+### D5–D6. 시정 조치
 
 #### `Bootloader/Core/Src/bootloader.c`
 
@@ -118,7 +118,7 @@ python3 ota_client.py --channel can0 --interface socketcan firmware.bin
 
 ---
 
-### 검증
+### D5–D6. 검증
 
 Bootloader 수정 후 재플래싱:
 
@@ -144,7 +144,7 @@ Bootloader 수정 후 재플래싱:
 
 ---
 
-### 교훈
+### D7. 재발 방지 (교훈)
 
 - OTA 세션 중단은 Flash erase만 완료된 채 메타데이터가 PENDING으로 남는 중간 상태를 만든다.
 - PENDING 슬롯의 `is_valid_app()` 실패 시 반드시 CONFIRMED 슬롯으로 폴백해야 한다.
