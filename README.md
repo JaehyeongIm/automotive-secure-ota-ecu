@@ -134,7 +134,8 @@ git push 한 번으로 ECU 슬롯 전환 확인까지 자동 수행. 변경된 E
     │   ├── ADR-002_Boot_Timing_Measurement.md
     │   ├── ADR-003_SecurityAccess_Lockout_Storage.md
     │   ├── ADR-004_SecurityAccess_Seed_RNG.md
-    │   └── ADR-005_Troubleshooting_Doc_Naming.md
+    │   ├── ADR-005_Troubleshooting_Doc_Naming.md
+    │   └── ADR-006_Secure_Element_Adoption.md
     ├── TEST_SPEC_OTA_v1.0.md
     └── diagram.md       Context / Block / State / Sequence 다이어그램
 ```
@@ -186,5 +187,6 @@ git push origin main
 - [ADR-003](docs/adr/ADR-003_SecurityAccess_Lockout_Storage.md) — SecurityAccess 잠금 상태 저장 위치(RAM vs NV)
 - [ADR-004](docs/adr/ADR-004_SecurityAccess_Seed_RNG.md) — SecurityAccess Seed 난수 생성(TRNG 부재·SP 800-90 미준수)
 - [ADR-005](docs/adr/ADR-005_Troubleshooting_Doc_Naming.md) — 트러블슈팅 문서 파일명·ID 규칙
+- [ADR-006](docs/adr/ADR-006_Secure_Element_Adoption.md) — Secure Element(ATECC608A) 도입 — TRNG·NV 한계 하드웨어 해소
 - [TEST_SPEC](docs/TEST_SPEC_OTA_v1.0.md) — 소프트웨어 테스트 명세서
 - [diagram](docs/diagram.md) — 시스템 다이어그램 (Context / Block / State / Sequence)
