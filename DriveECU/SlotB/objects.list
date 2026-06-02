@@ -1,3 +1,5 @@
+"./Core/Src/sha256.o"
+"./Core/Src/hmac_sha256.o"
 "./Core/Src/drive.o"
 "./Core/Src/isotp.o"
 "./Core/Src/main.o"
