@@ -6,13 +6,18 @@
 #include <string.h>
 #include <stdio.h>
 
+#include "hmac_sha256.h"
+#include "sha256.h"
+#include "ota_psk.h"
+
 #define STATE_DEFAULT     0
 #define STATE_EXTENDED    1
 #define STATE_SEED_SENT   2
 #define STATE_UNLOCKED    3
 #define STATE_DOWNLOADING 4
 
-#define SEC_MASK    0xDEADBEEFUL
+#define SEC_MAX_FAIL    3       /* consecutive Key failures before lockout */
+#define SEC_LOCK_MS     10000U  /* SecurityAccess lockout duration (ISO 14229) */
 #define BUF_SIZE    512U
 
 
@@ -28,6 +33,53 @@ static uint8_t          g_pending_buf[BUF_SIZE];
 static uint16_t         g_pending_len;
 static volatile uint8_t g_pending_ready;
 
+/* ── SecurityAccess: HMAC-SHA256(PSK, Seed) challenge-response + RAM lockout ──
+   PSK is read from the WRP Bootloader region (OTA_PSK_ADDR); host unit tests use
+   a local copy. Lockout is RAM-only — NV persistence is a follow-up (SRS §13.6). */
+static uint8_t  g_sec_fail;
+static uint8_t  g_sec_locked;
+static uint32_t g_sec_lock_until;
+
+#ifdef UNIT_TEST
+static const uint8_t s_psk[OTA_PSK_LEN] = {
+    0x4F,0x54,0x41,0x2D,0x44,0x45,0x56,0x2D,0x50,0x53,0x4B,0x2D,0x44,0x4F,0x2D,0x4E,
+    0x4F,0x54,0x2D,0x55,0x53,0x45,0x2D,0x49,0x4E,0x2D,0x50,0x52,0x4F,0x44,0x21,0x21
+};
+#define SEC_PSK_PTR (s_psk)
+#else
+#define SEC_PSK_PTR ((const uint8_t *)OTA_PSK_ADDR)
+#endif
+
+static uint32_t sec_make_seed(void)
+{
+#ifdef UNIT_TEST
+    return HAL_GetTick() ^ 0xA5A5A5A5UL;   /* deterministic seed for host tests */
+#else
+    /* STM32F446 has no hardware RNG: derive a fresh, hard-to-predict seed from the
+       96-bit device UID + SysTick + a rolling counter, hashed with SHA-256. */
+    static uint32_t ctr = 0;
+    uint8_t buf[20];
+    memcpy(buf, (const void *)0x1FFF7A10UL, 12);   /* device UID */
+    uint32_t t = HAL_GetTick();
+    memcpy(buf + 12, &t, 4);
+    ctr++;
+    memcpy(buf + 16, &ctr, 4);
+    uint8_t h[32];
+    SHA256_CTX c;
+    sha256_init(&c);
+    sha256_update(&c, buf, sizeof buf);
+    sha256_final(&c, h);
+    return ((uint32_t)h[0] << 24) | ((uint32_t)h[1] << 16) | ((uint32_t)h[2] << 8) | h[3];
+#endif
+}
+
+static int sec_is_locked(void)
+{
+    if (!g_sec_locked) return 0;
+    if ((int32_t)(HAL_GetTick() - g_sec_lock_until) >= 0) { g_sec_locked = 0; return 0; }
+    return 1;
+}
+
 static void nrc(uint8_t sid, uint8_t code)
 {
     uint8_t r[3] = {0x7F, sid, code};
@@ -40,6 +92,8 @@ void uds_init(void)
     g_state         = STATE_DEFAULT;
     g_pending_ready = 0;
     g_pending_len   = 0;
+    g_sec_fail      = 0;
+    g_sec_locked    = 0;
 }
 
 /* Called from CAN interrupt — copy only, no processing */
@@ -81,27 +135,44 @@ static void handle(const uint8_t *req, uint16_t len)
         if (len < 2) { nrc(sid, 0x13); break; }
         if (g_state < STATE_EXTENDED) { nrc(sid, 0x22); break; }
 
-        if (req[1] == 0x01) {                   /* Seed request */
-            g_seed = HAL_GetTick() ^ 0xA5A5A5A5UL;
+        if (sec_is_locked()) { nrc(sid, 0x37); break; }  /* requiredTimeDelayNotExpired */
+
+        if (req[1] == 0x01) {                   /* requestSeed */
+            g_seed = sec_make_seed();
             uint8_t r[6] = {0x67, 0x01,
                 (uint8_t)(g_seed >> 24), (uint8_t)(g_seed >> 16),
                 (uint8_t)(g_seed >>  8), (uint8_t)(g_seed)};
             g_state = STATE_SEED_SENT;
             printf("[UDS] Seed=0x%08lX\r\n", g_seed);
             isotp_send(r, sizeof(r));
-        } else if (req[1] == 0x02) {            /* Key send */
+        } else if (req[1] == 0x02) {            /* sendKey */
             if (g_state != STATE_SEED_SENT) { nrc(sid, 0x24); break; }
             if (len < 6) { nrc(sid, 0x13); break; }
-            uint32_t key = ((uint32_t)req[2] << 24) | ((uint32_t)req[3] << 16)
-                         | ((uint32_t)req[4] <<  8) |  (uint32_t)req[5];
-            if (key == (g_seed ^ SEC_MASK)) {
-                g_state = STATE_UNLOCKED;
+
+            /* Expected Key = HMAC-SHA256(PSK, Seed)[0:4] */
+            uint8_t seed_be[4] = {
+                (uint8_t)(g_seed >> 24), (uint8_t)(g_seed >> 16),
+                (uint8_t)(g_seed >>  8), (uint8_t)(g_seed)};
+            uint8_t mac[32];
+            hmac_sha256(SEC_PSK_PTR, OTA_PSK_LEN, seed_be, 4, mac);
+
+            if (memcmp(&req[2], mac, 4) == 0) {
+                g_state    = STATE_UNLOCKED;
+                g_sec_fail = 0;
                 uint8_t r[] = {0x67, 0x02};
                 printf("[UDS] Unlocked\r\n");
                 isotp_send(r, sizeof(r));
             } else {
                 g_state = STATE_EXTENDED;
-                nrc(sid, 0x35);
+                if (++g_sec_fail >= SEC_MAX_FAIL) {
+                    g_sec_fail       = 0;
+                    g_sec_locked     = 1;
+                    g_sec_lock_until = HAL_GetTick() + SEC_LOCK_MS;
+                    printf("[UDS] SecurityAccess locked %lu ms\r\n", (unsigned long)SEC_LOCK_MS);
+                    nrc(sid, 0x36);             /* exceededNumberOfAttempts */
+                } else {
+                    nrc(sid, 0x35);             /* invalidKey */
+                }
             }
         } else {
             nrc(sid, 0x12);

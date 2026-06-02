@@ -8,10 +8,14 @@ Usage (macOS / slcan):
 Usage (RPi5 / socketcan):
     python ota_client.py --channel can0 --interface socketcan firmware_slotb.bin
 
-Security: key = seed XOR 0xDEADBEEF  (must match SEC_MASK in uds.c)
+Security: Key = HMAC-SHA256(PSK, Seed)[0:4]  (must match uds.c)
+          PSK from env OTA_PSK_HEX (64 hex chars), else the dev placeholder.
 """
 
 import argparse
+import hashlib
+import hmac
+import os
 import struct
 import time
 import sys
@@ -21,7 +25,10 @@ ECU_IDS = {
     'drive':  {'tx': 0x7E0, 'rx': 0x7E8, 'hb_id': 0x100, 'driving_byte': 2},
     'sensor': {'tx': 0x7E1, 'rx': 0x7E9, 'hb_id': None,  'driving_byte': None},
 }
-SEC_MASK  = 0xDEADBEEF
+# PreSharedKey for SecurityAccess. DEV PLACEHOLDER — must match the PSK in the
+# Bootloader's WRP region (Bootloader/Core/Src/psk.c). Override via env OTA_PSK_HEX.
+_DEV_PSK  = b"OTA-DEV-PSK-DO-NOT-USE-IN-PROD!!"
+PSK       = bytes.fromhex(os.environ["OTA_PSK_HEX"]) if os.environ.get("OTA_PSK_HEX") else _DEV_PSK
 CHUNK     = 256    # data bytes per TransferData
 # Target slot address is determined by the ECU (inactive slot auto-selected)
 
@@ -171,12 +178,12 @@ class OTAClient:
         r = self.request(bytes([0x27, 0x01]))
         if r[0] != 0x67 or r[1] != 0x01:
             raise UDSError(f"Unexpected response: {r.hex()}")
-        seed = struct.unpack(">I", r[2:6])[0]
-        print(f"[UDS]   Seed = 0x{seed:08X}")
+        seed = r[2:6]   # 4-byte Seed (HMAC message, big-endian as received)
+        print(f"[UDS]   Seed = {seed.hex()}")
 
-        key = seed ^ SEC_MASK
-        print(f"[UDS]   Key  = 0x{key:08X}")
-        r = self.request(bytes([0x27, 0x02]) + struct.pack(">I", key))
+        key = hmac.new(PSK, seed, hashlib.sha256).digest()[:4]
+        print(f"[UDS]   Key  = {key.hex()}")
+        r = self.request(bytes([0x27, 0x02]) + key)
         if r[0] != 0x67 or r[1] != 0x02:
             raise UDSError(f"Unexpected response: {r.hex()}")
         print("[UDS] Unlocked")

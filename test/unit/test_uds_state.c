@@ -3,6 +3,9 @@
 #include "mock_ota_flash.h"
 #include "hal_stubs.h"
 #include "uds.h"
+#include "hmac_sha256.h"
+#include "sha256.h"
+#include "ota_psk.h"
 #include <string.h>
 
 /* ── 응답 캡처 ──────────────────────────────────────────────────────────────
@@ -49,9 +52,14 @@ static void do_extended_session(void)
     uds_send(req, sizeof(req));
 }
 
+/* uds.c의 UNIT_TEST PSK와 동일: ASCII "OTA-DEV-PSK-DO-NOT-USE-IN-PROD!!" */
+static const uint8_t s_test_psk[OTA_PSK_LEN] = {
+    0x4F,0x54,0x41,0x2D,0x44,0x45,0x56,0x2D,0x50,0x53,0x4B,0x2D,0x44,0x4F,0x2D,0x4E,
+    0x4F,0x54,0x2D,0x55,0x53,0x45,0x2D,0x49,0x4E,0x2D,0x50,0x52,0x4F,0x44,0x21,0x21
+};
+
 /* SecurityAccess Unlock:
-   seed 요청 → 응답에서 seed 추출 → key 계산 → key 전송
-   key = seed XOR 0xDEADBEEF  (uds.c SEC_MASK와 동일)                       */
+   seed 요청 → 응답에서 seed 추출 → Key = HMAC-SHA256(PSK, Seed)[0:4] 전송  */
 static void do_unlock(void)
 {
     do_extended_session();
@@ -59,16 +67,12 @@ static void do_unlock(void)
     uint8_t seed_req[] = {0x27, 0x01};
     uds_send(seed_req, sizeof(seed_req));
 
-    /* s_tx_buf: [0x67, 0x01, seed_b3, seed_b2, seed_b1, seed_b0] */
-    uint32_t seed = ((uint32_t)s_tx_buf[2] << 24)
-                  | ((uint32_t)s_tx_buf[3] << 16)
-                  | ((uint32_t)s_tx_buf[4] <<  8)
-                  |  (uint32_t)s_tx_buf[5];
-    uint32_t key  = seed ^ 0xDEADBEEFUL;
+    /* s_tx_buf: [0x67, 0x01, seed_b3..seed_b0] — Seed가 HMAC 메시지(big-endian) */
+    uint8_t seed_be[4] = { s_tx_buf[2], s_tx_buf[3], s_tx_buf[4], s_tx_buf[5] };
+    uint8_t mac[32];
+    hmac_sha256(s_test_psk, OTA_PSK_LEN, seed_be, 4, mac);
 
-    uint8_t key_req[] = {0x27, 0x02,
-        (uint8_t)(key >> 24), (uint8_t)(key >> 16),
-        (uint8_t)(key >>  8), (uint8_t)(key)};
+    uint8_t key_req[] = {0x27, 0x02, mac[0], mac[1], mac[2], mac[3]};
     uds_send(key_req, sizeof(key_req));
 }
 
@@ -130,7 +134,7 @@ void test_sa_seed_request_returns_seed(void)
 }
 
 /* Seed 요청 후 올바른 Key 전송 → 0x67 0x02 (Unlock 성공)
-   g_hal_tick=0이면 seed=0xA5A5A5A5, key=0x7B081B4A (결정론적)             */
+   Key = HMAC-SHA256(PSK, Seed)[0:4] — do_unlock()이 동적으로 계산         */
 void test_sa_correct_key_returns_unlock_ok(void)
 {
     do_unlock();
@@ -227,6 +231,36 @@ void test_sa_wrong_key_returns_nrc_invalid_key(void)
     TEST_ASSERT_EQUAL_UINT8(0x7F, s_tx_buf[0]);
     TEST_ASSERT_EQUAL_UINT8(0x27, s_tx_buf[1]);
     TEST_ASSERT_EQUAL_UINT8(0x35, s_tx_buf[2]);
+}
+
+/* 연속 3회 잘못된 Key → NRC 0x36(exceededNumberOfAttempts) + 10초 잠금,
+   잠금 중 추가 요청 → NRC 0x37(requiredTimeDelayNotExpired),
+   10초 경과 후 잠금 해제 (SRS FR-CAN-010, SR-ATK-006)                     */
+void test_sa_lockout_after_three_wrong_keys(void)
+{
+    do_extended_session();
+
+    for (int i = 0; i < 3; ++i) {
+        uint8_t seed_req[] = {0x27, 0x01};
+        uds_send(seed_req, sizeof(seed_req));            /* SEED_SENT */
+        uint8_t bad_key[] = {0x27, 0x02, 0x00, 0x00, 0x00, 0x00};
+        uds_send(bad_key, sizeof(bad_key));              /* wrong Key */
+    }
+    /* 3회째 실패 → NRC 0x36 */
+    TEST_ASSERT_EQUAL_UINT8(0x7F, s_tx_buf[0]);
+    TEST_ASSERT_EQUAL_UINT8(0x27, s_tx_buf[1]);
+    TEST_ASSERT_EQUAL_UINT8(0x36, s_tx_buf[2]);
+
+    /* 잠금 상태: seed 요청조차 NRC 0x37 */
+    uint8_t seed_req[] = {0x27, 0x01};
+    uds_send(seed_req, sizeof(seed_req));
+    TEST_ASSERT_EQUAL_UINT8(0x37, s_tx_buf[2]);
+
+    /* 10초(=SEC_LOCK_MS) 경과 → 잠금 해제, seed 요청 정상 */
+    g_hal_tick = 10000;
+    uds_send(seed_req, sizeof(seed_req));
+    TEST_ASSERT_EQUAL_UINT8(0x67, s_tx_buf[0]);
+    TEST_ASSERT_EQUAL_UINT8(0x01, s_tx_buf[1]);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

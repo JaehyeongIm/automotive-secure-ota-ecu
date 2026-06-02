@@ -176,6 +176,14 @@ SECTIONS
     . = ALIGN(8);
   } >RAM
 
+  /* PreSharedKey (UDS SecurityAccess HMAC) at a fixed address in the
+     WRP-protected Bootloader region so the App can read it (SR-KEY-003).
+     0x08007FE0 = last 32 bytes of the 32KB Bootloader Flash. */
+  .psk 0x08007FE0 :
+  {
+    KEEP(*(.psk))
+  } >FLASH
+
   /* Remove information from the compiler libraries */
   /DISCARD/ :
   {
