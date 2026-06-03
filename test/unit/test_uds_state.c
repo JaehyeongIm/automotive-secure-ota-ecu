@@ -3,6 +3,7 @@
 #include "mock_ota_flash.h"
 #include "hal_stubs.h"
 #include "uds.h"
+#include "ota_meta.h"   /* uds.c가 ota_img_header_read를 호출 → ota_meta.c 링크용 */
 #include "hmac_sha256.h"
 #include "sha256.h"
 #include "ota_psk.h"

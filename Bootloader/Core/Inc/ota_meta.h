@@ -58,4 +58,26 @@ OTA_BootPlan_t ota_meta_plan_boot(const OTA_Metadata_t *in, OTA_Metadata_t *out,
 /* App self-test 통과 → my_slot 확정(TRIAL→CONFIRMED, attempt=0). 기록 필요 시 1 반환. */
 int ota_meta_plan_confirm(const OTA_Metadata_t *in, uint32_t my_slot, OTA_Metadata_t *out);
 
+/* ── 서명 이미지 헤더 + anti-rollback (FR-AB-008 / FR-BL-008, ADR-007) ──
+ * 서명 이미지 레이아웃(앞 헤더, MCUboot 정석):
+ *   [ 헤더(IMG_HEADER_SIZE) ][ 벡터테이블+코드 ][ ECDSA 서명 64B ]
+ * 헤더가 슬롯 맨 앞(offset 0). ECDSA가 (헤더+코드)를 덮어 fw_version 위조 불가.
+ * 앱 벡터테이블은 slot+IMG_HEADER_SIZE → 부트로더가 그 주소로 점프(VTOR 설정). */
+#define IMG_HEADER_MAGIC 0x4F544148UL   /* 'OTAH' */
+#define IMG_HEADER_SIZE  0x200u         /* 헤더 예약영역(VTOR 0x200 정렬); 앱은 +0x200 */
+#define ECDSA_SIG_LEN    64u
+typedef struct {
+    uint32_t magic;          /* = IMG_HEADER_MAGIC */
+    uint32_t fw_version;     /* anti-rollback 비교 대상 */
+    uint32_t target_ecu_id;  /* 1=DRIVE, 2=SENSOR (선택 검증) */
+    uint32_t reserved;
+} OTA_ImgHeader_t;           /* 16 bytes (나머지 IMG_HEADER_SIZE는 패딩) */
+
+/* 이미지 맨 앞(offset 0)의 헤더를 읽는다. magic 유효 시 1. */
+int ota_img_header_read(const uint8_t *image_start, OTA_ImgHeader_t *out);
+
+/* anti-rollback(FR-BL-008): incoming_version이 CONFIRMED 슬롯들의 최고 버전(기준선)
+ * 이상이면 1(허용), 낮으면 0(다운그레이드 거부). 기준선은 메타 NV(CRC) — ADR-007 한계. */
+int ota_meta_version_allowed(const OTA_Metadata_t *m, uint32_t incoming_version);
+
 #endif /* OTA_META_H */

@@ -1,6 +1,7 @@
 #include "uds.h"
 #include "isotp.h"
 #include "ota_flash.h"
+#include "ota_meta.h"
 #include "main.h"
 #include <string.h>
 #include <stdio.h>
@@ -261,7 +262,10 @@ static void handle(const uint8_t *req, uint16_t len)
                (unsigned long)g_fw_written, (unsigned long)g_fw_size,
                g_target_slot == 0 ? 'A' : 'B');
         uint32_t meta_t0 = HAL_GetTick();
-        HAL_StatusTypeDef meta_ret = ota_meta_write_pending(g_target_slot, g_fw_size);
+        /* 서명 헤더(slot+0)에서 실제 fw_version을 읽어 메타에 기록(anti-rollback 기준선). */
+        OTA_ImgHeader_t hdr;
+        uint32_t fw_version = ota_img_header_read((const uint8_t *)g_fw_addr, &hdr) ? hdr.fw_version : 0;
+        HAL_StatusTypeDef meta_ret = ota_meta_write_pending(g_target_slot, g_fw_size, fw_version);
         printf("[UDS][37] metadata ret=%d dt=%lums\r\n",
                (int)meta_ret, (unsigned long)(HAL_GetTick() - meta_t0));
         if (meta_ret != HAL_OK) { nrc(sid, 0x72); break; }

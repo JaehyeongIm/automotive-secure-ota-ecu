@@ -140,7 +140,7 @@ void bootloader_run(void)
     }
     uint32_t boot_addr = (plan.boot_slot == 0) ? SLOT_A_ADDR : SLOT_B_ADDR;
 
-    if (!is_valid_app(boot_addr)) {
+    if (!is_valid_app(boot_addr + IMG_HEADER_SIZE)) {
         printf("[BL] No valid app at 0x%08lX, trying fallback\r\n", boot_addr);
         if (boot_addr == SLOT_B_ADDR && meta.slot_a_status == SLOT_CONFIRMED) {
             boot_addr = SLOT_A_ADDR;
@@ -152,7 +152,7 @@ void bootloader_run(void)
             safe_state();
             return;
         }
-        if (!is_valid_app(boot_addr)) {
+        if (!is_valid_app(boot_addr + IMG_HEADER_SIZE)) {
             printf("[BL] Fallback slot also invalid, entering Safe State\r\n");
             safe_state();
             return;
@@ -181,6 +181,19 @@ void bootloader_run(void)
                 return;
             }
             printf("[BL] ECDSA OK\r\n");
+
+            /* anti-rollback (FR-BL-008): 서명된 헤더 버전이 기준선보다 낮으면 거부.
+             * 헤더는 ECDSA로 검증된 영역(slot+0)이라 이 시점에 신뢰 가능. */
+            OTA_ImgHeader_t hdr;
+            if (ota_img_header_read(fw_ptr, &hdr)) {
+                if (!ota_meta_version_allowed(&meta, hdr.fw_version)) {
+                    printf("[BL] anti-rollback: v%lu below baseline — refusing\r\n",
+                           (unsigned long)hdr.fw_version);
+                    safe_state();
+                    return;
+                }
+                printf("[BL] version v%lu OK\r\n", (unsigned long)hdr.fw_version);
+            }
         }
     }
 
@@ -190,6 +203,6 @@ void bootloader_run(void)
     hiwdg.Init.Reload    = 999;
     HAL_IWDG_Init(&hiwdg);
 
-    jump_to_app(boot_addr);
+    jump_to_app(boot_addr + IMG_HEADER_SIZE);   /* 앱 벡터테이블 = slot+0x200 (앞 헤더) */
 }
 #endif /* UNIT_TEST */

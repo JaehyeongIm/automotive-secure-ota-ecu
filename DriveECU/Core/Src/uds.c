@@ -1,6 +1,7 @@
 #include "uds.h"
 #include "isotp.h"
 #include "ota_flash.h"
+#include "ota_meta.h"
 #include "drive.h"
 #include "main.h"
 #include <string.h>
@@ -252,7 +253,10 @@ static void handle(const uint8_t *req, uint16_t len)
     case 0x37: {                                /* RequestTransferExit */
         if (g_state != STATE_DOWNLOADING) { nrc(sid, 0x22); break; }
 
-        if (ota_meta_write_pending(g_target_slot, g_fw_size) != HAL_OK) { nrc(sid, 0x72); break; }
+        /* 서명 헤더(slot+0)에서 실제 fw_version을 읽어 메타에 기록(anti-rollback 기준선). */
+        OTA_ImgHeader_t hdr;
+        uint32_t fw_version = ota_img_header_read((const uint8_t *)g_fw_addr, &hdr) ? hdr.fw_version : 0;
+        if (ota_meta_write_pending(g_target_slot, g_fw_size, fw_version) != HAL_OK) { nrc(sid, 0x72); break; }
 
         uint8_t r[] = {0x77};
         isotp_send(r, sizeof(r));

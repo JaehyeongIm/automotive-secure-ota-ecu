@@ -153,12 +153,13 @@ uint8_t ota_get_active_slot(void)
 
 /*
  * slot: 0 = Slot A, 1 = Slot B
- * fw_size: total signed binary size (firmware + 64-byte signature)
+ * fw_size: total signed binary size (header + firmware + 64-byte signature)
+ * fw_version: 서명 헤더의 fw_version — anti-rollback 기준선 기록용(FR-BL-008, ADR-007)
  *
- * Stages the target slot as PENDING, the other as CONFIRMED (fallback), and
+ * Stages the target slot as UPDATED, the other as CONFIRMED (fallback), and
  * commits it atomically to the inactive metadata copy (ping-pong).
  */
-HAL_StatusTypeDef ota_meta_write_pending(uint8_t slot, uint32_t fw_size)
+HAL_StatusTypeDef ota_meta_write_pending(uint8_t slot, uint32_t fw_size, uint32_t fw_version)
 {
     OTA_Metadata_t cur;
     int have = ota_meta_select(COPY_A, COPY_B, &cur);
@@ -180,7 +181,7 @@ HAL_StatusTypeDef ota_meta_write_pending(uint8_t slot, uint32_t fw_size)
         meta.active_slot    = 0;
         meta.slot_a_status  = SLOT_UPDATED;
         meta.slot_b_status  = SLOT_CONFIRMED;
-        meta.slot_a_version = have ? cur.slot_a_version + 1 : 1;
+        meta.slot_a_version = fw_version;                    /* 헤더의 실제 버전 */
         meta.slot_b_version = have ? cur.slot_b_version : 1;
         meta.slot_a_size    = fw_size;
         meta.slot_b_size    = have ? cur.slot_b_size : 0;
@@ -189,7 +190,7 @@ HAL_StatusTypeDef ota_meta_write_pending(uint8_t slot, uint32_t fw_size)
         meta.slot_a_status  = SLOT_CONFIRMED;
         meta.slot_b_status  = SLOT_UPDATED;
         meta.slot_a_version = have ? cur.slot_a_version : 1;
-        meta.slot_b_version = have ? cur.slot_b_version + 1 : 2;
+        meta.slot_b_version = fw_version;                    /* 헤더의 실제 버전 */
         meta.slot_a_size    = have ? cur.slot_a_size : 0;
         meta.slot_b_size    = fw_size;
     }

@@ -70,7 +70,7 @@ void test_write_pending_slot1_sets_b_pending_a_confirmed(void)
     OTA_Metadata_t cur = make_meta(0, SLOT_CONFIRMED, SLOT_CONFIRMED, 1, 1, 0);
     ota_test_init_meta(&cur);
 
-    TEST_ASSERT_EQUAL_INT(HAL_OK, ota_meta_write_pending(1, 1024));
+    TEST_ASSERT_EQUAL_INT(HAL_OK, ota_meta_write_pending(1, 1024, 2));
 
     OTA_Metadata_t result;
     ota_test_get_meta(&result);
@@ -87,7 +87,7 @@ void test_write_pending_slot0_sets_a_pending_b_confirmed(void)
     OTA_Metadata_t cur = make_meta(1, SLOT_CONFIRMED, SLOT_CONFIRMED, 1, 1, 0);
     ota_test_init_meta(&cur);
 
-    TEST_ASSERT_EQUAL_INT(HAL_OK, ota_meta_write_pending(0, 2048));
+    TEST_ASSERT_EQUAL_INT(HAL_OK, ota_meta_write_pending(0, 2048, 2));
 
     OTA_Metadata_t result;
     ota_test_get_meta(&result);
@@ -101,17 +101,17 @@ void test_write_pending_slot0_sets_a_pending_b_confirmed(void)
    TC-UT-META-006~007: 버전/부트카운트 이월
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* TC-UT-META-006: slot=1 OTA → slot_b_version = 기존 + 1, slot_a_version 유지 */
+/* TC-UT-META-006: slot=1 OTA → slot_b_version = 제공된 헤더 버전 저장, slot_a_version 유지 */
 void test_write_pending_slot1_increments_b_version(void)
 {
     OTA_Metadata_t cur = make_meta(0, SLOT_CONFIRMED, SLOT_CONFIRMED, 3, 5, 0);
     ota_test_init_meta(&cur);
 
-    ota_meta_write_pending(1, 512);
+    ota_meta_write_pending(1, 512, 6);
 
     OTA_Metadata_t result;
     ota_test_get_meta(&result);
-    TEST_ASSERT_EQUAL_UINT32(6, result.slot_b_version);  /* 5 + 1 */
+    TEST_ASSERT_EQUAL_UINT32(6, result.slot_b_version);  /* 헤더 버전 6 */
     TEST_ASSERT_EQUAL_UINT32(3, result.slot_a_version);  /* 유지 */
 }
 
@@ -121,7 +121,7 @@ void test_write_pending_carries_over_boot_count(void)
     OTA_Metadata_t cur = make_meta(0, SLOT_CONFIRMED, SLOT_CONFIRMED, 1, 1, 42);
     ota_test_init_meta(&cur);
 
-    ota_meta_write_pending(1, 512);
+    ota_meta_write_pending(1, 512, 1);
 
     OTA_Metadata_t result;
     ota_test_get_meta(&result);
@@ -136,7 +136,7 @@ void test_write_pending_carries_over_boot_count(void)
 void test_write_pending_from_no_magic_sets_magic(void)
 {
     /* setUp에서 magic=0으로 초기화 */
-    TEST_ASSERT_EQUAL_INT(HAL_OK, ota_meta_write_pending(1, 8192));
+    TEST_ASSERT_EQUAL_INT(HAL_OK, ota_meta_write_pending(1, 8192, 1));
 
     OTA_Metadata_t result;
     ota_test_get_meta(&result);
@@ -154,7 +154,7 @@ void test_get_active_slot_reflects_write_pending(void)
     OTA_Metadata_t cur = make_meta(0, SLOT_CONFIRMED, SLOT_CONFIRMED, 1, 1, 0);
     ota_test_init_meta(&cur);
 
-    ota_meta_write_pending(1, 512);
+    ota_meta_write_pending(1, 512, 1);
 
     TEST_ASSERT_EQUAL_UINT8(1, ota_get_active_slot());
 }

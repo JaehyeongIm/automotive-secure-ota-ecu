@@ -15,7 +15,7 @@
 HAL_StatusTypeDef ota_flash_erase_slot_a(void);
 HAL_StatusTypeDef ota_flash_erase_slot_b(void);
 HAL_StatusTypeDef ota_flash_write(uint32_t addr, const uint8_t *data, uint16_t len);
-HAL_StatusTypeDef ota_meta_write_pending(uint8_t slot, uint32_t fw_size);
+HAL_StatusTypeDef ota_meta_write_pending(uint8_t slot, uint32_t fw_size, uint32_t fw_version);
 HAL_StatusTypeDef ota_meta_self_confirm(uint8_t my_slot);
 uint8_t           ota_get_active_slot(void);
 

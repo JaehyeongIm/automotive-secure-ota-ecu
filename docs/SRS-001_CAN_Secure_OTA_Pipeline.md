@@ -5,7 +5,7 @@
 | 문서 ID | SRS-001 |
 | 문서명 | CAN 기반 UDS over ISO-TP Secure OTA 파이프라인 요구사항 명세서 |
 | 프로젝트명 | Dual ECU 버튼 트리거 직진 주행 Secure OTA 시스템 |
-| 버전 | 2.7 |
+| 버전 | 2.8 |
 | 작성일 | 2026-05-25 |
 | 작성 목적 | Dual ECU 버튼 트리거 직진 주행 + 장애물 회피 OTA 데모 시스템 소프트웨어 요구사항 정의 |
 | 주요 대상 | Raspberry Pi 5 Gateway, STM32F446RE ECU 2대, CAN Bus, Custom Bootloader, RC 차량 데모 플랫폼 |
@@ -267,7 +267,7 @@
 | FR-BL-005 | Bootloader는 수신한 펌웨어 조각을 비활성 Slot에 기록해야 한다. | Must | Flash erase/write가 섹터 경계와 주소 범위 내에서 수행되어야 한다. |
 | FR-BL-006 | Bootloader는 펌웨어 전체 Hash를 검증해야 한다. | Must | Manifest의 Hash와 실제 Slot 이미지 Hash가 일치해야 한다. |
 | FR-BL-007 | Bootloader는 펌웨어 Signature를 검증해야 한다. | Must | 공개키 기반 검증 실패 시 업데이트를 거부해야 한다. |
-| FR-BL-008 | Bootloader는 Firmware Version을 확인하고 다운그레이드를 차단해야 한다. | Must | 현재 Confirmed Version보다 낮은 버전은 거부해야 한다. |
+| FR-BL-008 | Bootloader는 Firmware Version을 확인하고 다운그레이드를 차단해야 한다. | Must | 현재 Confirmed Version보다 낮은 버전은 거부해야 한다. 구현: **ADR-007**(앞 서명 헤더 fw_version vs 메타 CONFIRMED 슬롯 버전; 기준선 변조방지는 ATECC608A 후속). |
 | FR-BL-009 | Bootloader는 Target ECU ID/HW ID를 확인해야 한다. | Must | 다른 ECU용 이미지 설치를 거부해야 한다. |
 | FR-BL-010 | Bootloader는 업데이트 후 첫 부팅에서 Self-test 결과를 확인해야 한다. | Must | Self-test 실패 시 이전 Confirmed Slot으로 rollback해야 한다. |
 | FR-BL-011 | Bootloader는 Boot Metadata 손상 시 안전한 기본 정책을 적용해야 한다. | Should | Metadata CRC 오류 시 기존 Confirmed Slot 또는 Safe Mode로 진입해야 한다. |
@@ -1036,4 +1036,5 @@ TSR-001  (SUP.9)
 | 2.5 | 2026-06-03 | 문서 정합성 패스: WRP 영역 정정(FR-BL-013·SR-KEY-001 "Sector 0~4"→"0~1" — 0~4는 Metadata·Slot A까지 잠가 OTA 불가, §14.2와 모순 해소), 파일명 버전표기 제거(SSOT — 버전은 본 개정이력에만), 메타데이터 이중화(섹터2·3)를 README·TEST_SPEC 메모리맵에 반영, TEST_SPEC 추적성 §참조→FR/SR ID화, SecurityAccess XOR 잔재→HMAC 정정(TEST_SPEC·diagram) |
 | 2.6 | 2026-06-03 | §7.4 UDS 프로토콜 강화(적대적 질문 Round 2): FR-CAN-009(programmingSession 0x02 명시)·010(HMAC(key=PSK,msg=Seed)·nonce 정합 ADR-004)·011(ecu_id/hw_id·version fail-fast)·012(endless-data 누적상한 SR-ATK-007)·013(수신완료 검증)·014(fail-closed Verify→UPDATED) 갱신, FR-CAN-018(RDBID ECU Inventory)·019(S3 세션 타임아웃) 신설 |
 | 2.7 | 2026-06-03 | self-test commit + 3-strike 롤백 구현(FR-AB-004/007) + 슬롯 5상태 정합: 코드의 SLOT_PENDING을 UPDATED/TRIAL/UPDATING로 분리(§7.3.1 5상태 실코드화), ota_meta_plan_boot(증가-먼저-점프·3회 초과 INVALID+롤백)·plan_confirm(TRIAL→CONFIRMED) 추가, 부트로더 bl_meta_commit, 앱 self-test(heartbeat 성공)→ota_meta_self_confirm, §13.3·FR-BL-002·FR-AB-006의 pending 어휘 5상태 정정. 단위테스트 48개 통과 |
+| 2.8 | 2026-06-03 | anti-rollback(FR-BL-008/FR-AB-008) 구현 — ADR-007 추가(앞 서명 헤더, MCUboot 정석). 서명 이미지 `[헤더0x200][코드][서명64]`, ECDSA가 (헤더+코드) 덮음, 앱 링커 origin +0x200, 부트로더 점프/검증 +0x200·ECDSA 후 헤더 fw_version을 메타 CONFIRMED 버전과 비교해 다운그레이드 거부. sign_firmware.py `--version`, write_pending이 헤더 fw_version 기록. 구현은 헤더 subset(magic/fw_version/target_ecu_id) — header_version/hw_id/hash·Manifest 출처는 후속. 단위테스트 anti_rollback 6 신규(총 54), CRC 기준선·HIL 부팅 검증 한계는 ADR-007 기록 |
 

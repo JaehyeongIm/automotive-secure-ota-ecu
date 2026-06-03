@@ -1,5 +1,6 @@
 #include "ota_meta.h"
 #include <stddef.h>
+#include <string.h>
 
 /* CRC-32 (zlib / ISO-HDLC): reflected poly 0xEDB88320, init/xorout 0xFFFFFFFF.
  * Software implementation so the bootloader and both ECUs compute identically
@@ -113,4 +114,23 @@ int ota_meta_plan_confirm(const OTA_Metadata_t *in, uint32_t my_slot, OTA_Metada
     out->boot_count  = 0;
     out->seq_counter = in->seq_counter + 1u;
     return 1;
+}
+
+/* 이미지 맨 앞(offset 0)의 서명 헤더를 읽는다(앞 헤더). magic 유효 시 1. */
+int ota_img_header_read(const uint8_t *image_start, OTA_ImgHeader_t *out)
+{
+    OTA_ImgHeader_t h;
+    memcpy(&h, image_start, sizeof(h));
+    if (h.magic != IMG_HEADER_MAGIC) return 0;
+    *out = h;
+    return 1;
+}
+
+/* 기준선 = CONFIRMED 슬롯들의 최고 버전. incoming이 그 이상이면 허용(1), 낮으면 거부(0). */
+int ota_meta_version_allowed(const OTA_Metadata_t *m, uint32_t incoming_version)
+{
+    uint32_t baseline = 0;
+    if (m->slot_a_status == SLOT_CONFIRMED && m->slot_a_version > baseline) baseline = m->slot_a_version;
+    if (m->slot_b_status == SLOT_CONFIRMED && m->slot_b_version > baseline) baseline = m->slot_b_version;
+    return incoming_version >= baseline;
 }
