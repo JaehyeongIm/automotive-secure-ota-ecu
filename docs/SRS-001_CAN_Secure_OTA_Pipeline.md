@@ -5,7 +5,7 @@
 | 문서 ID | SRS-001 |
 | 문서명 | CAN 기반 UDS over ISO-TP Secure OTA 파이프라인 요구사항 명세서 |
 | 프로젝트명 | Dual ECU 버튼 트리거 직진 주행 Secure OTA 시스템 |
-| 버전 | 2.5 |
+| 버전 | 2.6 |
 | 작성일 | 2026-05-25 |
 | 작성 목적 | Dual ECU 버튼 트리거 직진 주행 + 장애물 회피 OTA 데모 시스템 소프트웨어 요구사항 정의 |
 | 주요 대상 | Raspberry Pi 5 Gateway, STM32F446RE ECU 2대, CAN Bus, Custom Bootloader, RC 차량 데모 플랫폼 |
@@ -313,15 +313,17 @@
 | FR-CAN-006 | ECU는 ISO-TP STmin 타이밍을 준수해야 한다. | Must | CF 프레임 간 수신 간격이 STmin 이하일 경우 오류 처리해야 한다. |
 | FR-CAN-007 | Gateway는 SocketCAN ISO-TP 인터페이스를 통해 UDS 메시지를 송수신해야 한다. | Must | Python socket(AF_CAN, SOCK_DGRAM, CAN_ISOTP) 기반으로 전송되어야 한다. |
 | FR-CAN-008 | 명령 구조는 UDS 리프로그래밍 절차를 따르며, FR-CAN-009~015가 이를 구성하는 개별 요구사항이다. | Must | FR-CAN-009~015 요구사항이 모두 구현되어야 한다. |
-| FR-CAN-009 | Diagnostic Session Control 명령을 지원해야 한다. | Must | Default Session과 Programming Session 상태를 구분해야 한다. |
-| FR-CAN-010 | Security Access 명령을 지원해야 한다. | Must | ECU가 4바이트 랜덤 Seed를 생성하고, Gateway가 HMAC-SHA256(Seed \|\| PreSharedKey)의 앞 4바이트를 Key로 응답하면 인증이 성공해야 한다. 연속 3회 Key 오류 시 NRC 0x36(Exceeded Number of Attempts)을 반환하고 10초간 Security Access를 잠금해야 한다. |
-| FR-CAN-011 | Request Download 명령을 지원해야 한다. | Must | Image size, target slot, target ECU ID를 확인해야 한다. |
-| FR-CAN-012 | Transfer Data 명령을 지원해야 한다. | Must | Sequence Number와 Chunk 길이를 확인해야 한다. |
-| FR-CAN-013 | Request Transfer Exit 명령을 지원해야 한다. | Must | 모든 Chunk 수신 후 검증 단계로 진입해야 한다. |
-| FR-CAN-014 | Routine Control - Verify Image 명령을 지원해야 한다. | Must | Hash/Signature/Version/ECU ID 검증 결과를 반환해야 한다. |
+| FR-CAN-009 | Diagnostic Session Control 명령을 지원해야 한다. | Must | Default(0x01)와 **Programming Session(0x02, ISO 14229)** 상태를 구분해야 한다. (현 코드의 "Extended" 명칭은 Programming으로 정정 대상) |
+| FR-CAN-010 | Security Access 명령을 지원해야 한다. | Must | ECU가 4바이트 Seed(소프트웨어 nonce — TRNG 부재, ADR-004)를 발급하고, Gateway가 **HMAC-SHA256(key=PSK, msg=Seed)**의 앞 4바이트를 Key로 응답하면 인증이 성공해야 한다. 연속 3회 Key 오류 시 NRC 0x36(exceededNumberOfAttempts) 반환 + 10초 잠금(잠금 중 NRC 0x37). 상세 §13.6. |
+| FR-CAN-011 | Request Download 명령을 지원해야 한다. | Must | image_size·target_slot·**target_ecu_id·hardware_id**를 확인하고 불일치 시 즉시 NRC 0x31/0x33으로 거부(fail-fast)해야 한다. firmware_version이 현 CONFIRMED보다 낮으면 거부(SR-FW-003); 최종 anti-rollback은 부팅 시 서명 헤더(FR-BL-008). |
+| FR-CAN-012 | Transfer Data 명령을 지원해야 한다. | Must | Sequence Number와 Chunk 길이를 확인하고, **누적 수신이 RequestDownload의 image_size를 초과하면 NRC 0x31(requestOutOfRange)로 거부 후 세션 종료**해야 한다(endless-data 방어, SR-ATK-007). |
+| FR-CAN-013 | Request Transfer Exit 명령을 지원해야 한다. | Must | **누적 수신 == image_size를 확인**(불일치 시 NRC 0x24/0x72)한 뒤 검증 단계로 진입해야 한다. |
+| FR-CAN-014 | Routine Control - Verify Image 명령을 지원해야 한다. | Must | Hash/Signature/Version/ECU ID 검증 결과를 반환하며, **검증을 통과해야만 슬롯을 UPDATED로 표시**(미통과·미수행 시 부팅 대상 불가, fail-closed, FR-AB-003 연계)해야 한다. |
 | FR-CAN-015 | ECU Reset 명령을 지원해야 한다. | Must | 검증 성공 후 Reset을 통해 새 Slot 부팅을 시도해야 한다. |
 | FR-CAN-016 | Negative Response Code를 정의해야 한다. | Must | 잘못된 세션, 보안 실패, 길이 오류, 순서 오류, 인증 실패 등을 구분해야 한다. |
-| FR-CAN-017 | Replay 방어를 위한 Session ID 또는 Freshness Counter를 사용해야 한다. | Should | 이전 세션의 Transfer Data 재전송이 거부되어야 한다. |
+| FR-CAN-017 | Replay 방어를 위해 세션 nonce(SecurityAccess Seed 파생 session_id)를 사용해야 한다. | Should | 각 프로그래밍 세션은 session_id를 가지며 TransferData가 이를 참조하여, 이전 세션 메시지의 재전송이 거부되어야 한다(SR-ATK-005). Seed freshness 한계는 ADR-004(개선 ADR-006). |
+| FR-CAN-018 | Read Data By Identifier(0x22) 명령을 지원해야 한다. | Should | DID로 APP_VERSION·active_slot·target_ecu_id·boot 상태를 조회할 수 있어야 한다(ECU Inventory, SR-UP-001 / Uptane version-report). |
+| FR-CAN-019 | UDS 세션은 S3 타임아웃을 적용해야 한다. | Must | 마지막 요청 후 5000ms(ISO 14229 S3server) 동안 무요청이면 Default 세션으로 복귀(세션 abort)하고 기존 App을 유지해야 한다(SR-ATK-008, FR-BL-012·NFR-REL-003 연계). |
 
 ### 7.5 Drive ECU Application 요구사항
 
@@ -795,7 +797,7 @@ STM32F446RE Linker Script 및 실제 구현 기준으로 확정된 파티션.
 | Gateway | FR-GW-001 ~ FR-GW-008 | TC-NOR-001, TC-NOR-003, TC-SEC-010 |
 | Bootloader | FR-BL-001 ~ FR-BL-012 | TC-NOR-002, TC-NOR-003, TC-FAIL-001 ~ TC-FAIL-005 |
 | A/B Rollback | FR-AB-001 ~ FR-AB-007 | TC-NOR-004, TC-FAIL-001, TC-FAIL-004 |
-| CAN / ISO-TP / UDS | FR-CAN-001 ~ FR-CAN-017 | TC-NOR-003, TC-FAIL-002, TC-SEC-005 |
+| CAN / ISO-TP / UDS | FR-CAN-001 ~ FR-CAN-019 | TC-NOR-003, TC-FAIL-002, TC-SEC-005 |
 | Drive ECU App | FR-DRV-001 ~ FR-DRV-008 | TC-NOR-005, TC-NOR-006, TC-NOR-007 |
 | Sensor ECU App | FR-SEN-001 ~ FR-SEN-005 | TC-NOR-005, TC-NOR-006, TC-NOR-007 |
 | Manifest / Firmware Security | SR-MF-001 ~ SR-MF-008, SR-FW-001 ~ SR-FW-006 | TC-SEC-001 ~ TC-SEC-004 |
@@ -1033,4 +1035,5 @@ TSR-001  (SUP.9)
 | 2.3 | 2026-06-02 | SecurityAccess HMAC 구현 반영(D1): §13.6 정정 — F446 무RNG→소프트웨어 DRBG seed, `HMAC-SHA256(key=PSK, msg=Seed)[0:4]` 명확화, PSK를 WRP Bootloader `0x08007FE0` 배치(SR-KEY-003), 3회→NRC 0x36 + 10s→NRC 0x37 잠금(RAM 기반, NV는 후속). 양 ECU·게이트웨이·단위테스트(test_hmac/test_uds_state) 일치 검증 |
 | 2.4 | 2026-06-02 | §13.6 Seed 생성 표기 정정 — "소프트웨어 DRBG"는 부정확(엔트로피원 없음)하여 "소프트웨어 nonce"로 정정, NIST SP 800-90 미준수·재부팅 replay 한계 명시 및 개선 경로(ADC/발진기 지터→HMAC_DRBG, HSM/SHE) ADR-004 추가 |
 | 2.5 | 2026-06-03 | 문서 정합성 패스: WRP 영역 정정(FR-BL-013·SR-KEY-001 "Sector 0~4"→"0~1" — 0~4는 Metadata·Slot A까지 잠가 OTA 불가, §14.2와 모순 해소), 파일명 버전표기 제거(SSOT — 버전은 본 개정이력에만), 메타데이터 이중화(섹터2·3)를 README·TEST_SPEC 메모리맵에 반영, TEST_SPEC 추적성 §참조→FR/SR ID화, SecurityAccess XOR 잔재→HMAC 정정(TEST_SPEC·diagram) |
+| 2.6 | 2026-06-03 | §7.4 UDS 프로토콜 강화(적대적 질문 Round 2): FR-CAN-009(programmingSession 0x02 명시)·010(HMAC(key=PSK,msg=Seed)·nonce 정합 ADR-004)·011(ecu_id/hw_id·version fail-fast)·012(endless-data 누적상한 SR-ATK-007)·013(수신완료 검증)·014(fail-closed Verify→UPDATED) 갱신, FR-CAN-018(RDBID ECU Inventory)·019(S3 세션 타임아웃) 신설 |
 
