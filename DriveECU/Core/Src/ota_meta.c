@@ -40,3 +40,77 @@ int ota_meta_select(const OTA_Metadata_t *a, const OTA_Metadata_t *b, OTA_Metada
     if (vb) { *out = *b; return 1; }
     return 0;
 }
+
+OTA_BootPlan_t ota_meta_plan_boot(const OTA_Metadata_t *in, OTA_Metadata_t *out, uint32_t max_attempts)
+{
+    OTA_BootPlan_t p;
+    p.write     = 0;
+    p.boot_slot = -1;
+    *out = *in;
+
+    if (in->magic != METADATA_MAGIC) {
+        p.boot_slot = 0;            /* 메타 없음 → Slot A (factory/ST-Link) */
+        return p;
+    }
+
+    uint32_t cand = in->active_slot & 1u;
+    uint32_t cs   = cand ? in->slot_b_status : in->slot_a_status;
+    uint32_t othr = cand ^ 1u;
+    uint32_t os   = othr ? in->slot_b_status : in->slot_a_status;
+
+    if (cs == SLOT_CONFIRMED) {
+        p.boot_slot = (int)cand;    /* known-good → 그냥 부팅 */
+        return p;
+    }
+
+    if (cs == SLOT_UPDATED) {       /* 첫 시험 부팅 */
+        if (cand) out->slot_b_status = SLOT_TRIAL; else out->slot_a_status = SLOT_TRIAL;
+        out->boot_count  = 1;
+        out->seq_counter = in->seq_counter + 1u;
+        p.write     = 1;
+        p.boot_slot = (int)cand;
+        return p;
+    }
+
+    if (cs == SLOT_TRIAL) {
+        if (in->boot_count + 1u > max_attempts) {   /* 3-strike: 포기 */
+            if (cand) out->slot_b_status = SLOT_INVALID; else out->slot_a_status = SLOT_INVALID;
+            out->seq_counter = in->seq_counter + 1u;
+            p.write = 1;
+            if (os == SLOT_CONFIRMED) {
+                out->active_slot = othr;
+                p.boot_slot = (int)othr;            /* 롤백 */
+            } else {
+                p.boot_slot = -1;                   /* 폴백 없음 → safe state */
+            }
+            return p;
+        }
+        out->boot_count  = in->boot_count + 1u;     /* 재시험 */
+        out->seq_counter = in->seq_counter + 1u;
+        p.write     = 1;
+        p.boot_slot = (int)cand;
+        return p;
+    }
+
+    /* 후보가 INVALID/UPDATING/미지 → 반대 CONFIRMED 폴백 */
+    if (os == SLOT_CONFIRMED) {
+        p.boot_slot = (int)othr;
+        return p;
+    }
+    p.boot_slot = -1;               /* safe state */
+    return p;
+}
+
+int ota_meta_plan_confirm(const OTA_Metadata_t *in, uint32_t my_slot, OTA_Metadata_t *out)
+{
+    *out = *in;
+    if (in->magic != METADATA_MAGIC) return 0;
+
+    uint32_t st = (my_slot & 1u) ? in->slot_b_status : in->slot_a_status;
+    if (st != SLOT_TRIAL && st != SLOT_UPDATED) return 0;   /* 확정할 것 없음 */
+
+    if (my_slot & 1u) out->slot_b_status = SLOT_CONFIRMED; else out->slot_a_status = SLOT_CONFIRMED;
+    out->boot_count  = 0;
+    out->seq_counter = in->seq_counter + 1u;
+    return 1;
+}

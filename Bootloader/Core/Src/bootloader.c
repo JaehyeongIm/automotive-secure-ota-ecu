@@ -54,6 +54,38 @@ static void safe_state(void)
         printf("[BL] Waiting...\r\n");
     }
 }
+
+/* 메타데이터 전이를 비활성 사본에 원자적으로 커밋(ping-pong, CRC 마지막 워드). */
+static void bl_meta_commit(OTA_Metadata_t *m)
+{
+    const OTA_Metadata_t *ca = (const OTA_Metadata_t *)METADATA_A_ADDR;
+    const OTA_Metadata_t *cb = (const OTA_Metadata_t *)METADATA_B_ADDR;
+    int va = ota_meta_valid(ca), vb = ota_meta_valid(cb);
+    int to_b;
+    if (va && vb) to_b = (ca->seq_counter >= cb->seq_counter) ? 1 : 0;
+    else if (va)  to_b = 1;
+    else          to_b = 0;
+
+    m->crc32 = ota_meta_crc(m);   /* seal; crc32가 마지막 워드라 마지막에 기록됨 */
+
+    FLASH_EraseInitTypeDef erase = {0};
+    uint32_t err;
+    uint32_t addr = to_b ? METADATA_B_ADDR : METADATA_A_ADDR;
+    erase.TypeErase    = FLASH_TYPEERASE_SECTORS;
+    erase.VoltageRange = FLASH_VOLTAGE_RANGE_3;
+    erase.Sector       = to_b ? FLASH_SECTOR_3 : FLASH_SECTOR_2;
+    erase.NbSectors    = 1;
+
+    HAL_FLASH_Unlock();
+    if (HAL_FLASHEx_Erase(&erase, &err) != HAL_OK) { HAL_FLASH_Lock(); return; }
+    const uint8_t *src = (const uint8_t *)m;
+    for (uint32_t i = 0; i < sizeof(*m); i += 4) {
+        uint32_t word;
+        memcpy(&word, &src[i], 4);
+        if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, addr + i, word) != HAL_OK) break;
+    }
+    HAL_FLASH_Lock();
+}
 #endif /* UNIT_TEST */
 
 /* 메타데이터만으로 부팅 주소를 결정한다.
@@ -64,13 +96,13 @@ uint32_t bootloader_select_boot_addr(const OTA_Metadata_t *meta)
         return SLOT_A_ADDR;
 
     if (meta->active_slot == 0) {
-        if (meta->slot_a_status == SLOT_CONFIRMED || meta->slot_a_status == SLOT_PENDING)
+        if (meta->slot_a_status == SLOT_CONFIRMED || meta->slot_a_status == SLOT_UPDATED)
             return SLOT_A_ADDR;
         if (meta->slot_b_status == SLOT_CONFIRMED)
             return SLOT_B_ADDR;
         return 0;  /* 두 슬롯 모두 유효하지 않음 → safe_state 진입 */
     } else {
-        if (meta->slot_b_status == SLOT_CONFIRMED || meta->slot_b_status == SLOT_PENDING)
+        if (meta->slot_b_status == SLOT_CONFIRMED || meta->slot_b_status == SLOT_UPDATED)
             return SLOT_B_ADDR;
         if (meta->slot_a_status == SLOT_CONFIRMED)
             return SLOT_A_ADDR;
@@ -94,11 +126,19 @@ void bootloader_run(void)
         printf("[BL] No valid metadata, defaulting to Slot A\r\n");
     }
 
-    uint32_t boot_addr = bootloader_select_boot_addr(&meta);
-    if (boot_addr == 0) {
+    /* Trial / 3-strike 생명주기 (FR-AB-007): 부팅 슬롯 결정 + 전이 커밋. */
+    OTA_Metadata_t newmeta;
+    OTA_BootPlan_t plan = ota_meta_plan_boot(&meta, &newmeta, 3);
+    if (plan.write) {
+        printf("[BL] meta transition seq %lu->%lu\r\n", meta.seq_counter, newmeta.seq_counter);
+        bl_meta_commit(&newmeta);
+        meta = newmeta;   /* 이후 로직은 갱신된 상태 사용 */
+    }
+    if (plan.boot_slot < 0) {
         safe_state();
         return;
     }
+    uint32_t boot_addr = (plan.boot_slot == 0) ? SLOT_A_ADDR : SLOT_B_ADDR;
 
     if (!is_valid_app(boot_addr)) {
         printf("[BL] No valid app at 0x%08lX, trying fallback\r\n", boot_addr);

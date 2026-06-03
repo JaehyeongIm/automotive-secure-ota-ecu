@@ -4,9 +4,12 @@
 #include <stdint.h>
 
 #define METADATA_MAGIC   0xDEADBEEFUL
-#define SLOT_CONFIRMED   0xAAAAAAAAUL
-#define SLOT_PENDING     0xBBBBBBBBUL
-#define SLOT_INVALID     0xCCCCCCCCUL
+/* Slot lifecycle (§7.3.1): INVALID → UPDATING → UPDATED → TRIAL → CONFIRMED */
+#define SLOT_CONFIRMED   0xAAAAAAAAUL   /* self-test 통과, known-good */
+#define SLOT_UPDATED     0xBBBBBBBBUL   /* 기록+정적검증 완료, 첫 시험부팅 대기 (구 PENDING) */
+#define SLOT_INVALID     0xCCCCCCCCUL   /* 무효 / 3-strike 실패 마킹 */
+#define SLOT_UPDATING    0xDDDDDDDDUL   /* 기록 진행 중(erase/program) */
+#define SLOT_TRIAL       0xEEEEEEEEUL   /* 시험부팅됨(attempt 카운트), self-test 대기 */
 
 #define METADATA_A_ADDR  0x08008000UL   /* sector 2 — metadata copy A */
 #define METADATA_B_ADDR  0x0800C000UL   /* sector 3 — metadata copy B */
@@ -41,5 +44,18 @@ int      ota_meta_valid(const OTA_Metadata_t *m);
 /* Select the valid copy with the highest seq into *out.
  * Returns 1 if at least one copy is valid, else 0 (caller → safe state). */
 int      ota_meta_select(const OTA_Metadata_t *a, const OTA_Metadata_t *b, OTA_Metadata_t *out);
+
+/* ── 부팅 시 생명주기 결정 (FR-AB-007: trial + 3-strike 롤백) ── */
+typedef struct {
+    int write;       /* 1 → 점프 전에 *out을 플래시에 기록해야 함 */
+    int boot_slot;   /* 0=Slot A, 1=Slot B, -1=safe state */
+} OTA_BootPlan_t;
+
+/* 현재 메타(in)로부터 부팅 슬롯과, 점프 전 커밋할 메타(*out)를 결정한다(순수).
+ * UPDATED→TRIAL(count=1), TRIAL→count++ 또는 3-strike 시 INVALID+롤백. */
+OTA_BootPlan_t ota_meta_plan_boot(const OTA_Metadata_t *in, OTA_Metadata_t *out, uint32_t max_attempts);
+
+/* App self-test 통과 → my_slot 확정(TRIAL→CONFIRMED, attempt=0). 기록 필요 시 1 반환. */
+int ota_meta_plan_confirm(const OTA_Metadata_t *in, uint32_t my_slot, OTA_Metadata_t *out);
 
 #endif /* OTA_META_H */

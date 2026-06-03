@@ -31,7 +31,7 @@ void test_active0_slot_a_confirmed_selects_slot_a(void)
    SRS FR-BL-001: PENDING 슬롯도 부팅 대상                                  */
 void test_active0_slot_a_pending_selects_slot_a(void)
 {
-    OTA_Metadata_t m = make_meta(0, SLOT_PENDING, 0xFF);
+    OTA_Metadata_t m = make_meta(0, SLOT_UPDATED, 0xFF);
     TEST_ASSERT_EQUAL_HEX32(SLOT_A_ADDR, bootloader_select_boot_addr(&m));
 }
 
@@ -55,7 +55,7 @@ void test_active1_slot_b_confirmed_selects_slot_b(void)
    SRS FR-BL-001: PENDING 슬롯도 부팅 대상                                  */
 void test_active1_slot_b_pending_selects_slot_b(void)
 {
-    OTA_Metadata_t m = make_meta(1, 0xFF, SLOT_PENDING);
+    OTA_Metadata_t m = make_meta(1, 0xFF, SLOT_UPDATED);
     TEST_ASSERT_EQUAL_HEX32(SLOT_B_ADDR, bootloader_select_boot_addr(&m));
 }
 

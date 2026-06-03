@@ -178,7 +178,7 @@ HAL_StatusTypeDef ota_meta_write_pending(uint8_t slot, uint32_t fw_size)
 
     if (slot == 0) {
         meta.active_slot    = 0;
-        meta.slot_a_status  = SLOT_PENDING;
+        meta.slot_a_status  = SLOT_UPDATED;
         meta.slot_b_status  = SLOT_CONFIRMED;
         meta.slot_a_version = have ? cur.slot_a_version + 1 : 1;
         meta.slot_b_version = have ? cur.slot_b_version : 1;
@@ -187,7 +187,7 @@ HAL_StatusTypeDef ota_meta_write_pending(uint8_t slot, uint32_t fw_size)
     } else {
         meta.active_slot    = 1;
         meta.slot_a_status  = SLOT_CONFIRMED;
-        meta.slot_b_status  = SLOT_PENDING;
+        meta.slot_b_status  = SLOT_UPDATED;
         meta.slot_a_version = have ? cur.slot_a_version : 1;
         meta.slot_b_version = have ? cur.slot_b_version + 1 : 2;
         meta.slot_a_size    = have ? cur.slot_a_size : 0;
@@ -198,4 +198,23 @@ HAL_StatusTypeDef ota_meta_write_pending(uint8_t slot, uint32_t fw_size)
     meta.crc32      = ota_meta_crc(&meta);
 
     return meta_write_copy(to_b, &meta);
+}
+
+/* App self-test 통과 후 호출: 내 슬롯이 TRIAL/UPDATED이면 CONFIRMED로 commit
+ * (attempt=0). TRIAL이 아니면 no-op. 비활성 사본에 ping-pong 기록(FR-AB-004). */
+HAL_StatusTypeDef ota_meta_self_confirm(uint8_t my_slot)
+{
+    OTA_Metadata_t cur, out;
+    if (!ota_meta_select(COPY_A, COPY_B, &cur)) return HAL_ERROR;
+    if (!ota_meta_plan_confirm(&cur, my_slot, &out)) return HAL_OK;   /* 확정할 것 없음 */
+
+    int va = ota_meta_valid(COPY_A);
+    int vb = ota_meta_valid(COPY_B);
+    int to_b;
+    if (va && vb) to_b = (COPY_A->seq_counter >= COPY_B->seq_counter) ? 1 : 0;
+    else if (va)  to_b = 1;
+    else          to_b = 0;
+
+    out.crc32 = ota_meta_crc(&out);
+    return meta_write_copy(to_b, &out);
 }

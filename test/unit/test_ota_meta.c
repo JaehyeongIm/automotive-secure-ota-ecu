@@ -76,7 +76,7 @@ void test_write_pending_slot1_sets_b_pending_a_confirmed(void)
     ota_test_get_meta(&result);
     TEST_ASSERT_EQUAL_UINT32(METADATA_MAGIC,  result.magic);
     TEST_ASSERT_EQUAL_UINT32(1,               result.active_slot);
-    TEST_ASSERT_EQUAL_UINT32(SLOT_PENDING,    result.slot_b_status);
+    TEST_ASSERT_EQUAL_UINT32(SLOT_UPDATED,    result.slot_b_status);
     TEST_ASSERT_EQUAL_UINT32(SLOT_CONFIRMED,  result.slot_a_status);
     TEST_ASSERT_EQUAL_UINT32(1024,            result.slot_b_size);
 }
@@ -92,7 +92,7 @@ void test_write_pending_slot0_sets_a_pending_b_confirmed(void)
     OTA_Metadata_t result;
     ota_test_get_meta(&result);
     TEST_ASSERT_EQUAL_UINT32(0,               result.active_slot);
-    TEST_ASSERT_EQUAL_UINT32(SLOT_PENDING,    result.slot_a_status);
+    TEST_ASSERT_EQUAL_UINT32(SLOT_UPDATED,    result.slot_a_status);
     TEST_ASSERT_EQUAL_UINT32(SLOT_CONFIRMED,  result.slot_b_status);
     TEST_ASSERT_EQUAL_UINT32(2048,            result.slot_a_size);
 }
@@ -157,4 +157,18 @@ void test_get_active_slot_reflects_write_pending(void)
     ota_meta_write_pending(1, 512);
 
     TEST_ASSERT_EQUAL_UINT8(1, ota_get_active_slot());
+}
+
+/* TC-UT-META-010: self-test 통과 → TRIAL 슬롯 self-confirm → CONFIRMED, boot_count=0 */
+void test_self_confirm_trial_to_confirmed(void)
+{
+    OTA_Metadata_t cur = make_meta(1, SLOT_CONFIRMED, SLOT_TRIAL, 1, 2, 5);
+    ota_test_init_meta(&cur);
+
+    TEST_ASSERT_EQUAL_INT(HAL_OK, ota_meta_self_confirm(1));
+
+    OTA_Metadata_t result;
+    ota_test_get_meta(&result);
+    TEST_ASSERT_EQUAL_UINT32(SLOT_CONFIRMED, result.slot_b_status);
+    TEST_ASSERT_EQUAL_UINT32(0,              result.boot_count);
 }

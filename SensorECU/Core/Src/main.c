@@ -83,6 +83,7 @@ static uint32_t tx_mailbox;
 
 static volatile uint16_t s_distance_cm  = 0;
 static volatile uint8_t  s_obstacle     = 0;
+static volatile uint8_t  s_hb_sent      = 0;   /* 첫 heartbeat 송신 성공 = self-test liveness */
 static uint32_t          s_measure_tick = 0;
 static volatile uint8_t  s_hb_tx_fail_count;
 static volatile uint8_t  s_obs_tx_fail_count;
@@ -273,6 +274,14 @@ int main(void)
     /* USER CODE BEGIN 3 */
     HAL_IWDG_Refresh(&hiwdg);
     uds_process();
+
+    /* self-test commit (FR-AB-004): main 루프 도달 + 페리페럴 init + heartbeat 송신 성공
+     * → 현재 슬롯이 TRIAL이면 CONFIRMED로 확정(1회). 플래시 쓰기라 ISR 아닌 메인 루프에서. */
+    static uint8_t s_self_confirmed = 0;
+    if (s_hb_sent && !s_self_confirmed) {
+        s_self_confirmed = 1;
+        ota_meta_self_confirm(ota_get_active_slot());
+    }
 
     static uint8_t s_last_tx_fail = 0;
     static uint8_t s_last_rx_abort = 0;
@@ -706,6 +715,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
     if (HAL_CAN_AddTxMessage(&hcan1, &tx_header, tx_data, &tx_mailbox) == HAL_OK) {
         HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+        s_hb_sent = 1;   /* self-test 항목: CAN 스택 생존 증명 */
     } else {
         capture_can_tx_fail(&s_hb_tx_fail_diag, &s_hb_tx_fail_count);
     }

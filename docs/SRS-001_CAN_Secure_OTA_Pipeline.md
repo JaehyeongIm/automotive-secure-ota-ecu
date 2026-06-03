@@ -5,7 +5,7 @@
 | 문서 ID | SRS-001 |
 | 문서명 | CAN 기반 UDS over ISO-TP Secure OTA 파이프라인 요구사항 명세서 |
 | 프로젝트명 | Dual ECU 버튼 트리거 직진 주행 Secure OTA 시스템 |
-| 버전 | 2.6 |
+| 버전 | 2.7 |
 | 작성일 | 2026-05-25 |
 | 작성 목적 | Dual ECU 버튼 트리거 직진 주행 + 장애물 회피 OTA 데모 시스템 소프트웨어 요구사항 정의 |
 | 주요 대상 | Raspberry Pi 5 Gateway, STM32F446RE ECU 2대, CAN Bus, Custom Bootloader, RC 차량 데모 플랫폼 |
@@ -261,7 +261,7 @@
 | ID | 요구사항 | 우선순위 | 수용 기준 |
 |---|---|---:|---|
 | FR-BL-001 | 각 STM32F446RE ECU는 Custom Bootloader를 포함해야 한다. | Must | Reset 후 Bootloader가 먼저 실행되어야 한다. |
-| FR-BL-002 | Bootloader는 현재 활성 Slot과 후보 Slot을 구분해야 한다. | Must | Metadata에서 active, pending, confirmed 상태를 읽을 수 있어야 한다. |
+| FR-BL-002 | Bootloader는 현재 활성 Slot과 후보 Slot을 구분해야 한다. | Must | Metadata에서 active 슬롯과 각 슬롯의 5상태(§7.3.1: INVALID/UPDATING/UPDATED/TRIAL/CONFIRMED)를 읽을 수 있어야 한다. |
 | FR-BL-003 | Bootloader는 유효한 App이 있을 경우 해당 App으로 jump해야 한다. | Must | Vector Table 설정 후 App Reset Handler로 정상 진입해야 한다. |
 | FR-BL-004 | Bootloader는 CAN 기반 업데이트 세션에 진입할 수 있어야 한다. | Must | 특정 조건 또는 명령 수신 시 update mode에 진입해야 한다. |
 | FR-BL-005 | Bootloader는 수신한 펌웨어 조각을 비활성 Slot에 기록해야 한다. | Must | Flash erase/write가 섹터 경계와 주소 범위 내에서 수행되어야 한다. |
@@ -297,7 +297,7 @@
 | FR-AB-003 | 새 Slot은 정적 검증(이미지 헤더 서명·hash·version, FR-AB-008)을 통과하기 전까지 Boot Target으로 선택되지 않아야 한다. 검증 불가·헤더 부재는 PASS가 아니라 **검증 실패(fail-closed)**로 처리한다. | Must | 헤더/서명/hash/version 중 하나라도 검증 실패 또는 검증 불가 시 기존 CONFIRMED Slot이 유지되어야 한다. `image_size==0` 등 검증을 우회하는 경로가 존재하지 않아야 한다(ISO 24089/R155 deny-by-default). |
 | FR-AB-004 | 새 App은 부팅 후 **측정 가능한 Self-test**를 통과해야 CONFIRMED로 전이되며, Confirm 주체는 ECU 자신이어야 한다. | Must | 다음 4개를 부팅 후 Tboot 이내 모두 만족 시 PASS: ① app main 루프 진입, ② CAN/Timer/모터·센서 페리페럴 init 성공, ③ CAN heartbeat 1회 송신 성공, ④ 런타임 APP_VERSION == 이미지 헤더 version(FR-AB-008). PASS 시 ECU가 메타를 TRIAL→CONFIRMED로 기록한다. Gateway의 완료 명령만으로는 CONFIRMED되지 않아야 한다(SR-ATK-009). **Tboot**는 타깃 실측 worst-case(리셋~Self-test 완료)의 2배 이상 여유로 유도하되 IWDG 윈도우(8000ms) 미만이어야 하며, 측정 방식은 **ADR-002**를 따른다. |
 | FR-AB-005 | 업데이트(특히 메타데이터 갱신) 도중 전원 차단이 발생해도 기존 CONFIRMED App이 유지되어야 하며, 메타데이터는 **원자적으로** 갱신되어야 한다. | Must | 메타데이터를 **2개의 분리된 플래시 섹터에 이중화(redundant)**하고 각 사본에 CRC32와 monotonic `seq_counter`를 둔다. 갱신은 구(舊) 사본에 기록하고 CRC를 **마지막에** 기록하며, 부팅 시 CRC가 유효하고 seq가 최신인 사본을 선택한다(AUTOSAR NvM redundant-block 패턴). 메타 쓰기 중 전원 차단 테스트 후 기존 App으로 정상 부팅해야 한다. |
-| FR-AB-006 | Boot Metadata는 슬롯 상태(slot_a/b_status), active/confirmed/pending slot, slot 버전, boot_attempt_count, last_error, metadata_crc, seq_counter를 관리해야 한다. | Should | §13.3의 필드를 모두 포함하고, metadata dump 또는 로그에서 상태 확인이 가능해야 한다. |
+| FR-AB-006 | Boot Metadata는 슬롯 5상태(slot_a/b_status), active_slot, slot 버전, boot_attempt_count, slot 크기, metadata_crc, seq_counter를 관리해야 한다. | Should | §13.3의 필드를 모두 포함하고, metadata dump 또는 로그에서 상태 확인이 가능해야 한다. |
 | FR-AB-007 | 부트로더는 UPDATED 슬롯으로 점프하기 **직전** boot_attempt_count를 비휘발성으로 1 증가시키고, Self-test PASS 시 0으로 리셋하며 CONFIRMED로 전이해야 한다. count가 3을 초과하면 해당 슬롯을 INVALID로 마킹하고 이전 CONFIRMED Slot으로 롤백해야 한다. | Should | hang·crash·reset 등 Self-test를 완료하지 못한 **모든** 경우가 카운트되어, 3회 초과 시 자동 롤백이 확인되어야 한다(증가-먼저-점프). 임계값 3과 롤백 총지연(3×부팅시간)은 ISO 26262 FTTI 범위 및 IWDG 윈도우 내여야 한다. |
 | FR-AB-008 | 각 App 이미지는 고정 오프셋(offset 0)에 **서명으로 보호되는 Image Header**를 포함해야 한다. | Must | 헤더는 `{magic, header_version, target_ecu_id, hardware_id, fw_version, image_size, image_hash}`를 포함하고, ECDSA 서명이 (헤더+코드)를 함께 덮어야 한다. 부트로더는 이미지를 **실행하지 않고** 헤더만 읽어 anti-rollback(fw_version, FR-BL-008/SR-FW-003)과 ECU ID 일치(FR-BL-009)를 검증한다. 기대 fw_version의 출처는 서명된 Manifest(§13.1)이며, ECU는 Gateway의 Manifest를 신뢰하지 않고 헤더+서명으로 독립 검증해야 한다(SR-UP-004, Uptane). |
 
@@ -636,15 +636,14 @@ TSR-001에는 각 문제에 대해 다음 항목을 포함한다.
 |---|---|
 | magic | Metadata 유효성 확인용 고정 값 |
 | metadata_version | Metadata 구조 버전 |
-| active_slot | 현재 실행 대상 Slot |
-| confirmed_slot | 마지막으로 정상 확인된 Slot |
-| pending_slot | 다음 부팅에서 검증할 후보 Slot |
+| active_slot | 현재 부팅 대상 Slot (0=A, 1=B). 슬롯별 생명주기는 slot_a/b_status 5상태로 표현하며 별도 confirmed/pending 포인터를 두지 않는다 |
 | slot_a_version | Slot A 펌웨어 버전 |
 | slot_b_version | Slot B 펌웨어 버전 |
 | slot_a_status | Slot A 상태 (INVALID/UPDATING/UPDATED/TRIAL/CONFIRMED, §7.3.1) |
 | slot_b_status | Slot B 상태 (INVALID/UPDATING/UPDATED/TRIAL/CONFIRMED, §7.3.1) |
-| boot_attempt_count | 후보 Slot 부팅 시도 횟수 |
-| last_error | 마지막 업데이트/부팅 실패 원인 |
+| boot_attempt_count | TRIAL 슬롯 부팅 시도 횟수(코드 필드: boot_count). 점프 직전 +1, self-test PASS 시 0 리셋, 3 초과 시 롤백(FR-AB-007) |
+| slot_a_size / slot_b_size | 각 슬롯 서명 이미지 크기(부트로더 ECDSA 검증용) |
+| last_error | 마지막 업데이트/부팅 실패 원인 (예약) |
 | metadata_crc | Metadata 손상 검출용 CRC32 |
 | seq_counter | 이중화 사본 중 최신본 식별용 monotonic 카운터 |
 
@@ -1036,4 +1035,5 @@ TSR-001  (SUP.9)
 | 2.4 | 2026-06-02 | §13.6 Seed 생성 표기 정정 — "소프트웨어 DRBG"는 부정확(엔트로피원 없음)하여 "소프트웨어 nonce"로 정정, NIST SP 800-90 미준수·재부팅 replay 한계 명시 및 개선 경로(ADC/발진기 지터→HMAC_DRBG, HSM/SHE) ADR-004 추가 |
 | 2.5 | 2026-06-03 | 문서 정합성 패스: WRP 영역 정정(FR-BL-013·SR-KEY-001 "Sector 0~4"→"0~1" — 0~4는 Metadata·Slot A까지 잠가 OTA 불가, §14.2와 모순 해소), 파일명 버전표기 제거(SSOT — 버전은 본 개정이력에만), 메타데이터 이중화(섹터2·3)를 README·TEST_SPEC 메모리맵에 반영, TEST_SPEC 추적성 §참조→FR/SR ID화, SecurityAccess XOR 잔재→HMAC 정정(TEST_SPEC·diagram) |
 | 2.6 | 2026-06-03 | §7.4 UDS 프로토콜 강화(적대적 질문 Round 2): FR-CAN-009(programmingSession 0x02 명시)·010(HMAC(key=PSK,msg=Seed)·nonce 정합 ADR-004)·011(ecu_id/hw_id·version fail-fast)·012(endless-data 누적상한 SR-ATK-007)·013(수신완료 검증)·014(fail-closed Verify→UPDATED) 갱신, FR-CAN-018(RDBID ECU Inventory)·019(S3 세션 타임아웃) 신설 |
+| 2.7 | 2026-06-03 | self-test commit + 3-strike 롤백 구현(FR-AB-004/007) + 슬롯 5상태 정합: 코드의 SLOT_PENDING을 UPDATED/TRIAL/UPDATING로 분리(§7.3.1 5상태 실코드화), ota_meta_plan_boot(증가-먼저-점프·3회 초과 INVALID+롤백)·plan_confirm(TRIAL→CONFIRMED) 추가, 부트로더 bl_meta_commit, 앱 self-test(heartbeat 성공)→ota_meta_self_confirm, §13.3·FR-BL-002·FR-AB-006의 pending 어휘 5상태 정정. 단위테스트 48개 통과 |
 
