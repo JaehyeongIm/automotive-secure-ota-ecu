@@ -4,6 +4,7 @@
 #include "ecdsa_pubkey.h"
 #include "main.h"
 #include <stdio.h>
+#include <string.h>
 
 #define uECC_SUPPORTS_secp160r1 0
 #define uECC_SUPPORTS_secp192r1 0
@@ -80,17 +81,20 @@ uint32_t bootloader_select_boot_addr(const OTA_Metadata_t *meta)
 #ifndef UNIT_TEST
 void bootloader_run(void)
 {
-    OTA_Metadata_t *meta = (OTA_Metadata_t *)METADATA_ADDR;
-
     printf("[BL] Bootloader v1.0\r\n");
 
-    if (meta->magic == METADATA_MAGIC)
-        printf("[BL] active_slot=%lu  A=0x%08lX  B=0x%08lX\r\n",
-               meta->active_slot, meta->slot_a_status, meta->slot_b_status);
-    else
-        printf("[BL] No metadata, defaulting to Slot A\r\n");
+    /* Redundant metadata: pick the CRC-valid copy with the highest seq (FR-AB-005). */
+    OTA_Metadata_t meta;
+    if (ota_meta_select((const OTA_Metadata_t *)METADATA_A_ADDR,
+                        (const OTA_Metadata_t *)METADATA_B_ADDR, &meta)) {
+        printf("[BL] meta seq=%lu active=%lu  A=0x%08lX  B=0x%08lX\r\n",
+               meta.seq_counter, meta.active_slot, meta.slot_a_status, meta.slot_b_status);
+    } else {
+        memset(&meta, 0, sizeof(meta));   /* no valid copy → magic=0 → default Slot A */
+        printf("[BL] No valid metadata, defaulting to Slot A\r\n");
+    }
 
-    uint32_t boot_addr = bootloader_select_boot_addr(meta);
+    uint32_t boot_addr = bootloader_select_boot_addr(&meta);
     if (boot_addr == 0) {
         safe_state();
         return;
@@ -98,10 +102,10 @@ void bootloader_run(void)
 
     if (!is_valid_app(boot_addr)) {
         printf("[BL] No valid app at 0x%08lX, trying fallback\r\n", boot_addr);
-        if (boot_addr == SLOT_B_ADDR && meta->slot_a_status == SLOT_CONFIRMED) {
+        if (boot_addr == SLOT_B_ADDR && meta.slot_a_status == SLOT_CONFIRMED) {
             boot_addr = SLOT_A_ADDR;
             printf("[BL] Fallback to Slot A\r\n");
-        } else if (boot_addr == SLOT_A_ADDR && meta->slot_b_status == SLOT_CONFIRMED) {
+        } else if (boot_addr == SLOT_A_ADDR && meta.slot_b_status == SLOT_CONFIRMED) {
             boot_addr = SLOT_B_ADDR;
             printf("[BL] Fallback to Slot B\r\n");
         } else {
@@ -116,9 +120,9 @@ void bootloader_run(void)
     }
 
     /* ECDSA 서명 검증 — size==0: ST-Link 플래싱(건너뜀), size==0xFFFFFFFF: 구 메타데이터(건너뜀) */
-    if (meta->magic == METADATA_MAGIC) {
-        uint32_t fw_total = (boot_addr == SLOT_A_ADDR) ? meta->slot_a_size
-                                                       : meta->slot_b_size;
+    if (meta.magic == METADATA_MAGIC) {
+        uint32_t fw_total = (boot_addr == SLOT_A_ADDR) ? meta.slot_a_size
+                                                       : meta.slot_b_size;
         uint32_t slot_max = (boot_addr == SLOT_A_ADDR) ? 0x30000UL : 0x40000UL;
         if (fw_total > 64 && fw_total <= slot_max) {
             uint32_t fw_data_size  = fw_total - 64;

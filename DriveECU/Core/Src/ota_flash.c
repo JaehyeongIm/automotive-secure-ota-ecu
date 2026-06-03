@@ -1,25 +1,76 @@
 #include "ota_flash.h"
+#include "ota_meta.h"
 #include <string.h>
 
-/* Must stay in sync with Bootloader/Core/Inc/bootloader.h */
-#define METADATA_MAGIC     0xDEADBEEFUL
-#define METADATA_ADDR      0x08008000UL
-#define SLOT_CONFIRMED     0xAAAAAAAAUL
-#define SLOT_PENDING       0xBBBBBBBBUL
+/* Redundant Boot Metadata (FR-AB-005): two copies in sectors 2 & 3.
+ * Reads pick the CRC-valid copy with the highest seq (ota_meta_select).
+ * Writes go to the *other* (non-current) copy with seq+1 and CRC as the last
+ * word, so the current copy stays intact until the new copy is fully sealed
+ * (power-loss-safe / atomic commit). */
 
-typedef struct {
-    uint32_t magic;
-    uint32_t active_slot;
-    uint32_t slot_a_status;
-    uint32_t slot_b_status;
-    uint32_t slot_a_version;
-    uint32_t slot_b_version;
-    uint32_t boot_count;
-    uint32_t slot_a_size;
-    uint32_t slot_b_size;
-} OTA_Metadata_t;
+#ifdef UNIT_TEST
+/* Host test: two RAM buffers model the two flash sectors. */
+static uint8_t s_copy_a[sizeof(OTA_Metadata_t)];
+static uint8_t s_copy_b[sizeof(OTA_Metadata_t)];
+#define COPY_A ((const OTA_Metadata_t *)s_copy_a)
+#define COPY_B ((const OTA_Metadata_t *)s_copy_b)
+
+static HAL_StatusTypeDef meta_write_copy(int to_b, const OTA_Metadata_t *m)
+{
+    memcpy(to_b ? s_copy_b : s_copy_a, m, sizeof(*m));
+    return HAL_OK;
+}
+
+void ota_test_init_meta(const OTA_Metadata_t *m)
+{
+    OTA_Metadata_t s = *m;
+    if (s.magic == METADATA_MAGIC) {
+        if (s.seq_counter == 0) s.seq_counter = 1;
+        s.crc32 = ota_meta_crc(&s);
+    }
+    memcpy(s_copy_a, &s, sizeof(s));
+    memset(s_copy_b, 0xFF, sizeof(s_copy_b));   /* copy B erased */
+}
+
+void ota_test_get_meta(OTA_Metadata_t *m)
+{
+    if (!ota_meta_select(COPY_A, COPY_B, m)) memset(m, 0, sizeof(*m));
+}
+#else
+#define COPY_A ((const OTA_Metadata_t *)METADATA_A_ADDR)
+#define COPY_B ((const OTA_Metadata_t *)METADATA_B_ADDR)
 
 extern IWDG_HandleTypeDef hiwdg;
+
+/* Erase + program a sealed metadata struct to one physical copy.
+ * crc32 is the struct's last word, so it is programmed last → a power-loss
+ * mid-write leaves crc invalid and that copy is rejected on the next boot. */
+static HAL_StatusTypeDef meta_write_copy(int to_b, const OTA_Metadata_t *m)
+{
+    FLASH_EraseInitTypeDef erase = {0};
+    uint32_t err;
+    uint32_t addr = to_b ? METADATA_B_ADDR : METADATA_A_ADDR;
+    HAL_StatusTypeDef ret;
+
+    erase.TypeErase    = FLASH_TYPEERASE_SECTORS;
+    erase.VoltageRange = FLASH_VOLTAGE_RANGE_3;
+    erase.Sector       = to_b ? FLASH_SECTOR_3 : FLASH_SECTOR_2;
+    erase.NbSectors    = 1;
+
+    HAL_FLASH_Unlock();
+    ret = HAL_FLASHEx_Erase(&erase, &err);
+    if (ret != HAL_OK) { HAL_FLASH_Lock(); return ret; }
+
+    const uint8_t *src = (const uint8_t *)m;
+    for (uint32_t i = 0; i < sizeof(*m); i += 4) {
+        uint32_t word;
+        memcpy(&word, &src[i], 4);
+        ret = HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, addr + i, word);
+        if (ret != HAL_OK) break;
+    }
+    HAL_FLASH_Lock();
+    return ret;
+}
 
 HAL_StatusTypeDef ota_flash_erase_slot_a(void)
 {
@@ -91,71 +142,60 @@ HAL_StatusTypeDef ota_flash_write(uint32_t addr, const uint8_t *data, uint16_t l
     HAL_FLASH_Lock();
     return ret;
 }
+#endif /* UNIT_TEST */
 
-/* Returns the currently active slot (0 = A, 1 = B).
- * Defaults to 0 (Slot A) when no metadata exists. */
 uint8_t ota_get_active_slot(void)
 {
-    OTA_Metadata_t *meta = (OTA_Metadata_t *)METADATA_ADDR;
-    if (meta->magic != METADATA_MAGIC) return 0;
-    return (uint8_t)(meta->active_slot & 0x1);
+    OTA_Metadata_t m;
+    if (!ota_meta_select(COPY_A, COPY_B, &m)) return 0;
+    return (uint8_t)(m.active_slot & 0x1);
 }
 
 /*
  * slot: 0 = Slot A, 1 = Slot B
  * fw_size: total signed binary size (firmware + 64-byte signature)
  *
- * Sets the target slot to PENDING, the other slot to CONFIRMED (fallback).
+ * Stages the target slot as PENDING, the other as CONFIRMED (fallback), and
+ * commits it atomically to the inactive metadata copy (ping-pong).
  */
 HAL_StatusTypeDef ota_meta_write_pending(uint8_t slot, uint32_t fw_size)
 {
-    FLASH_EraseInitTypeDef erase = {0};
-    HAL_StatusTypeDef ret;
-    uint32_t err;
+    OTA_Metadata_t cur;
+    int have = ota_meta_select(COPY_A, COPY_B, &cur);
 
-    /* Read current metadata to preserve boot_count and versions */
-    OTA_Metadata_t *cur = (OTA_Metadata_t *)METADATA_ADDR;
-    OTA_Metadata_t meta = {0};
+    /* Pick the copy that is NOT current → current stays intact during the write. */
+    int va = ota_meta_valid(COPY_A);
+    int vb = ota_meta_valid(COPY_B);
+    int to_b;
+    if (va && vb) to_b = (COPY_A->seq_counter >= COPY_B->seq_counter) ? 1 : 0;
+    else if (va)  to_b = 1;
+    else          to_b = 0;
 
-    meta.magic = METADATA_MAGIC;
+    OTA_Metadata_t meta;
+    memset(&meta, 0, sizeof(meta));
+    meta.magic       = METADATA_MAGIC;
+    meta.seq_counter = have ? cur.seq_counter + 1 : 1;
 
     if (slot == 0) {
         meta.active_slot    = 0;
         meta.slot_a_status  = SLOT_PENDING;
         meta.slot_b_status  = SLOT_CONFIRMED;
-        meta.slot_a_version = (cur->magic == METADATA_MAGIC) ? cur->slot_a_version + 1 : 1;
-        meta.slot_b_version = (cur->magic == METADATA_MAGIC) ? cur->slot_b_version : 1;
+        meta.slot_a_version = have ? cur.slot_a_version + 1 : 1;
+        meta.slot_b_version = have ? cur.slot_b_version : 1;
         meta.slot_a_size    = fw_size;
-        meta.slot_b_size    = (cur->magic == METADATA_MAGIC) ? cur->slot_b_size : 0;
+        meta.slot_b_size    = have ? cur.slot_b_size : 0;
     } else {
         meta.active_slot    = 1;
         meta.slot_a_status  = SLOT_CONFIRMED;
         meta.slot_b_status  = SLOT_PENDING;
-        meta.slot_a_version = (cur->magic == METADATA_MAGIC) ? cur->slot_a_version : 1;
-        meta.slot_b_version = (cur->magic == METADATA_MAGIC) ? cur->slot_b_version + 1 : 2;
-        meta.slot_a_size    = (cur->magic == METADATA_MAGIC) ? cur->slot_a_size : 0;
+        meta.slot_a_version = have ? cur.slot_a_version : 1;
+        meta.slot_b_version = have ? cur.slot_b_version + 1 : 2;
+        meta.slot_a_size    = have ? cur.slot_a_size : 0;
         meta.slot_b_size    = fw_size;
     }
 
-    meta.boot_count = (cur->magic == METADATA_MAGIC) ? cur->boot_count : 0;
+    meta.boot_count = have ? cur.boot_count : 0;
+    meta.crc32      = ota_meta_crc(&meta);
 
-    HAL_FLASH_Unlock();
-
-    erase.TypeErase    = FLASH_TYPEERASE_SECTORS;
-    erase.VoltageRange = FLASH_VOLTAGE_RANGE_3;
-    erase.Sector       = FLASH_SECTOR_2;
-    erase.NbSectors    = 1;
-    ret = HAL_FLASHEx_Erase(&erase, &err);
-    if (ret != HAL_OK) { HAL_FLASH_Lock(); return ret; }
-
-    const uint8_t *src = (const uint8_t *)&meta;
-    for (uint32_t i = 0; i < sizeof(meta); i += 4) {
-        uint32_t word;
-        memcpy(&word, &src[i], 4);
-        ret = HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, METADATA_ADDR + i, word);
-        if (ret != HAL_OK) break;
-    }
-
-    HAL_FLASH_Lock();
-    return ret;
+    return meta_write_copy(to_b, &meta);
 }

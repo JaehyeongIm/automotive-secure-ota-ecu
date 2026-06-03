@@ -1,6 +1,11 @@
 #include "unity.h"
 #include "ota_flash.h"
+#include "ota_meta.h"
 #include <string.h>
+
+/* 테스트 전용 하니스(ota_flash.c #ifdef UNIT_TEST에 정의) */
+void ota_test_init_meta(const OTA_Metadata_t *m);
+void ota_test_get_meta(OTA_Metadata_t *m);
 
 /* ── 헬퍼 ─────────────────────────────────────────────────────────────────── */
 static OTA_Metadata_t make_meta(uint32_t active,

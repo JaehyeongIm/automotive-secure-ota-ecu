@@ -5,6 +5,7 @@
 
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
+../Core/Src/ota_meta.c \
 ../Core/Src/sha256.c \
 ../Core/Src/hmac_sha256.c \
 ../Core/Src/drive.c \
@@ -20,6 +21,7 @@ C_SRCS += \
 ../Core/Src/uds.c 
 
 OBJS += \
+./Core/Src/ota_meta.o \
 ./Core/Src/sha256.o \
 ./Core/Src/hmac_sha256.o \
 ./Core/Src/drive.o \
@@ -35,6 +37,7 @@ OBJS += \
 ./Core/Src/uds.o 
 
 C_DEPS += \
+./Core/Src/ota_meta.d \
 ./Core/Src/sha256.d \
 ./Core/Src/hmac_sha256.d \
 ./Core/Src/drive.d \

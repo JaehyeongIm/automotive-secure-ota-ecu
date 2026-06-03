@@ -1,3 +1,4 @@
+"./Core/Src/ota_meta.o"
 "./Core/Src/sha256.o"
 "./Core/Src/hmac_sha256.o"
 "./Core/Src/drive.o"

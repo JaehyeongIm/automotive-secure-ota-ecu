@@ -4,6 +4,9 @@
 #include <stdint.h>
 #include "stm32f4xx_hal.h"
 
+/* Slot/metadata layout and the OTA_Metadata_t struct live in ota_meta.h (SSOT).
+ * This header only declares the HAL-backed flash operations (mockable). */
+
 #define SLOT_A_START_ADDR  0x08010000UL
 #define SLOT_A_END_ADDR    0x08040000UL   /* 192KB */
 #define SLOT_B_START_ADDR  0x08040000UL
