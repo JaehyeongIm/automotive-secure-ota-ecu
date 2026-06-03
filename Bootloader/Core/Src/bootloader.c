@@ -110,6 +110,17 @@ uint32_t bootloader_select_boot_addr(const OTA_Metadata_t *meta)
     }
 }
 
+/* 검증 게이팅 결정 (FR-AB-003 fail-closed). HAL 없이 순수 — 호스트 단위 테스트 가능. */
+bl_verify_decision_t bootloader_verify_decision(const OTA_Metadata_t *meta,
+                                                uint32_t fw_total, uint32_t slot_max)
+{
+    if (meta->magic != METADATA_MAGIC)
+        return BL_VERIFY_SKIP;                  /* 메타 없음 = factory/ST-Link 미서명 dev */
+    if (fw_total > 64u && fw_total <= slot_max)
+        return BL_VERIFY_REQUIRED;              /* 정상 size → ECDSA 통과 필수 */
+    return BL_VERIFY_REFUSE;                    /* size==0/초과/0xFFFFFFFF → fail-closed 거부 */
+}
+
 #ifndef UNIT_TEST
 void bootloader_run(void)
 {
@@ -159,43 +170,50 @@ void bootloader_run(void)
         }
     }
 
-    /* ECDSA 서명 검증 — size==0: ST-Link 플래싱(건너뜀), size==0xFFFFFFFF: 구 메타데이터(건너뜀) */
-    if (meta.magic == METADATA_MAGIC) {
-        uint32_t fw_total = (boot_addr == SLOT_A_ADDR) ? meta.slot_a_size
-                                                       : meta.slot_b_size;
-        uint32_t slot_max = (boot_addr == SLOT_A_ADDR) ? 0x30000UL : 0x40000UL;
-        if (fw_total > 64 && fw_total <= slot_max) {
-            uint32_t fw_data_size  = fw_total - 64;
-            const uint8_t *fw_ptr  = (const uint8_t *)boot_addr;
-            const uint8_t *sig_ptr = fw_ptr + fw_data_size;
+    /* ECDSA 검증 게이팅 (FR-AB-003 fail-closed): 메타가 있는데 size가 비정상이면
+     * '검증 우회'가 아니라 '부팅 거부'. 메타 부재(factory)만 검증 없이 부팅. */
+    uint32_t fw_total = (boot_addr == SLOT_A_ADDR) ? meta.slot_a_size : meta.slot_b_size;
+    uint32_t slot_max = (boot_addr == SLOT_A_ADDR) ? 0x30000UL : 0x40000UL;
+    bl_verify_decision_t vd = bootloader_verify_decision(&meta, fw_total, slot_max);
 
-            SHA256_CTX ctx;
-            uint8_t hash[32];
-            sha256_init(&ctx);
-            sha256_update(&ctx, fw_ptr, fw_data_size);
-            sha256_final(&ctx, hash);
+    if (vd == BL_VERIFY_REFUSE) {
+        printf("[BL] metadata size invalid (0x%08lX) — fail-closed, refusing\r\n",
+               (unsigned long)fw_total);
+        safe_state();
+        return;
+    }
+    if (vd == BL_VERIFY_REQUIRED) {
+        uint32_t fw_data_size  = fw_total - 64;
+        const uint8_t *fw_ptr  = (const uint8_t *)boot_addr;
+        const uint8_t *sig_ptr = fw_ptr + fw_data_size;
 
-            if (!uECC_verify(ecdsa_pubkey, hash, 32, sig_ptr, uECC_secp256r1())) {
-                printf("[BL] ECDSA FAILED at 0x%08lX — refusing to boot\r\n", boot_addr);
+        SHA256_CTX ctx;
+        uint8_t hash[32];
+        sha256_init(&ctx);
+        sha256_update(&ctx, fw_ptr, fw_data_size);
+        sha256_final(&ctx, hash);
+
+        if (!uECC_verify(ecdsa_pubkey, hash, 32, sig_ptr, uECC_secp256r1())) {
+            printf("[BL] ECDSA FAILED at 0x%08lX — refusing to boot\r\n", boot_addr);
+            safe_state();
+            return;
+        }
+        printf("[BL] ECDSA OK\r\n");
+
+        /* anti-rollback (FR-BL-008): 서명된 헤더 버전이 기준선보다 낮으면 거부.
+         * 헤더는 ECDSA로 검증된 영역(slot+0)이라 이 시점에 신뢰 가능. */
+        OTA_ImgHeader_t hdr;
+        if (ota_img_header_read(fw_ptr, &hdr)) {
+            if (!ota_meta_version_allowed(&meta, hdr.fw_version)) {
+                printf("[BL] anti-rollback: v%lu below baseline — refusing\r\n",
+                       (unsigned long)hdr.fw_version);
                 safe_state();
                 return;
             }
-            printf("[BL] ECDSA OK\r\n");
-
-            /* anti-rollback (FR-BL-008): 서명된 헤더 버전이 기준선보다 낮으면 거부.
-             * 헤더는 ECDSA로 검증된 영역(slot+0)이라 이 시점에 신뢰 가능. */
-            OTA_ImgHeader_t hdr;
-            if (ota_img_header_read(fw_ptr, &hdr)) {
-                if (!ota_meta_version_allowed(&meta, hdr.fw_version)) {
-                    printf("[BL] anti-rollback: v%lu below baseline — refusing\r\n",
-                           (unsigned long)hdr.fw_version);
-                    safe_state();
-                    return;
-                }
-                printf("[BL] version v%lu OK\r\n", (unsigned long)hdr.fw_version);
-            }
+            printf("[BL] version v%lu OK\r\n", (unsigned long)hdr.fw_version);
         }
     }
+    /* BL_VERIFY_SKIP → 미서명 factory/ST-Link 경로, 검증 없이 부팅 */
 
     /* IWDG 시작: 앱이 8초 내 kick 안 하면 리셋 */
     hiwdg.Instance       = IWDG;

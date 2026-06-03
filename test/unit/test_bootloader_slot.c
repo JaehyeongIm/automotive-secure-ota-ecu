@@ -82,3 +82,57 @@ void test_no_magic_defaults_to_slot_a(void)
     OTA_Metadata_t m = {0};  /* magic = 0, METADATA_MAGIC과 불일치 */
     TEST_ASSERT_EQUAL_HEX32(SLOT_A_ADDR, bootloader_select_boot_addr(&m));
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   bootloader_verify_decision — ECDSA 게이팅 fail-closed (FR-AB-003, CWE-636)
+   ═══════════════════════════════════════════════════════════════════════════ */
+#define SLOT_MAX_A 0x30000UL
+
+/* TC-UT-BL-009: 메타 유효 + 정상 size → 검증 필수 */
+void test_verify_decision_normal_size_required(void)
+{
+    OTA_Metadata_t m = make_meta(0, SLOT_CONFIRMED, 0xFF);
+    TEST_ASSERT_EQUAL_INT(BL_VERIFY_REQUIRED, bootloader_verify_decision(&m, 0x8000, SLOT_MAX_A));
+}
+
+/* TC-UT-BL-010: 메타 유효 + size==0 → 거부 (서명검증 우회 차단 — 핵심 공격) */
+void test_verify_decision_size_zero_refuse(void)
+{
+    OTA_Metadata_t m = make_meta(0, SLOT_CONFIRMED, 0xFF);
+    TEST_ASSERT_EQUAL_INT(BL_VERIFY_REFUSE, bootloader_verify_decision(&m, 0, SLOT_MAX_A));
+}
+
+/* TC-UT-BL-011: 메타 유효 + size==0xFFFFFFFF(erased/구 메타) → 거부 */
+void test_verify_decision_size_erased_refuse(void)
+{
+    OTA_Metadata_t m = make_meta(0, SLOT_CONFIRMED, 0xFF);
+    TEST_ASSERT_EQUAL_INT(BL_VERIFY_REFUSE, bootloader_verify_decision(&m, 0xFFFFFFFFUL, SLOT_MAX_A));
+}
+
+/* TC-UT-BL-012: 메타 유효 + size > slot_max → 거부 */
+void test_verify_decision_size_overflow_refuse(void)
+{
+    OTA_Metadata_t m = make_meta(0, SLOT_CONFIRMED, 0xFF);
+    TEST_ASSERT_EQUAL_INT(BL_VERIFY_REFUSE, bootloader_verify_decision(&m, SLOT_MAX_A + 1, SLOT_MAX_A));
+}
+
+/* TC-UT-BL-013: 경계 size==64 (서명만·코드 0바이트) → 거부 */
+void test_verify_decision_size_64_refuse(void)
+{
+    OTA_Metadata_t m = make_meta(0, SLOT_CONFIRMED, 0xFF);
+    TEST_ASSERT_EQUAL_INT(BL_VERIFY_REFUSE, bootloader_verify_decision(&m, 64, SLOT_MAX_A));
+}
+
+/* TC-UT-BL-014: 경계 size==slot_max (정확히 한계) → 검증 필수 */
+void test_verify_decision_size_at_max_required(void)
+{
+    OTA_Metadata_t m = make_meta(0, SLOT_CONFIRMED, 0xFF);
+    TEST_ASSERT_EQUAL_INT(BL_VERIFY_REQUIRED, bootloader_verify_decision(&m, SLOT_MAX_A, SLOT_MAX_A));
+}
+
+/* TC-UT-BL-015: 메타 없음(factory/ST-Link 미서명) → 검증 스킵(dev 경로) */
+void test_verify_decision_no_magic_skip(void)
+{
+    OTA_Metadata_t m = {0};  /* magic = 0 */
+    TEST_ASSERT_EQUAL_INT(BL_VERIFY_SKIP, bootloader_verify_decision(&m, 0, SLOT_MAX_A));
+}
