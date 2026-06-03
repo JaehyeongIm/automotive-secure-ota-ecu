@@ -78,10 +78,11 @@ git push 한 번으로 ECU 슬롯 전환 확인까지 자동 수행. 변경된 E
 ## Flash 메모리 맵 (STM32F446RE)
 
 ```
-0x08000000  Bootloader  (Sector 0–1, WRP 보호)
-0x08008000  Boot Metadata
-0x08010000  Slot A App  (~192 KB)
-0x08040000  Slot B App  (~256 KB)
+0x08000000  Bootloader      (Sector 0–1, WRP 보호)
+0x08008000  Boot Metadata A  (Sector 2)  ┐ 이중화(redundant)
+0x0800C000  Boot Metadata B  (Sector 3)  ┘ CRC32 + seq_counter, 원자적 갱신
+0x08010000  Slot A App       (~192 KB)
+0x08040000  Slot B App       (~256 KB)
 ```
 
 ---
@@ -128,7 +129,7 @@ git push 한 번으로 ECU 슬롯 전환 확인까지 자동 수행. 변경된 E
 │   └── read_slot.py     CAN heartbeat에서 활성 슬롯 읽기
 ├── Jenkinsfile          CI/CD 파이프라인 정의
 └── docs/
-    ├── SRS-001_CAN_Secure_OTA_Pipeline_v1.4.md
+    ├── SRS-001_CAN_Secure_OTA_Pipeline.md
     ├── adr/
     │   ├── ADR-001_OTA_Activation_Architecture.md
     │   ├── ADR-002_Boot_Timing_Measurement.md
@@ -181,7 +182,7 @@ git push origin main
 
 ## 문서
 
-- [SRS-001](docs/SRS-001_CAN_Secure_OTA_Pipeline_v1.4.md) — 소프트웨어 요구사항 명세서
+- [SRS-001](docs/SRS-001_CAN_Secure_OTA_Pipeline.md) — 소프트웨어 요구사항 명세서
 - [ADR-001](docs/adr/ADR-001_OTA_Activation_Architecture.md) — OTA 활성화 아키텍처 의사결정
 - [ADR-002](docs/adr/ADR-002_Boot_Timing_Measurement.md) — 부트 타이밍(Tboot) 측정 방식 결정
 - [ADR-003](docs/adr/ADR-003_SecurityAccess_Lockout_Storage.md) — SecurityAccess 잠금 상태 저장 위치(RAM vs NV)

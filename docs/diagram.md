@@ -167,7 +167,7 @@ sequenceDiagram
     CAN->>ECU: SecurityAccess
     ECU->>CAN: 0x67 0x01 + Seed
     CAN->>JEN: Seed 수신
-    JEN->>JEN: Key = Seed XOR 0xDEADBEEF
+    JEN->>JEN: Key = HMAC-SHA256(PSK, Seed)[0:4]
     JEN->>CAN: UDS 0x27 0x02 + Key
     ECU->>CAN: 0x67 0x02 (Unlock OK)
 

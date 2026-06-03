@@ -69,7 +69,7 @@ ASPICE SWE.4(소프트웨어 단위 검증), SWE.5(소프트웨어 통합 테스
 
 | 문서 번호 | 제목 |
 |----------|------|
-| SRS-001 | CAN Secure OTA Pipeline 소프트웨어 요구사항 명세서 v1.4 |
+| SRS-001 | CAN Secure OTA Pipeline 소프트웨어 요구사항 명세서 |
 | DIAG-001 | 시스템 다이어그램 (docs/diagram.md) |
 | ISS-CAN-004 | CAN 핀 배선 오류 해결 기록 |
 | ISO 14229-1 | Unified Diagnostic Services (UDS) |
@@ -170,8 +170,9 @@ DriveECU (PA11/PA12)
 
 | 영역 | 주소 | 크기 | 내용 |
 |------|------|------|------|
-| Bootloader | 0x08000000 | 32KB | ECDSA 검증 + 슬롯 선택 |
-| Metadata | 0x08008000 | 16KB | A/B 슬롯 상태 |
+| Bootloader | 0x08000000 | 32KB | ECDSA 검증 + 슬롯 선택 (Sector 0~1, WRP) |
+| Metadata A | 0x08008000 | 16KB | A/B 슬롯 상태 (Sector 2, 이중화) |
+| Metadata B | 0x0800C000 | 16KB | A/B 슬롯 상태 사본 (Sector 3, CRC32+seq, 원자적 갱신) |
 | Slot A | 0x08010000 | 192KB | 애플리케이션 A |
 | Slot B | 0x08040000 | 256KB | 애플리케이션 B |
 
@@ -186,7 +187,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-CAN-001 |
 | **테스트 레벨** | SWE.4 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §3.1 |
+| **참조 요구사항** | FR-DRV-006 |
 | **목적** | DriveECU가 CAN ID 0x100으로 200ms 주기 하트비트를 전송하는지 검증 |
 | **사전 조건** | DriveECU 전원 ON, CAN 버스 정상, candump 수신 준비 |
 | **테스트 절차** | 1. `candump can0` 실행<br>2. 60초간 ID=0x100 메시지 타임스탬프 수집<br>3. 연속 메시지 간격 계산 |
@@ -204,7 +205,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-CAN-002 |
 | **테스트 레벨** | SWE.4 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §3.1 |
+| **참조 요구사항** | FR-DRV-006 |
 | **목적** | 하트비트 페이로드의 각 필드가 올바르게 설정되는지 검증 |
 | **사전 조건** | DriveECU 부팅 완료, APP_VERSION=1, Slot A 부팅 |
 | **테스트 절차** | 1. `candump can0` 수신<br>2. ID=0x100 첫 수신 메시지 페이로드 확인<br>&nbsp;&nbsp;- byte[0]: APP_VERSION<br>&nbsp;&nbsp;- byte[1]: active_slot (0=A, 1=B)<br>&nbsp;&nbsp;- byte[2]: driving_state<br>&nbsp;&nbsp;- byte[3]: obstacle_flag |
@@ -222,7 +223,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-CAN-003 |
 | **테스트 레벨** | SWE.5 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §3.2 |
+| **참조 요구사항** | FR-SEN-002, FR-SEN-004 |
 | **목적** | 장애물 10cm 이내 진입 시 CAN 0x200 obstacle 플래그 세트 검증 |
 | **사전 조건** | SensorECU 전원 ON, CAN 버스 정상 |
 | **테스트 절차** | 1. `candump can0`으로 ID=0x200 모니터링<br>2. HC-SR04 앞 50cm에 장애물 배치 → byte[0]=0x00 확인<br>3. 장애물을 10cm 이내로 이동<br>4. byte[0]=0x01 확인<br>5. 장애물 제거 → byte[0]=0x00 복귀 확인 |
@@ -240,7 +241,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-CAN-004 |
 | **테스트 레벨** | SWE.5 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §3.3 |
+| **참조 요구사항** | FR-DRV-006, FR-SEN-002 |
 | **목적** | DriveECU가 0x200 수신 후 하트비트 0x100 byte[3]에 obstacle_flag 반영 확인 |
 | **사전 조건** | DriveECU + SensorECU 모두 ON, CAN 연결 |
 | **테스트 절차** | 1. 장애물 없는 상태에서 0x100 byte[3]=0x00 확인<br>2. 장애물 10cm 이내 배치<br>3. 50ms 이내 0x100 byte[3]=0x01 반영 확인 |
@@ -260,7 +261,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-DRV-001 |
 | **테스트 레벨** | SWE.4 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §4.1 |
+| **참조 요구사항** | FR-DRV-002 |
 | **목적** | B1(USER) 버튼 누름 시 DRIVE_IDLE → DRIVE_RUNNING 전환 및 전진 시작 검증 |
 | **사전 조건** | DriveECU 부팅 완료, DRIVE_IDLE 상태, 장애물 없음 |
 | **테스트 절차** | 1. UART 모니터 연결<br>2. B1 버튼 1회 누름<br>3. UART 로그 확인: `[DRIVE v1] 출발`<br>4. 차량 전진 여부 육안 확인 |
@@ -278,7 +279,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-DRV-002 |
 | **테스트 레벨** | SWE.4 |
 | **우선순위** | M |
-| **참조 요구사항** | SRS-001 §4.1 |
+| **참조 요구사항** | FR-DRV-003 |
 | **목적** | FORWARD_MS(3000ms) 경과 후 자동 정지 및 IDLE 복귀 검증 |
 | **사전 조건** | TC-DRV-001 PASS, 장애물 없음 |
 | **테스트 절차** | 1. B1 버튼으로 전진 시작<br>2. 스톱워치 측정 시작<br>3. 자동 정지 시 스톱워치 정지<br>4. UART 로그: `[DRIVE] 1m 완료 → 정지` 확인 |
@@ -296,7 +297,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-DRV-003 |
 | **테스트 레벨** | SWE.5 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §4.2 |
+| **참조 요구사항** | FR-DRV-003 |
 | **목적** | APP_VERSION=1에서 10cm 이내 장애물 감지 시 즉시 정지 검증 |
 | **사전 조건** | APP_VERSION=1 플래시 완료, DriveECU + SensorECU ON |
 | **테스트 절차** | 1. 전방 30cm에 장애물 배치 (정지 안 됨 확인)<br>2. B1 버튼으로 전진 시작<br>3. 전방 10cm 지점에 장애물 고정<br>4. 차량 정지 확인<br>5. UART 로그: `[DRIVE] 장애물(10cm) 감지 → 정지` 확인 |
@@ -314,7 +315,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-DRV-004 |
 | **테스트 레벨** | SWE.5 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §4.3 |
+| **참조 요구사항** | FR-DRV-004 |
 | **목적** | APP_VERSION=2에서 장애물 정지 후 300ms 대기 → 600ms 후진 → IDLE 복귀 검증 |
 | **사전 조건** | v1→v2 OTA 완료, APP_VERSION=2 부팅 확인 |
 | **테스트 절차** | 1. B1 버튼으로 전진 시작<br>2. UART에서 `[DriveECU v2] Start` 확인<br>3. 10cm 장애물로 정지 유도<br>4. 정지 후 후진 시작 확인 (UART: `[DRIVE] 후진 시작`)<br>5. 600ms 후진 후 정지 확인 (UART: `[DRIVE] 후진 완료 → 대기`)<br>6. 버튼 재입력 가능 상태(IDLE) 확인 |
@@ -332,7 +333,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-DRV-005 |
 | **테스트 레벨** | SWE.5 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §5.1 |
+| **참조 요구사항** | FR-DRV-007, NFR-SAFE-001 |
 | **목적** | OTA TransferData 수신 중 차량이 계속 주행하는지 검증 (Uptane 표준 반영) |
 | **사전 조건** | DriveECU + SensorECU ON, Jenkins OTA 준비, 장애물 없음 |
 | **테스트 절차** | 1. B1 버튼으로 전진 시작<br>2. 전진 중 Jenkins에서 OTA 파이프라인 수동 트리거<br>3. TransferData 진행 중 차량 주행 여부 육안 확인<br>4. TransferExit 완료 후 UART: `FW ready Slot X — IDLE 시 재부팅` 확인<br>5. 전진 완료(FORWARD_MS 경과) 후 자동 재부팅 확인 |
@@ -352,7 +353,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-OTA-001 |
 | **테스트 레벨** | SWE.4 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §6.1 |
+| **참조 요구사항** | FR-CAN-009 |
 | **목적** | UDS 0x10 0x02 수신 시 ExtendedSession 진입 및 긍정 응답 검증 |
 | **사전 조건** | DriveECU ON, CAN 정상 |
 | **테스트 절차** | 1. `cansend can0 7E0#02100200000000` 전송<br>2. 0x7E8 수신 확인<br>3. UART 로그: `[UDS] Extended session` 확인 |
@@ -370,10 +371,10 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-OTA-002 |
 | **테스트 레벨** | SWE.4 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §6.2 |
+| **참조 요구사항** | FR-CAN-010 |
 | **목적** | SecurityAccess Seed 요청 → Key 계산 → Unlock 정상 동작 검증 |
 | **사전 조건** | TC-OTA-001 PASS (ExtendedSession 상태) |
-| **테스트 절차** | 1. 0x27 0x01 (Seed 요청) 전송<br>2. Seed(4byte) 수신<br>3. Key = Seed XOR 0xDEADBEEF 계산<br>4. 0x27 0x02 + Key 전송<br>5. 0x67 0x02 응답 확인 |
+| **테스트 절차** | 1. 0x27 0x01 (Seed 요청) 전송<br>2. Seed(4byte) 수신<br>3. Key = HMAC-SHA256(PSK, Seed)[0:4] 계산<br>4. 0x27 0x02 + Key 전송<br>5. 0x67 0x02 응답 확인 |
 | **기대 결과** | 응답: `0x67 0x02` (Unlock OK) |
 | **합격 기준** | Unlock 성공 응답 확인 |
 | **결과** | N/T |
@@ -388,10 +389,10 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-OTA-003 |
 | **테스트 레벨** | SWE.4 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §6.2 |
+| **참조 요구사항** | FR-CAN-010, FR-CAN-016 |
 | **목적** | 잘못된 Key 전송 시 NRC 0x35(invalidKey) 응답 및 세션 상태 복귀 검증 |
 | **사전 조건** | TC-OTA-001 PASS (ExtendedSession 상태) |
-| **테스트 절차** | 1. Seed 요청 및 수신<br>2. 의도적으로 틀린 Key(0xDEADDEAD) 전송<br>3. NRC 수신 확인<br>4. 이후 RequestDownload 시도 → NRC 0x22 확인 |
+| **테스트 절차** | 1. Seed 요청 및 수신<br>2. 의도적으로 틀린 Key(올바른 HMAC이 아닌 임의 4바이트) 전송<br>3. NRC 수신 확인<br>4. 이후 RequestDownload 시도 → NRC 0x22 확인 |
 | **기대 결과** | NRC: `0x7F 0x27 0x35`, 잠금 상태 유지 |
 | **합격 기준** | NRC 코드 정확히 일치 |
 | **결과** | N/T |
@@ -406,7 +407,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-OTA-004 |
 | **테스트 레벨** | SWE.4 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §6.3 |
+| **참조 요구사항** | FR-CAN-011, SR-ATK-006 |
 | **목적** | SecurityAccess 미완료 상태에서 RequestDownload 시 NRC 0x22(conditionsNotCorrect) 검증 |
 | **사전 조건** | ExtendedSession 상태, Unlock 미완료 |
 | **테스트 절차** | 1. TC-OTA-001로 ExtendedSession 진입<br>2. SecurityAccess 생략<br>3. 0x34 (RequestDownload) 전송<br>4. NRC 수신 확인 |
@@ -424,7 +425,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-OTA-005 |
 | **테스트 레벨** | SWE.4 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §6.3 |
+| **참조 요구사항** | FR-CAN-011, FR-AB-002 |
 | **목적** | RequestDownload 시 ECU가 자동으로 비활성 슬롯을 OTA 대상으로 선택하는지 검증 |
 | **사전 조건** | TC-OTA-002 PASS (Unlocked 상태), Slot A 부팅 중 |
 | **테스트 절차** | 1. 0x34 (RequestDownload) 전송<br>2. UART 로그 확인: `[UDS] Target Slot B addr=0x08040000`<br>3. 응답 0x74 수신 확인 |
@@ -442,7 +443,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-OTA-006 |
 | **테스트 레벨** | SWE.4 |
 | **우선순위** | M |
-| **참조 요구사항** | SRS-001 §6.4 |
+| **참조 요구사항** | FR-CAN-012 |
 | **목적** | TransferData 블록 시퀀스 번호 불일치 시 NRC 0x73(wrongBlockSequenceCounter) 검증 |
 | **사전 조건** | TC-OTA-005 PASS (Downloading 상태) |
 | **테스트 절차** | 1. 첫 청크 전송 (bsq=0x01) → 0x76 응답 확인<br>2. 시퀀스 번호 0x03(skip)으로 전송<br>3. NRC 수신 확인 |
@@ -460,7 +461,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-OTA-007 |
 | **테스트 레벨** | SWE.4 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §6.5 |
+| **참조 요구사항** | FR-CAN-013, FR-DRV-008 |
 | **목적** | TransferExit 수신 시 즉시 재부팅 없이 g_fw_pending=1 세트 및 UART 로그 출력 검증 |
 | **사전 조건** | TransferData 전체 청크 전송 완료 |
 | **테스트 절차** | 1. 0x37 (RequestTransferExit) 전송<br>2. 0x77 응답 확인<br>3. UART 로그: `FW ready Slot X — IDLE 시 재부팅` 확인<br>4. 이 시점에서 차량이 재부팅되지 않음 확인 |
@@ -478,7 +479,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-OTA-008 |
 | **테스트 레벨** | SWE.5 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §6.5 |
+| **참조 요구사항** | FR-DRV-008, FR-CICD-007 |
 | **목적** | g_fw_pending=1 상태에서 DRIVE_IDLE 진입 시 자동 재부팅 및 새 슬롯 부팅 검증 |
 | **사전 조건** | TC-OTA-007 PASS (g_fw_pending=1), DRIVE_RUNNING 또는 DRIVE_STOPPED 상태 |
 | **테스트 절차** | 1. 전진 완료 대기(FORWARD_MS 경과) 또는 장애물로 정지 유도<br>2. DRIVE_IDLE 진입 시 UART 로그: `[DRIVE] 새 펌웨어 대기 중 → 재부팅` 확인<br>3. 재부팅 후 부트로더 로그: `[BL] Jump to 0x0804XXXX` 확인<br>4. candump로 CAN 0x100 byte[1] 슬롯 전환 확인 |
@@ -498,7 +499,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-SEC-001 |
 | **테스트 레벨** | SWE.6 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §7.1 |
+| **참조 요구사항** | FR-BL-007, SR-FW-002 |
 | **목적** | 올바른 ECDSA-P256 서명이 첨부된 펌웨어가 부트로더 검증을 통과하고 정상 부팅되는지 검증 |
 | **사전 조건** | tools/sign_firmware.py로 서명된 펌웨어 준비 |
 | **테스트 절차** | 1. 정상 서명 펌웨어로 OTA 수행 (TC-OTA-001~008)<br>2. 재부팅 후 UART 로그 확인<br>3. `[BL] ECDSA OK` 또는 `[BL] Jump to 0x...` 로그 확인<br>4. 애플리케이션 정상 실행 확인 |
@@ -516,7 +517,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-SEC-002 |
 | **테스트 레벨** | SWE.6 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §7.2 |
+| **참조 요구사항** | SR-ATK-001, FR-BL-007 |
 | **목적** | 서명이 변조된 펌웨어를 부트로더가 거부하고 이전 슬롯을 유지하는지 검증 |
 | **사전 조건** | 서명된 펌웨어 바이너리 준비, 이진 에디터로 페이로드 1바이트 변조 |
 | **테스트 절차** | 1. 변조된 펌웨어로 OTA 수행<br>2. 재부팅 후 UART 로그 확인<br>3. `[BL] ECDSA FAIL` 로그 및 이전 슬롯 유지 확인<br>4. CAN 0x100 byte[1] 슬롯 변경 없음 확인 |
@@ -534,7 +535,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-SEC-003 |
 | **테스트 레벨** | SWE.6 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §7.2 |
+| **참조 요구사항** | SR-ATK-002, SR-FW-002 |
 | **목적** | 서명이 첨부되지 않은 원본 .bin 파일을 OTA로 전송했을 때 부트로더가 차단하는지 검증 |
 | **사전 조건** | sign_firmware.py 미적용 원본 .bin 준비 |
 | **테스트 절차** | 1. 서명 없는 원본 .bin으로 OTA 수행<br>2. 재부팅 후 부트로더 검증 실패 로그 확인<br>3. 이전 슬롯 유지 확인 |
@@ -552,7 +553,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-SEC-004 |
 | **테스트 레벨** | SWE.4 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §6.1 |
+| **참조 요구사항** | FR-CAN-010, SR-ATK-006 |
 | **목적** | DefaultSession 상태에서 SecurityAccess 시도 시 NRC 0x22 응답 검증 |
 | **사전 조건** | DriveECU 부팅 직후 (DefaultSession 상태) |
 | **테스트 절차** | 1. ExtendedSession 진입 없이 0x27 0x01 전송<br>2. NRC 수신 확인 |
@@ -572,9 +573,9 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-SLOT-001 |
 | **테스트 레벨** | SWE.4 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §5.1 |
+| **참조 요구사항** | FR-BL-002, FR-AB-001 |
 | **목적** | 메타데이터 없는 신규 플래시 상태에서 Slot A로 기본 부팅되는지 검증 |
-| **사전 조건** | 메타데이터 섹터(0x08008000) 전체 Erase 완료, Slot A 애플리케이션 플래시 완료 |
+| **사전 조건** | 메타데이터 섹터(0x08008000·0x0800C000 이중화 사본 모두) 전체 Erase 완료, Slot A 애플리케이션 플래시 완료 |
 | **테스트 절차** | 1. 전원 ON 또는 리셋<br>2. UART 로그 확인: `[BL] No metadata, defaulting to Slot A`<br>3. CAN 0x100 byte[1]=0x00 (Slot A) 확인 |
 | **기대 결과** | Slot A 부팅 확인 |
 | **합격 기준** | 로그 및 CAN 필드 확인 |
@@ -590,7 +591,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-SLOT-002 |
 | **테스트 레벨** | SWE.5 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §5.2 |
+| **참조 요구사항** | FR-AB-002, FR-BL-003 |
 | **목적** | Slot A 부팅 상태에서 OTA 후 Slot B로 전환되는지 검증 |
 | **사전 조건** | TC-SLOT-001 PASS, Slot A 부팅 중 |
 | **테스트 절차** | 1. OTA 수행 (TC-OTA-001~008)<br>2. 재부팅 후 UART: `[BL] Jump to 0x08040000` 확인<br>3. CAN 0x100 byte[1]=0x01 (Slot B) 확인<br>4. 새 APP_VERSION 하트비트 확인 |
@@ -608,10 +609,10 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-SLOT-003 |
 | **테스트 레벨** | SWE.5 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §5.2 |
+| **참조 요구사항** | FR-AB-002 |
 | **목적** | Slot B 부팅 상태에서 OTA 후 Slot A로 재전환 검증 |
 | **사전 조건** | TC-SLOT-002 PASS, Slot B 부팅 중 |
-| **테스트 절차** | 1. 새 펌웨어(v3) 빌드 후 OTA 수행<br>2. 재부팅 후 Slot A 부팅 확인<br>3. CAN 0x100 byte[1]=0x00 (Slot A) 확인 |
+| **테스트 절차** | 1. 새 펌웨어(세 번째 빌드, APP_VERSION 증가) 빌드 후 OTA 수행<br>2. 재부팅 후 Slot A 부팅 확인<br>3. CAN 0x100 byte[1]=0x00 (Slot A) 확인 |
 | **기대 결과** | Slot A 부팅 |
 | **합격 기준** | 슬롯 전환 확인 |
 | **결과** | N/T |
@@ -628,7 +629,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-CI-001 |
 | **테스트 레벨** | SWE.6 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §8.1 |
+| **참조 요구사항** | FR-CICD-002 |
 | **목적** | 코드 변경 후 git push 시 Jenkins 파이프라인이 자동 실행되는지 검증 |
 | **사전 조건** | RPi5 SSH 접속 가능, Jenkins 설치 완료, 파이프라인 Job 구성 완료 |
 | **테스트 절차** | 1. DriveECU 소스 파일 임의 수정 후 git push<br>2. Jenkins UI에서 파이프라인 자동 실행 확인<br>3. 빌드 로그: `DriveECU changed: true` 확인 |
@@ -646,7 +647,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-CI-002 |
 | **테스트 레벨** | SWE.6 |
 | **우선순위** | M |
-| **참조 요구사항** | SRS-001 §8.2 |
+| **참조 요구사항** | FR-CICD-003 |
 | **목적** | DriveECU만 수정 시 SensorECU 빌드/플래시가 스킵되는지 검증 |
 | **사전 조건** | TC-CI-001 PASS |
 | **테스트 절차** | 1. DriveECU 파일만 수정 후 push<br>2. Jenkins 로그: `SensorECU changed: false` 확인<br>3. Flash SensorECU 스테이지 skip 확인 |
@@ -664,7 +665,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-CI-003 |
 | **테스트 레벨** | SWE.6 |
 | **우선순위** | H |
-| **참조 요구사항** | SRS-001 §8.3 |
+| **참조 요구사항** | FR-CICD-007, FR-CICD-008 |
 | **목적** | git push부터 슬롯 전환 확인까지 전체 OTA 파이프라인 E2E 검증 |
 | **사전 조건** | TC-CI-001 PASS, v1 플래시 완료 |
 | **테스트 절차** | 1. drive.h에서 APP_VERSION=1→2 변경 후 push<br>2. Jenkins: build → sign → OTA 전송 로그 확인<br>3. DriveECU IDLE 후 재부팅 확인<br>4. CAN 0x100 byte[0]=0x02 (v2), byte[1] 슬롯 전환 확인<br>5. Jenkins: `OTA 완료: SlotX 부팅 확인` 로그 확인 |
@@ -682,7 +683,7 @@ DriveECU (PA11/PA12)
 | **TC ID** | TC-CI-004 |
 | **테스트 레벨** | SWE.6 |
 | **우선순위** | M |
-| **참조 요구사항** | SRS-001 §8.4 |
+| **참조 요구사항** | FR-CICD-010 |
 | **목적** | OTA 전송 실패 또는 슬롯 전환 미확인 시 Jenkins 파이프라인이 FAILURE로 종료되는지 검증 |
 | **사전 조건** | Jenkins 파이프라인 실행 중 |
 | **테스트 절차** | 1. OTA 전송 중 CAN 버스 임시 차단 (케이블 분리)<br>2. Jenkins 로그: `OTA 실패: SlotX 기대, SlotY 확인됨` 확인<br>3. Jenkins 파이프라인 FAILURE 상태 확인<br>4. ECU가 이전 펌웨어 유지 확인 |
@@ -697,24 +698,24 @@ DriveECU (PA11/PA12)
 
 | 요구사항 ID | 요구사항 요약 | 관련 TC |
 |------------|-------------|---------|
-| SRS §3.1 | DriveECU CAN 하트비트 0x100, 200ms | TC-CAN-001, TC-CAN-002 |
-| SRS §3.2 | SensorECU 장애물 메시지 0x200 | TC-CAN-003, TC-CAN-004 |
-| SRS §4.1 | 버튼 트리거 전진 + 시간 정지 | TC-DRV-001, TC-DRV-002 |
-| SRS §4.2 | v1 장애물 10cm 즉시 정지 | TC-DRV-003 |
-| SRS §4.3 | v2 정지 후 자동 후진 복귀 | TC-DRV-004 |
-| SRS §5.1 | OTA 중 주행 유지 (Uptane) | TC-DRV-005 |
-| SRS §5.2 | A/B 슬롯 전환 | TC-SLOT-001~003 |
-| SRS §6.1 | UDS ExtendedSession | TC-OTA-001, TC-SEC-004 |
-| SRS §6.2 | SecurityAccess Seed/Key | TC-OTA-002, TC-OTA-003 |
-| SRS §6.3 | RequestDownload 비활성 슬롯 | TC-OTA-004, TC-OTA-005 |
-| SRS §6.4 | TransferData 블록 순서 검증 | TC-OTA-006 |
-| SRS §6.5 | TransferExit + IDLE 활성화 | TC-OTA-007, TC-OTA-008 |
-| SRS §7.1 | ECDSA 정상 펌웨어 부팅 | TC-SEC-001 |
-| SRS §7.2 | ECDSA 변조/미서명 차단 | TC-SEC-002, TC-SEC-003 |
-| SRS §8.1 | Jenkins 자동 트리거 | TC-CI-001 |
-| SRS §8.2 | 선택적 ECU 빌드 | TC-CI-002 |
-| SRS §8.3 | E2E OTA 파이프라인 | TC-CI-003 |
-| SRS §8.4 | OTA 실패 처리 | TC-CI-004 |
+| FR-DRV-006 | DriveECU CAN 하트비트 0x100, 200ms | TC-CAN-001, TC-CAN-002 |
+| FR-SEN-002, FR-SEN-004 | SensorECU 장애물 메시지 0x200 + 거리값 | TC-CAN-003, TC-CAN-004 |
+| FR-DRV-002, FR-DRV-003 | 버튼 트리거 전진 + 시간 정지 | TC-DRV-001, TC-DRV-002 |
+| FR-DRV-003 | v1 장애물 10cm 즉시 정지 | TC-DRV-003 |
+| FR-DRV-004 | v2 정지 후 자동 후진 복귀 | TC-DRV-004 |
+| FR-DRV-007, NFR-SAFE-001 | OTA 중 주행 유지 (Uptane) | TC-DRV-005 |
+| FR-AB-002, FR-BL-003 | A/B 슬롯 전환 | TC-SLOT-001~003 |
+| FR-CAN-009, FR-CAN-010 | UDS ExtendedSession / 세션조건 | TC-OTA-001, TC-SEC-004 |
+| FR-CAN-010 | SecurityAccess Seed/Key (HMAC) | TC-OTA-002, TC-OTA-003 |
+| FR-CAN-011, FR-AB-002 | RequestDownload 비활성 슬롯 | TC-OTA-004, TC-OTA-005 |
+| FR-CAN-012 | TransferData 블록 순서 검증 | TC-OTA-006 |
+| FR-CAN-013, FR-DRV-008 | TransferExit + IDLE 활성화 | TC-OTA-007, TC-OTA-008 |
+| FR-BL-007, SR-FW-002 | ECDSA 정상 펌웨어 부팅 | TC-SEC-001 |
+| SR-ATK-001, SR-ATK-002 | ECDSA 변조/미서명 차단 | TC-SEC-002, TC-SEC-003 |
+| FR-CICD-002 | Jenkins 자동 트리거 | TC-CI-001 |
+| FR-CICD-003 | 선택적 ECU 빌드 | TC-CI-002 |
+| FR-CICD-007, FR-CICD-008 | E2E OTA 파이프라인 | TC-CI-003 |
+| FR-CICD-010 | OTA 실패 처리 | TC-CI-004 |
 
 ---
 

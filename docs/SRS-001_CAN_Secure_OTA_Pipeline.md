@@ -5,7 +5,7 @@
 | 문서 ID | SRS-001 |
 | 문서명 | CAN 기반 UDS over ISO-TP Secure OTA 파이프라인 요구사항 명세서 |
 | 프로젝트명 | Dual ECU 버튼 트리거 직진 주행 Secure OTA 시스템 |
-| 버전 | 2.4 |
+| 버전 | 2.5 |
 | 작성일 | 2026-05-25 |
 | 작성 목적 | Dual ECU 버튼 트리거 직진 주행 + 장애물 회피 OTA 데모 시스템 소프트웨어 요구사항 정의 |
 | 주요 대상 | Raspberry Pi 5 Gateway, STM32F446RE ECU 2대, CAN Bus, Custom Bootloader, RC 차량 데모 플랫폼 |
@@ -272,7 +272,7 @@
 | FR-BL-010 | Bootloader는 업데이트 후 첫 부팅에서 Self-test 결과를 확인해야 한다. | Must | Self-test 실패 시 이전 Confirmed Slot으로 rollback해야 한다. |
 | FR-BL-011 | Bootloader는 Boot Metadata 손상 시 안전한 기본 정책을 적용해야 한다. | Should | Metadata CRC 오류 시 기존 Confirmed Slot 또는 Safe Mode로 진입해야 한다. |
 | FR-BL-012 | Bootloader는 IWDG(Independent Watchdog)를 사용하여 MCU 무응답 상태를 감지해야 한다. | Must | IWDG 타임아웃은 8000ms로 설정하며, Flash erase/write 구간에서 주기적으로 피딩하여 의도치 않은 리셋을 방지해야 한다. Transfer Data 미수신 5000ms 초과 시 소프트웨어적으로 세션을 abort하고 기존 App을 유지해야 한다. |
-| FR-BL-013 | Bootloader Flash 영역은 STM32 WRP(Write Protection)로 보호되어야 한다. | Should | Bootloader 섹터(0x08000000~0x0801FFFF, Sector 0~4)에 WRP가 설정된 상태에서 해당 영역 write 시도가 거부되어야 한다. |
+| FR-BL-013 | Bootloader Flash 영역은 STM32 WRP(Write Protection)로 보호되어야 한다. | Should | Bootloader 섹터(0x08000000~0x08007FFF, Sector 0~1)에 WRP가 설정된 상태에서 해당 영역 write 시도가 거부되어야 한다. Metadata(섹터 2·3)와 App Slot(섹터 4~7)은 OTA 중 기록 가능해야 하므로 WRP 범위에서 제외한다(§14.2). |
 
 ### 7.3 A/B Slot 및 Rollback 요구사항
 
@@ -409,7 +409,7 @@ Jenkins 기반 CI/CD 파이프라인은 Raspberry Pi 5에서 운용되며, Git p
 
 | ID | 요구사항 | 우선순위 | 수용 기준 |
 |---|---|---:|---|
-| SR-KEY-001 | ECDSA 공개키는 Bootloader Flash 영역(Sector 0~4)에 하드코딩되어야 한다. | Must | 공개키가 App Slot 또는 Metadata 영역에 저장되지 않고 Bootloader 이미지 내에 포함되어야 한다. |
+| SR-KEY-001 | ECDSA 공개키는 Bootloader Flash 영역(Sector 0~1)에 하드코딩되어야 한다. | Must | 공개키가 App Slot 또는 Metadata 영역에 저장되지 않고 Bootloader 이미지 내에 포함되어야 한다. |
 | SR-KEY-002 | ECDSA 개인키는 개발 PC 또는 Jenkins Credentials에만 존재해야 하며 ECU에 저장되지 않아야 한다. | Must | ECU Flash 어느 영역에도 개인키가 존재하지 않아야 한다. |
 | SR-KEY-003 | Security Access에 사용하는 PreSharedKey는 Bootloader Flash 영역에 저장되어야 한다. | Must | PreSharedKey가 App Slot에 포함되지 않아야 한다. WRP가 적용된 Bootloader 영역에 위치해야 한다. |
 | SR-KEY-004 | 공개키 및 PreSharedKey의 갱신은 Bootloader 재플래싱을 통해서만 가능해야 한다. | Should | ST-LINK 또는 전용 플래싱 도구를 통한 Bootloader 재기록으로만 키를 변경할 수 있어야 한다. |
@@ -1032,4 +1032,5 @@ TSR-001  (SUP.9)
 | 2.2 | 2026-06-01 | §7.3 A/B Slot 강화(적대적 질문 리뷰 반영): 슬롯 5상태 생명주기 모델 도입(INVALID/UPDATING/UPDATED/TRIAL/CONFIRMED, ISO 24089·AUTOSAR UCM 근거, §7.3.1), FR-AB-001~007 재작성, 서명 Image Header 신규(FR-AB-008), Self-test 측정가능 4항목·Tboot 실측 유도화, fail-closed 검증(image_size==0 우회 차단). 메타데이터 원자적 이중화(섹터 2·3 redundant + CRC32 + seq_counter, FR-AB-005/006, §13.3·§14.2 갱신). Boot 타이밍 측정 방식 결정 ADR-002 추가 |
 | 2.3 | 2026-06-02 | SecurityAccess HMAC 구현 반영(D1): §13.6 정정 — F446 무RNG→소프트웨어 DRBG seed, `HMAC-SHA256(key=PSK, msg=Seed)[0:4]` 명확화, PSK를 WRP Bootloader `0x08007FE0` 배치(SR-KEY-003), 3회→NRC 0x36 + 10s→NRC 0x37 잠금(RAM 기반, NV는 후속). 양 ECU·게이트웨이·단위테스트(test_hmac/test_uds_state) 일치 검증 |
 | 2.4 | 2026-06-02 | §13.6 Seed 생성 표기 정정 — "소프트웨어 DRBG"는 부정확(엔트로피원 없음)하여 "소프트웨어 nonce"로 정정, NIST SP 800-90 미준수·재부팅 replay 한계 명시 및 개선 경로(ADC/발진기 지터→HMAC_DRBG, HSM/SHE) ADR-004 추가 |
+| 2.5 | 2026-06-03 | 문서 정합성 패스: WRP 영역 정정(FR-BL-013·SR-KEY-001 "Sector 0~4"→"0~1" — 0~4는 Metadata·Slot A까지 잠가 OTA 불가, §14.2와 모순 해소), 파일명 버전표기 제거(SSOT — 버전은 본 개정이력에만), 메타데이터 이중화(섹터2·3)를 README·TEST_SPEC 메모리맵에 반영, TEST_SPEC 추적성 §참조→FR/SR ID화, SecurityAccess XOR 잔재→HMAC 정정(TEST_SPEC·diagram) |
 
