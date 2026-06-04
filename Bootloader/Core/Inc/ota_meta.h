@@ -46,9 +46,20 @@ int      ota_meta_valid(const OTA_Metadata_t *m);
 int      ota_meta_select(const OTA_Metadata_t *a, const OTA_Metadata_t *b, OTA_Metadata_t *out);
 
 /* ── 부팅 시 생명주기 결정 (FR-AB-007: trial + 3-strike 롤백) ── */
+typedef enum {
+    BOOT_EV_CONFIRMED = 0,   /* CONFIRMED 슬롯 그대로 부팅 */
+    BOOT_EV_TRIAL_START,     /* UPDATED→TRIAL 첫 시험부팅 */
+    BOOT_EV_TRIAL_RETRY,     /* TRIAL 재시도(attempt++) */
+    BOOT_EV_ROLLBACK,        /* 3-strike: 후보 INVALID + 이전 CONFIRMED 롤백/safe */
+    BOOT_EV_FALLBACK,        /* 후보 무효 → 반대 CONFIRMED 폴백 */
+    BOOT_EV_FACTORY,         /* 메타 없음 → Slot A 기본 */
+    BOOT_EV_SAFE             /* 가용 슬롯 없음 → safe state */
+} OTA_BootEvent_t;
+
 typedef struct {
-    int write;       /* 1 → 점프 전에 *out을 플래시에 기록해야 함 */
-    int boot_slot;   /* 0=Slot A, 1=Slot B, -1=safe state */
+    int write;             /* 1 → 점프 전에 *out을 플래시에 기록해야 함 */
+    int boot_slot;         /* 0=Slot A, 1=Slot B, -1=safe state */
+    OTA_BootEvent_t event; /* 진단/로깅용 — 어떤 결정이었는지 */
 } OTA_BootPlan_t;
 
 /* 현재 메타(in)로부터 부팅 슬롯과, 점프 전 커밋할 메타(*out)를 결정한다(순수).

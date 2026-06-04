@@ -46,8 +46,11 @@
 [BL] ECDSA OK
 [BL] version vN OK
 [BL] anti-rollback: vN below baseline — refusing
+[BL] rollback to slot N (CONFIRMED) + reset
 [BL] metadata size invalid (0x........) — fail-closed, refusing
-[BL] meta transition seq X->Y
+[BL] trial start: slot N (attempt 1)   [BL] trial retry: slot N (attempt M)
+[BL] 3-strike: slot N reached limit -> INVALID, rollback
+[BL] fallback: candidate invalid -> slot N (CONFIRMED)   [BL] confirmed boot: slot N
 [BL] Safe State: all slots invalid. Reflash via ST-Link.
 [BL] Jump to 0x........  SP=...  PC=...
 [SensorECU vN] Start, Slot=N        [DRIVE vN] 출발
@@ -82,9 +85,10 @@
 - **전제:** Slot=CONFIRMED **v2** 실행(기준선=2). 픽스처 F1의 서명 **v1** 준비
 - **절차:** ① v1 서명이미지를 비활성 슬롯으로 OTA 푸시 → ② 리셋
 - **기대(관측):**
-  - 부트로더: `ECDSA OK`(v1 서명은 진짜) → **`anti-rollback: v1 below baseline — refusing`** → `Safe State`
-  - heartbeat: **v1이 한 번도 안 나타남**(v2 유지 또는 정지)
-- **합격:** v1 미부팅 + 거부 로그. (⚠ 현재 거부 후 **safe_state(halt)** — §5 권고 참조)
+  - 부트로더: `ECDSA OK`(v1 서명은 진짜) → **`anti-rollback: v1 below baseline — refusing`**
+    → `rollback to slot N (CONFIRMED) + reset` → 리셋 후 CONFIRMED v2 부팅
+  - heartbeat: **v1이 한 번도 안 나타남**, v2 자동 복귀
+- **합격:** v1 미부팅 + 거부 로그 + 자동으로 v2(CONFIRMED) 복귀(halt 아님). 폴백 CONFIRMED가 없으면 safe_state
 - **음성 대조 HIL-TC-01b:** 같은 슬롯에 v3(상위) 푸시 → `version v3 OK` → 부팅. (상위는 허용)
 
 ### HIL-TC-02 — 3-strike 롤백: 고장 업데이트 자동 복구 (FR-AB-007)
@@ -94,12 +98,12 @@
 - **기대(관측 — 부팅 사이클):**
   | 부팅 | 로그 | 결과 |
   |---|---|---|
-  | 1 | `meta transition`(UPDATED→TRIAL, count=1) → Jump B | 앱 hang → IWDG 리셋(~8s) |
-  | 2 | `meta transition`(count→2) → Jump B | hang → 리셋 |
-  | 3 | `meta transition`(count→3) → Jump B | hang → 리셋 |
-  | 4 | count+1>3 → B를 INVALID 마킹 + **Slot A 롤백** | v2 부팅 |
+  | 1 | `trial start: slot 1 (attempt 1)` → Jump B | 앱 hang → IWDG 리셋(~8s) |
+  | 2 | `trial retry: slot 1 (attempt 2)` → Jump B | hang → 리셋 |
+  | 3 | `trial retry: slot 1 (attempt 3)` → Jump B | hang → 리셋 |
+  | 4 | `3-strike: slot 1 reached limit -> INVALID, rollback` → Slot A | v2 부팅 |
 - **기대 최종:** heartbeat 0x100 **ver=2, slot=0**(롤백 완료), 고장 v3 더 이상 시도 안 됨
-- **합격:** ≤4 사이클 내 v2/SlotA 자동 복구. (⚠ 3-strike 전용 로그 부재 — §5 권고)
+- **합격:** ≤4 사이클 내 v2/SlotA 자동 복구 + 각 단계 trial/3-strike 로그 관측
 
 ### HIL-TC-03 — fail-closed: size=0 서명검증 우회 차단 (FR-AB-003)
 - **목적:** 메타 size가 비정상이면 ECDSA를 *건너뛰지 않고* 부팅 거부
@@ -130,10 +134,10 @@
 
 ---
 
-## 5. 관측성 개선 권고 (플랜 작성 중 발견)
-1. **3-strike 전용 로그 부재** — 현재 롤백은 `meta transition`(seq만)과 최종 heartbeat로만 관측됨. 권고: 임계 초과 시 `[BL] 3-strike: slot X INVALID, rollback to slot Y` 로그 추가 → TC-02 관측 명확화.
-2. **anti-rollback 거부 후 halt** — `ota_meta_version_allowed` 실패 시 `safe_state()`로 정지(재플래시 필요). 권고 검토: 이전 CONFIRMED 슬롯으로 **graceful fallback** 후 부팅(가용성↑) — 보안(옛 버전 미실행)은 유지하면서. TC-01 기대결과는 결정에 따라 갱신.
-3. **fail-closed 자극엔 메타 위조 도구 필요** — `tools/forge_meta.py`(CRC 포함) 제작 전제(픽스처 F3).
+## 5. 관측성 개선 (플랜 작성 중 발견 → 반영 완료)
+1. ✅ **boot event 로그** — `plan_boot`가 `OTA_BootEvent_t`(TRIAL_START/RETRY/ROLLBACK/FALLBACK/CONFIRMED/FACTORY/SAFE)를 반환하고 부트로더가 사유별 로그 출력. 3-strike는 `3-strike: slot X reached limit -> INVALID, rollback`로 명확히 관측됨(단위테스트 event 검증).
+2. ✅ **anti-rollback graceful fallback** — 거부 시 halt 대신 거부 슬롯 INVALID 마킹 + 이전 CONFIRMED로 active 전환 + 리셋 → CONFIRMED 부팅. 보안(옛 버전 미실행)은 유지하면서 가용성↑. 폴백 CONFIRMED 없으면 safe_state.
+3. ⬜ **fail-closed 자극엔 메타 위조 도구 필요** — `tools/forge_meta.py`(CRC 포함) 제작 전제(픽스처 F3, HIL 항목 2).
 
 ---
 

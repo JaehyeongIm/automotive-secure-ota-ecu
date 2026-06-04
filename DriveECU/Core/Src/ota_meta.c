@@ -47,10 +47,12 @@ OTA_BootPlan_t ota_meta_plan_boot(const OTA_Metadata_t *in, OTA_Metadata_t *out,
     OTA_BootPlan_t p;
     p.write     = 0;
     p.boot_slot = -1;
+    p.event     = BOOT_EV_SAFE;
     *out = *in;
 
     if (in->magic != METADATA_MAGIC) {
         p.boot_slot = 0;            /* 메타 없음 → Slot A (factory/ST-Link) */
+        p.event     = BOOT_EV_FACTORY;
         return p;
     }
 
@@ -61,6 +63,7 @@ OTA_BootPlan_t ota_meta_plan_boot(const OTA_Metadata_t *in, OTA_Metadata_t *out,
 
     if (cs == SLOT_CONFIRMED) {
         p.boot_slot = (int)cand;    /* known-good → 그냥 부팅 */
+        p.event     = BOOT_EV_CONFIRMED;
         return p;
     }
 
@@ -70,6 +73,7 @@ OTA_BootPlan_t ota_meta_plan_boot(const OTA_Metadata_t *in, OTA_Metadata_t *out,
         out->seq_counter = in->seq_counter + 1u;
         p.write     = 1;
         p.boot_slot = (int)cand;
+        p.event     = BOOT_EV_TRIAL_START;
         return p;
     }
 
@@ -78,6 +82,7 @@ OTA_BootPlan_t ota_meta_plan_boot(const OTA_Metadata_t *in, OTA_Metadata_t *out,
             if (cand) out->slot_b_status = SLOT_INVALID; else out->slot_a_status = SLOT_INVALID;
             out->seq_counter = in->seq_counter + 1u;
             p.write = 1;
+            p.event = BOOT_EV_ROLLBACK;
             if (os == SLOT_CONFIRMED) {
                 out->active_slot = othr;
                 p.boot_slot = (int)othr;            /* 롤백 */
@@ -90,15 +95,18 @@ OTA_BootPlan_t ota_meta_plan_boot(const OTA_Metadata_t *in, OTA_Metadata_t *out,
         out->seq_counter = in->seq_counter + 1u;
         p.write     = 1;
         p.boot_slot = (int)cand;
+        p.event     = BOOT_EV_TRIAL_RETRY;
         return p;
     }
 
     /* 후보가 INVALID/UPDATING/미지 → 반대 CONFIRMED 폴백 */
     if (os == SLOT_CONFIRMED) {
         p.boot_slot = (int)othr;
+        p.event     = BOOT_EV_FALLBACK;
         return p;
     }
     p.boot_slot = -1;               /* safe state */
+    p.event     = BOOT_EV_SAFE;
     return p;
 }
 

@@ -140,8 +140,25 @@ void bootloader_run(void)
     /* Trial / 3-strike 생명주기 (FR-AB-007): 부팅 슬롯 결정 + 전이 커밋. */
     OTA_Metadata_t newmeta;
     OTA_BootPlan_t plan = ota_meta_plan_boot(&meta, &newmeta, 3);
+    switch (plan.event) {
+    case BOOT_EV_TRIAL_START:
+        printf("[BL] trial start: slot %d (attempt 1)\r\n", plan.boot_slot); break;
+    case BOOT_EV_TRIAL_RETRY:
+        printf("[BL] trial retry: slot %d (attempt %lu)\r\n",
+               plan.boot_slot, (unsigned long)newmeta.boot_count); break;
+    case BOOT_EV_ROLLBACK:
+        printf("[BL] 3-strike: slot %lu reached limit -> INVALID, rollback\r\n",
+               (unsigned long)meta.active_slot); break;
+    case BOOT_EV_FALLBACK:
+        printf("[BL] fallback: candidate invalid -> slot %d (CONFIRMED)\r\n", plan.boot_slot); break;
+    case BOOT_EV_CONFIRMED:
+        printf("[BL] confirmed boot: slot %d\r\n", plan.boot_slot); break;
+    case BOOT_EV_FACTORY:
+        printf("[BL] no metadata -> factory slot A\r\n"); break;
+    case BOOT_EV_SAFE:
+        printf("[BL] no bootable slot\r\n"); break;
+    }
     if (plan.write) {
-        printf("[BL] meta transition seq %lu->%lu\r\n", meta.seq_counter, newmeta.seq_counter);
         bl_meta_commit(&newmeta);
         meta = newmeta;   /* 이후 로직은 갱신된 상태 사용 */
     }
@@ -207,6 +224,21 @@ void bootloader_run(void)
             if (!ota_meta_version_allowed(&meta, hdr.fw_version)) {
                 printf("[BL] anti-rollback: v%lu below baseline — refusing\r\n",
                        (unsigned long)hdr.fw_version);
+                /* 거부 슬롯을 INVALID 마킹 + 이전 CONFIRMED로 롤백(가용성↑, 옛 버전 미실행).
+                 * 폴백 CONFIRMED 없으면 safe_state. */
+                uint32_t other = (boot_addr == SLOT_A_ADDR) ? 1u : 0u;
+                uint32_t ostat = other ? meta.slot_b_status : meta.slot_a_status;
+                if (ostat == SLOT_CONFIRMED) {
+                    OTA_Metadata_t nm = meta;
+                    if (boot_addr == SLOT_A_ADDR) nm.slot_a_status = SLOT_INVALID;
+                    else                          nm.slot_b_status = SLOT_INVALID;
+                    nm.active_slot = other;
+                    nm.seq_counter = meta.seq_counter + 1u;
+                    printf("[BL] rollback to slot %lu (CONFIRMED) + reset\r\n",
+                           (unsigned long)other);
+                    bl_meta_commit(&nm);
+                    NVIC_SystemReset();
+                }
                 safe_state();
                 return;
             }

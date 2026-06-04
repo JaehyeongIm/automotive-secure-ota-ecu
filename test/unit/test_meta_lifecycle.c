@@ -28,6 +28,7 @@ void test_plan_updated_to_trial(void)
     TEST_ASSERT_EQUAL_HEX32(SLOT_TRIAL, out.slot_b_status);
     TEST_ASSERT_EQUAL_UINT32(1, out.boot_count);
     TEST_ASSERT_EQUAL_UINT32(11, out.seq_counter);
+    TEST_ASSERT_EQUAL_INT(BOOT_EV_TRIAL_START, p.event);
 }
 
 /* TRIAL 재시험 (count+1 ≤ 3) → count++ */
@@ -39,6 +40,7 @@ void test_plan_trial_retry(void)
     TEST_ASSERT_EQUAL_INT(1, p.boot_slot);
     TEST_ASSERT_EQUAL_UINT32(2, out.boot_count);
     TEST_ASSERT_EQUAL_HEX32(SLOT_TRIAL, out.slot_b_status);
+    TEST_ASSERT_EQUAL_INT(BOOT_EV_TRIAL_RETRY, p.event);
 }
 
 /* TRIAL 3-strike → INVALID + 반대 CONFIRMED로 롤백 */
@@ -50,6 +52,7 @@ void test_plan_trial_3strike_rollback(void)
     TEST_ASSERT_EQUAL_INT(0, p.boot_slot);                     /* Slot A로 롤백 */
     TEST_ASSERT_EQUAL_HEX32(SLOT_INVALID, out.slot_b_status);
     TEST_ASSERT_EQUAL_UINT32(0, out.active_slot);              /* active → A */
+    TEST_ASSERT_EQUAL_INT(BOOT_EV_ROLLBACK, p.event);
 }
 
 /* TRIAL 3-strike, 폴백 CONFIRMED 없음 → safe state */
@@ -59,6 +62,7 @@ void test_plan_trial_3strike_no_fallback_safe(void)
     OTA_BootPlan_t p = ota_meta_plan_boot(&in, &out, 3);
     TEST_ASSERT_EQUAL_INT(-1, p.boot_slot);                    /* safe state */
     TEST_ASSERT_EQUAL_HEX32(SLOT_INVALID, out.slot_b_status);
+    TEST_ASSERT_EQUAL_INT(BOOT_EV_ROLLBACK, p.event);
 }
 
 /* CONFIRMED → 부팅, 쓰기 없음 */
@@ -68,6 +72,7 @@ void test_plan_confirmed_boots_no_write(void)
     OTA_BootPlan_t p = ota_meta_plan_boot(&in, &out, 3);
     TEST_ASSERT_EQUAL_INT(0, p.write);
     TEST_ASSERT_EQUAL_INT(0, p.boot_slot);
+    TEST_ASSERT_EQUAL_INT(BOOT_EV_CONFIRMED, p.event);
 }
 
 /* 메타 없음 → Slot A 기본 부팅 */
@@ -78,6 +83,7 @@ void test_plan_no_magic_boots_slot_a(void)
     OTA_BootPlan_t p = ota_meta_plan_boot(&in, &out, 3);
     TEST_ASSERT_EQUAL_INT(0, p.write);
     TEST_ASSERT_EQUAL_INT(0, p.boot_slot);
+    TEST_ASSERT_EQUAL_INT(BOOT_EV_FACTORY, p.event);
 }
 
 /* self-test 통과 → TRIAL 슬롯 CONFIRMED, count=0 */
