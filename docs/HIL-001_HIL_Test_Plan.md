@@ -153,16 +153,17 @@ F3 `forge_meta.py --preset size0-attack`. TC별 합격기준은 §3, 판정은 �
 
 ---
 
-## 6. 실행 기록 템플릿
-| TC | 일시 | 펌웨어/슬롯 | 관측 로그·heartbeat | 결과(P/F) | 비고 |
-|---|---|---|---|---|---|
-| TC-00 | | | | | |
-| TC-01 | | | | | |
-| TC-01b | | | | | |
-| TC-02 | | | | | |
-| TC-03 | | | | | |
-| TC-03b | | | | | |
-| TC-04 | | | | | |
-| TC-04b | | | | | |
+## 6. 실행 기록
 
-**합격 판정:** 모든 TC(음성 대조 포함) PASS 시 해당 기능 실보드 검증 완료. FAIL 시 8D 트러블슈팅(ISS) 발행.
+환경: ST-Link·UART = Mac(`/dev/tty.usbmodem21203`), CAN = RPi5(`can0`/socketcan),
+OTA = scp+ssh로 `ota_client.py`(운영 경로 재사용), 오케스트레이션 = `tools/hil_runner.py`.
+
+| TC | 일시 | 펌웨어/슬롯 | 관측 로그 | 결과 | 비고 |
+|---|---|---|---|---|---|
+| TC-01 anti-rollback | 2026-06-04 | drive A→B | `anti-rollback: v1 below baseline — refusing` → `rollback to slot 0` → `version v2 OK` | **PASS** | 실 OTA 35400B(ISO-TP/UDS), graceful fallback 확인 |
+| TC-02 3-strike | 2026-06-04 | drive B(고장 v3) | `trial start` → `trial retry`×2 → `3-strike … INVALID, rollback` → `version v2 OK` | **PASS** | IWDG 3사이클(~30s). RX printf 제거(커밋 f605919) 후 |
+| TC-03 fail-closed | 2026-06-04 | drive A | `metadata size invalid (0x00000000) — fail-closed, refusing` | **PASS** | `forge_meta --preset size0-attack` 주입 |
+| TC-04 staleness | 2026-06-04 | drive A | `[DRIVE] 센서 stale → fail-safe 정지` | **PASS** | 주행 중 센서 0x200 분리 → ~150ms 내 정지 |
+| TC-00 / TC-01b / TC-03b / TC-04b | — | | | (미실행) | 음성 대조·베이스라인은 후속 |
+
+**판정:** 핵심 4종 **실보드 PASS(2026-06-04)** — 보안 3(fail-closed·anti-rollback·3-strike) + 안전 1(센서 staleness) 실증 완료. 음성 대조(b)는 후속. FAIL 시 8D 트러블슈팅(ISS) 발행.
