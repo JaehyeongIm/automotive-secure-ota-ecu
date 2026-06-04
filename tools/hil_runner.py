@@ -139,7 +139,21 @@ class CanHeartbeat:
 # ── 자극 ────────────────────────────────────────────────────────────────────
 def sh(cmd):
     print(f"   $ {' '.join(cmd)}")
-    return subprocess.run(cmd, capture_output=True, text=True)
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:        # 실패는 반드시 노출(st-flash 충돌·보드 미인식 등)
+        out = (r.stdout + r.stderr).strip()
+        print(f"   ! exit={r.returncode}")
+        if out:
+            print("   " + out.replace("\n", "\n   "))
+    return r
+
+
+def stflash(cfg, *args):
+    """st-flash 호출. --st-serial 주면 해당 ST-Link만 타깃(보드 2개 동시연결 대응)."""
+    cmd = ["st-flash"]
+    if cfg.st_serial:
+        cmd += ["--serial", cfg.st_serial]
+    return sh(cmd + list(args))
 
 
 def ota_push(cfg, ecu, image):
@@ -161,13 +175,13 @@ def ota_push(cfg, ecu, image):
 def forge_inject(cfg, preset, addr="0x08008000"):
     out = "/tmp/hil_meta.bin"
     sh([sys.executable, "tools/forge_meta.py", "--preset", preset, "--out", out])
-    r1 = sh(["st-flash", "--reset", "write", out, addr])
-    r2 = sh(["st-flash", "--reset", "write", out, "0x0800C000"])
+    r1 = stflash(cfg, "--reset", "write", out, addr)
+    r2 = stflash(cfg, "--reset", "write", out, "0x0800C000")
     return r1.returncode == 0 and r2.returncode == 0
 
 
-def st_reset():
-    return sh(["st-flash", "reset"]).returncode == 0
+def st_reset(cfg):
+    return stflash(cfg, "reset").returncode == 0
 
 
 def manual(prompt):
@@ -180,15 +194,15 @@ def setup_bench(cfg):
     sh(["make", "-C", "Bootloader/Debug", "-j4", "all"])
     sh(["arm-none-eabi-objcopy", "-O", "binary",
         "Bootloader/Debug/Bootloader.elf", "/tmp/hil_bl.bin"])
-    sh(["st-flash", "--reset", "write", "/tmp/hil_bl.bin", "0x08000000"])
+    stflash(cfg, "--reset", "write", "/tmp/hil_bl.bin", "0x08000000")
     base = f"{cfg.img}/{cfg.ecu}_v2_A.bin"
-    sh(["st-flash", "--reset", "write", base, "0x08010000"])
+    stflash(cfg, "--reset", "write", base, "0x08010000")
     sz = os.path.getsize(base)
     sh([sys.executable, "tools/forge_meta.py", "--preset", "confirmed-a",
         "--a-version", "2", "--a-size", str(sz), "--out", "/tmp/hil_meta_ok.bin"])
-    sh(["st-flash", "--reset", "write", "/tmp/hil_meta_ok.bin", "0x08008000"])
-    sh(["st-flash", "--reset", "write", "/tmp/hil_meta_ok.bin", "0x0800C000"])
-    st_reset()
+    stflash(cfg, "--reset", "write", "/tmp/hil_meta_ok.bin", "0x08008000")
+    stflash(cfg, "--reset", "write", "/tmp/hil_meta_ok.bin", "0x0800C000")
+    st_reset(cfg)
 
 
 # ── 테스트 케이스 ────────────────────────────────────────────────────────────
@@ -227,7 +241,7 @@ def tc03_fail_closed(cfg, drv, can):
     """size=0 위조 메타 주입(ST-Link) → 부트로더 fail-closed 거부(UART로 판정)."""
     since = time.time()
     forge_inject(cfg, "size0-attack")
-    st_reset()
+    st_reset(cfg)
     refused = drv.wait_for("fail-closed", 20, since)
     return Result("TC-03 fail-closed (size=0)", refused, f"fail-closed로그={refused}")
 
@@ -296,6 +310,7 @@ def main():
                     help="OTA 푸시 명령 템플릿({img},{ecu} 치환). "
                          "예: 'curl -F fw=@{img} https://X.ngrok.io/ota/{ecu}'")
     ap.add_argument("--uart", help="시험 대상 ECU 디버그 UART 포트")
+    ap.add_argument("--st-serial", help="ST-Link 시리얼(보드 2개 동시연결 시 타깃 지정; st-info --probe로 확인)")
     ap.add_argument("--key", default="ota-private-key.pem")
     ap.add_argument("--img", default="fixtures", help="서명 이미지 디렉토리")
     cfg = ap.parse_args()
@@ -323,7 +338,9 @@ def main():
             print(f"\n=== {fn.__doc__.splitlines()[0].strip()} ===")
             results.append(fn(cfg, drv, can))
     finally:
-        drv.close(); can.close()
+        drv.close()
+        if can:
+            can.close()
 
     print("\n" + "=" * 60)
     for r in results:
