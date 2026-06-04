@@ -10,15 +10,15 @@ HIL 오케스트레이션 — HIL-001 테스트케이스를 실보드에 자동 
   - 메타 위조 주입: tools/forge_meta.py + st-flash
   - 전원/센서/버튼 등 물리 동작: 운영자 프롬프트(input)
 
-하드웨어 없이 파싱 로직만 검증:  python hil_runner.py --selftest
+하드웨어 없이 파싱 로직만 검증:  python3 hil_runner.py --selftest
 
 [권장] Mac에서 전부 오케스트레이션 (ST-Link·UART=로컬, OTA=ngrok→Pi 게이트웨이):
-    python hil_runner.py --ecu drive --build --setup --all --uart /dev/tty.usbmodemXXX \
+    python3 hil_runner.py --ecu drive --build --setup --all --uart /dev/tty.usbmodemXXX \
         --ota-cmd "curl -s -F fw=@{img} https://YOURID.ngrok.io/ota/{ecu}"
   관측=UART(로컬), 플래시=로컬 ST-Link, OTA 자극=--ota-cmd(운영 경로 재사용) → CAN 불필요.
 
 [단일 머신] 모든 장치가 한 곳에:
-    python hil_runner.py --ecu drive --build --setup --all --can slcan0 --uart /dev/ttyUSB0
+    python3 hil_runner.py --ecu drive --build --setup --all --can slcan0 --uart /dev/ttyUSB0
 
   --build=픽스처 빌드, --setup=부트로더+베이스라인 플래시. 단일 단계: --setup --tc 03 등.
 

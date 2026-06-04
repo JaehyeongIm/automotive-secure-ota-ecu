@@ -25,8 +25,9 @@ esac
 MAIN="$PROJ/Core/Src/main.c"
 mkdir -p fixtures
 
+PY=${PYTHON:-python3}
 sign() {  # sign <slot> <version> <outname>
-  python tools/sign_firmware.py "artifacts/${ECU}_slot$1.bin" "$KEY" \
+  "$PY" tools/sign_firmware.py "artifacts/${ECU}_slot$1.bin" "$KEY" \
     --version "$2" --ecu-id "$EID" --out "fixtures/$3"
 }
 
