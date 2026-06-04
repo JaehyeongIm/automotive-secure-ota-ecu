@@ -92,7 +92,10 @@ class SerialLog(LogBuffer):
                 break
             while b"\n" in buf:
                 raw, buf = buf.split(b"\n", 1)
-                self.feed(raw.decode("utf-8", "replace").rstrip("\r"))
+                line = raw.decode("utf-8", "replace").rstrip("\r")
+                self.feed(line)
+                if line:                       # ECU UART 로그를 터미널에 실시간 echo
+                    print(f"   uart| {line}")
 
     def close(self):
         self._stop = True
