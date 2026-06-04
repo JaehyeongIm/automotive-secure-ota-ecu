@@ -138,8 +138,36 @@ TransferData 구간에서 주행이 재개되는 것은 허용 가능한 동작�
 
 ---
 
-## 6. 개정 이력
+## 6. 후속 검토 (2026-06-04): 근본 원인 해결책 — RAMFUNC / Dual-bank
+
+옵션 C 채택 후, "Flash Erase 4초 블로킹"이라는 **근본 원인 자체를 없애는** 두 접근을 추가 검토했다. 옵션 C는 이 블로킹을 *해결*한 것이 아니라 *정차 시점으로 회피*한 것이므로, 아래를 향후 개선 경로로 명시한다. **결론적으로 single-bank F446 + 데모 범위에서는 옵션 C 결정을 유지한다.**
+
+### 옵션 D: RAMFUNC (Erase 루틴 + 최소 안전감시자를 RAM에서 실행)
+
+Erase 중 CPU가 멈추는 이유는 BUSY 상태의 플래시에서 명령어를 fetch할 수 없기 때문이다. erase 드라이버·워치독 피딩·모터컷 가드를 RAM에 상주(`__RAM_FUNC`)시키면 Erase 중에도 그 코드는 실행된다.
+
+- **한계**: single-bank는 Erase 중 플래시 *전체*가 잠긴다. 살리려는 코드의 호출체인·ISR·벡터테이블(VTOR 재배치)·상수(`.rodata`)까지 **모두 RAM**이어야 한다. 주행 제어 전체(CAN RX→장애물→모터)를 살리려면 사실상 앱 대부분이 RAM으로 가고, ISO 26262 freedom-from-interference 입증 부담이 커진다. → 현실적 용도는 **"Erase 구간 최소 안전상태(모터 OFF) 유지"** 까지.
+- **실무**: 플래시 드라이버를 RAM에서 실행하는 것은 Flash Bootloader(FBL)의 표준 관행이다(UDS로 플래시 루틴 blob을 RAM에 다운로드 후 RoutineControl로 실행). 단, **앱 전체를 살리는 용도로는 쓰지 않는다.**
+
+### 옵션 E: Dual-bank Flash (Read-While-Write 하드웨어)
+
+뱅크별 독립 제어로, 한 뱅크를 erase/write하는 동안 다른 뱅크에서 코드를 실행(RWW)한다. **주행 중 백그라운드 다운로드 + 안전 시점 활성화**가 가능해지는, AUTOSAR Adaptive UCM이 전제하는 구조이자 "주행 중 업데이트" ECU의 실제 모습이다.
+
+- **한계**: STM32F446은 single-bank 전용 — 하드웨어 교체(STM32F76x/H7/L4 등) 필요. 본 프로젝트 범위 밖.
+
+### 결정에의 영향
+
+- single-bank F446 + 데모에서는 **옵션 C 유지**가 합리적이다(OTA를 정차 구간에 한정 → 안전기능과 시간적으로 분리 → ISO 26262 안전 입증이 단순).
+- **deferred activation(옵션 B, `g_fw_pending`) 개념 자체는 틀리지 않았다.** ADR-001이 B를 기각한 진짜 이유는 "single-bank에서 *Erase*를 안전하게 못 만든다"였지 "활성화를 미루는 것이 나쁘다"가 아니다. 옵션 D/E로 Erase가 안전해지면 deferred activation은 다시 올바른 설계가 된다.
+- **보강(별개 과제)**: ECU가 주행 중 `RequestDownload(0x34)`를 **NRC 0x22(conditionsNotCorrect)** 로 거부하는 ECU 측 전제조건 강제 — 게이트웨이 신뢰 의존을 줄인다(ISO 24089 installation preconditions, Uptane SR-UP-004 "게이트웨이를 신뢰하지 말라").
+
+> **문서 정합성 메모**: 본 ADR(옵션 C)이 정본이다. SRS FR-DRV-008·FR-CICD-007, TEST_SPEC TC-OTA-007/008, diagram.md의 상태/시퀀스 다이어그램은 아직 옛 옵션 B(`g_fw_pending`, IDLE 진입 시 재부팅)를 서술하므로 baseline 정합화가 필요하다(별도 과제).
+
+---
+
+## 7. 개정 이력
 
 | 버전 | 날짜 | 내용 |
 |---|---|---|
 | 1.0 | 2026-05-25 | 최초 작성 — 옵션 A/B/C 검토 및 옵션 C 채택 결정 기록 |
+| 1.1 | 2026-06-04 | §6 추가 — 근본 원인 해결책(RAMFUNC/dual-bank) 검토, 옵션 C 유지 재확인, deferred activation 부활 조건·ECU 전제조건 강제·문서 정합성 메모 |
