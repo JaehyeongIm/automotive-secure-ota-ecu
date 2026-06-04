@@ -59,12 +59,24 @@
 
 ---
 
-## 2. 테스트 픽스처 (제작 완료/방법)
-| ID | 픽스처 | 제작 방법 |
-|---|---|---|
-| F1 | 서명 정상 이미지 v1/v2/v3 | 앱 빌드 후 `python tools/sign_firmware.py <app.bin> <key.pem> --version N --ecu-id E --out vN_signed.bin` (E: 1=DRIVE, 2=SENSOR) |
-| F2 | **고장 앱**(self-test 실패) | ✅ `#ifdef HIL_SELFTEST_FAIL`(main 루프 진입 직후 hang → IWDG 리셋 → confirm 안 됨). 빌드 시 `-DHIL_SELFTEST_FAIL` 정의 후 상위 --version으로 서명 |
-| F3 | **size=0 위조 메타** | ✅ `python tools/forge_meta.py --preset size0-attack --out meta_size0.bin` → `st-flash --reset write meta_size0.bin 0x08008000` (+ 0x0800C000). CRC가 부트로더 C 구현과 일치 검증됨 |
+## 2. 실행 자동화 (`tools/hil_runner.py`)
+
+자극→관측→판정을 자동화한다. 관측은 CAN heartbeat(0x100/0x201) + ECU UART 로그,
+자극은 `ota_client.py`(OTA)·`forge_meta.py`+st-flash(메타 위조)·운영자 프롬프트(전원·센서·버튼)를 엮는다.
+
+```bash
+# 하드웨어 없이 파싱 로직(heartbeat 디코드·로그 매처) 검증
+python tools/hil_runner.py --selftest
+
+# 실보드 전체 실행
+python tools/hil_runner.py --all --can slcan0 \
+    --drive-uart /dev/tty.drive --sensor-uart /dev/tty.sensor \
+    --key keys/ota_priv.pem --img fixtures/
+# 단일 TC: --tc 01|02|03|04
+```
+
+픽스처(전제): F1 `sign_firmware.py … --version N`, F2 `-DHIL_SELFTEST_FAIL` 빌드,
+F3 `forge_meta.py --preset size0-attack`. TC별 합격기준은 §3, 판정은 로그·heartbeat 자동 대조.
 
 ---
 
