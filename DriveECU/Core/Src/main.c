@@ -553,11 +553,9 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
         drive_note_sensor_rx();   /* 신선도 감시: 수신 시각 갱신 */
         return;
     }
-
-    printf("[RX] ID:0x%03lX DLC:%lu Data:%02X %02X %02X %02X cnt:%lu\r\n",
-           rx_header.StdId, rx_header.DLC,
-           rx_data[0], rx_data[1], rx_data[2], rx_data[3],
-           (uint32_t)(rx_data[1] << 24 | rx_data[2] << 16 | rx_data[3] << 8 | rx_data[4]));
+    /* 그 외 프레임(센서 0x201 하트비트 등)은 무시. ISR 안에서 printf 금지 —
+     * 매 수신마다 blocking printf는 UART를 폭주시키고, 재진입으로 메인의
+     * [BL]/[UDS] 로그를 깨뜨려 HIL 관측을 방해한다. */
 }
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
