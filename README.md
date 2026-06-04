@@ -136,7 +136,9 @@ git push 한 번으로 ECU 슬롯 전환 확인까지 자동 수행. 변경된 E
     │   ├── ADR-003_SecurityAccess_Lockout_Storage.md
     │   ├── ADR-004_SecurityAccess_Seed_RNG.md
     │   ├── ADR-005_Troubleshooting_Doc_Naming.md
-    │   └── ADR-006_Secure_Element_Adoption.md
+    │   ├── ADR-006_Secure_Element_Adoption.md
+    │   ├── ADR-007_Anti_Rollback_Design.md
+    │   └── ADR-008_OTA_Trigger_CI_Deploy_Separation.md
     ├── TEST_SPEC_OTA_v1.0.md
     └── diagram.md       Context / Block / State / Sequence 다이어그램
 ```
@@ -189,5 +191,7 @@ git push origin main
 - [ADR-004](docs/adr/ADR-004_SecurityAccess_Seed_RNG.md) — SecurityAccess Seed 난수 생성(TRNG 부재·SP 800-90 미준수)
 - [ADR-005](docs/adr/ADR-005_Troubleshooting_Doc_Naming.md) — 트러블슈팅 문서 파일명·ID 규칙
 - [ADR-006](docs/adr/ADR-006_Secure_Element_Adoption.md) — Secure Element(ATECC608A) 도입 — TRNG·NV 한계 하드웨어 해소
+- [ADR-007](docs/adr/ADR-007_Anti_Rollback_Design.md) — Anti-rollback 설계(서명 이미지 헤더 + 메타 버전 기준선)
+- [ADR-008](docs/adr/ADR-008_OTA_Trigger_CI_Deploy_Separation.md) — OTA 트리거: CI 빌드와 차량 배포 분리(태그 릴리스 + 승인 게이트)
 - [TEST_SPEC](docs/TEST_SPEC_OTA_v1.0.md) — 소프트웨어 테스트 명세서
 - [diagram](docs/diagram.md) — 시스템 다이어그램 (Context / Block / State / Sequence)

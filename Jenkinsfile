@@ -8,32 +8,52 @@ pipeline {
     environment {
         CAN_IF      = 'can0'
         // Jenkins > Manage Credentials에 Secret File로 등록한 ECDSA 개인키.
-        // sign_firmware.py는 파일 경로를 인자로 받으므로 Secret File 타입으로 등록해야 한다.
+        // 'Build & Sign Release'(릴리스 태그) 단계에서만 사용한다 — 배포 단계는 개인키 불필요.
         PRIVATE_KEY = credentials('ota-private-key')
     }
 
     stages {
 
-        // ── 1. 변경된 ECU 감지 ─────────────────────────────────────────────────
-        // git diff로 어떤 ECU 소스가 바뀌었는지 확인한다.
-        // DriveECU/ 또는 SensorECU/ 하위 파일이 변경된 경우에만 해당 ECU를 플래시한다.
-        stage('Detect changed ECUs') {
+        // ── 1. 변경 ECU + 릴리스 태그 감지 (ADR-008) ───────────────────────────
+        // CI(브랜치 push)와 배포(릴리스 태그)를 분리한다.
+        //  - 일반 push: 단위테스트·정적분석·컴파일 검증까지만, ECU 미접촉.
+        //  - 태그 vN  : 빌드·서명·승인 후에만 ECU에 배포. N은 anti-rollback 버전(ADR-007).
+        stage('Detect changes & release') {
             steps {
                 script {
+                    // HEAD가 정확히 vN 태그이면 릴리스. 태그 숫자가 펌웨어 version이 된다.
+                    // (전제: SCM 체크아웃이 태그를 포함해야 한다 — multibranch면 자동.)
+                    def tag = sh(
+                        script: 'git describe --tags --exact-match HEAD 2>/dev/null || true',
+                        returnStdout: true
+                    ).trim()
+                    env.IS_RELEASE      = (tag ==~ /v\d+/) ? 'true' : 'false'
+                    env.RELEASE_VERSION = (tag ==~ /v\d+/) ? tag.replaceFirst('v', '') : ''
+
+                    // 변경 ECU 감지. 릴리스면 직전 태그와, 아니면 직전 커밋과 비교한다.
+                    def base = 'HEAD~1'
+                    if (env.IS_RELEASE == 'true') {
+                        def prev = sh(
+                            script: "git describe --tags --abbrev=0 ${tag}^ 2>/dev/null || true",
+                            returnStdout: true
+                        ).trim()
+                        if (prev) { base = prev }
+                    }
                     def changed = sh(
-                        script: 'git diff --name-only HEAD~1 HEAD',
+                        script: "git diff --name-only ${base} HEAD",
                         returnStdout: true
                     ).trim()
                     env.DRIVE_CHANGED  = changed.contains('DriveECU/')  ? 'true' : 'false'
                     env.SENSOR_CHANGED = changed.contains('SensorECU/') ? 'true' : 'false'
-                    echo "DriveECU changed:  ${env.DRIVE_CHANGED}"
-                    echo "SensorECU changed: ${env.SENSOR_CHANGED}"
+
+                    echo "release=${env.IS_RELEASE} version=${env.RELEASE_VERSION} " +
+                         "(base=${base})  drive=${env.DRIVE_CHANGED} sensor=${env.SENSOR_CHANGED}"
                 }
             }
         }
 
         // ── 2. 단위 테스트 ────────────────────────────────────────────────────
-        // ceedling test:all 실패 시 이후 모든 스테이지(정적분석·빌드·OTA)를 차단한다.
+        // ceedling test:all 실패 시 이후 모든 스테이지(정적분석·빌드·배포)를 차단한다.
         stage('Unit Tests') {
             when { expression { env.DRIVE_CHANGED == 'true' || env.SENSOR_CHANGED == 'true' } }
             steps {
@@ -76,9 +96,85 @@ pipeline {
             }
         }
 
-        // ── 4. DriveECU OTA ────────────────────────────────────────────────────
-        stage('Flash DriveECU') {
-            when { expression { env.DRIVE_CHANGED == 'true' } }
+        // ── 4. 컴파일 검증 (CI, ECU 미접촉) ───────────────────────────────────
+        // 일반 push에서 크로스컴파일이 깨지지 않는지만 확인한다(FR-CICD-003).
+        // 서명·ECU 전송은 하지 않는다. 슬롯은 검증용으로 B 하나만 빌드.
+        stage('Compile Check') {
+            when {
+                allOf {
+                    expression { env.IS_RELEASE == 'false' }
+                    expression { env.DRIVE_CHANGED == 'true' || env.SENSOR_CHANGED == 'true' }
+                }
+            }
+            steps {
+                script {
+                    if (env.DRIVE_CHANGED == 'true')  { sh 'bash ci/build.sh drive B' }
+                    if (env.SENSOR_CHANGED == 'true') { sh 'bash ci/build.sh sensor B' }
+                }
+            }
+        }
+
+        // ── 5. 릴리스 빌드 + 서명 (태그 vN, Uptane Image Repository) ───────────
+        // build-all/deploy-select: A·B 두 슬롯 변형을 모두 빌드·서명·보관하고,
+        // 배포 단계는 live 슬롯을 읽어 재빌드 없이 해당 아티팩트를 고른다.
+        // 개인키는 이 단계에서만 사용한다.
+        stage('Build & Sign Release') {
+            when { expression { env.IS_RELEASE == 'true' } }
+            steps {
+                script {
+                    def signEcu = { ecu, id ->
+                        for (slot in ['A', 'B']) {
+                            sh "bash ci/build.sh ${ecu} ${slot}"
+                            sh """
+                                python3 tools/sign_firmware.py \
+                                    artifacts/${ecu}_slot${slot}.bin \
+                                    ${PRIVATE_KEY} \
+                                    --version ${env.RELEASE_VERSION} \
+                                    --ecu-id ${id} \
+                                    --out artifacts/${ecu}_slot${slot}_signed.bin
+                            """
+                        }
+                    }
+                    if (env.DRIVE_CHANGED  == 'true') { signEcu('drive', 1) }
+                    if (env.SENSOR_CHANGED == 'true') { signEcu('sensor', 2) }
+                }
+            }
+        }
+
+        // ── 6. 배포 승인 게이트 (UN R156 SUMS 승인의 미니어처) ─────────────────
+        // 태그 = 배포 자격, 승인 = 지금 이 ECU에 꽂을 권한. 승인자를 기록한다.
+        // 주의: 승인 대기 동안 단일 노드 executor를 점유한다(데모 허용, ADR-008 §4).
+        stage('Approve Deployment') {
+            when {
+                allOf {
+                    expression { env.IS_RELEASE == 'true' }
+                    expression { env.DRIVE_CHANGED == 'true' || env.SENSOR_CHANGED == 'true' }
+                }
+            }
+            steps {
+                timeout(time: 30, unit: 'MINUTES') {
+                    script {
+                        env.APPROVER = input(
+                            message: "릴리스 v${env.RELEASE_VERSION} 배포 승인 " +
+                                     "(drive=${env.DRIVE_CHANGED}, sensor=${env.SENSOR_CHANGED})",
+                            ok: '배포 승인',
+                            submitterParameter: 'APPROVER'
+                        )
+                        echo "[DEPLOY] 승인자=${env.APPROVER}  release=v${env.RELEASE_VERSION}"
+                    }
+                }
+            }
+        }
+
+        // ── 7. DriveECU 배포 ──────────────────────────────────────────────────
+        // 사전 서명된 아티팩트를 선택해 전송한다(재빌드·재서명 없음, 개인키 불필요).
+        stage('Deploy DriveECU') {
+            when {
+                allOf {
+                    expression { env.IS_RELEASE == 'true' }
+                    expression { env.DRIVE_CHANGED == 'true' }
+                }
+            }
             steps {
                 script {
                     // CAN 0x100 헤더에서 현재 활성 슬롯 읽기 → 비활성 슬롯이 OTA 대상
@@ -87,20 +183,9 @@ pipeline {
                         returnStdout: true
                     ).trim()
                     def target = (active == 'A') ? 'B' : 'A'
-                    echo "[DriveECU] active=Slot${active} → target=Slot${target}"
+                    echo "[DriveECU] active=Slot${active} → target=Slot${target} (v${env.RELEASE_VERSION})"
 
-                    // 대상 슬롯 링커스크립트로 빌드 → artifacts/drive_slot<X>.bin 생성
-                    sh "bash ci/build.sh drive ${target}"
-
-                    // ECDSA-P256 서명 추가 → 부트로더 검증 통과용
-                    sh """
-                        python3 tools/sign_firmware.py \
-                            artifacts/drive_slot${target}.bin \
-                            ${PRIVATE_KEY} \
-                            --out artifacts/drive_slot${target}_signed.bin
-                    """
-
-                    // UDS/ISO-TP over CAN (0x7E0→0x7E8) 으로 펌웨어 전송
+                    // UDS/ISO-TP over CAN (0x7E0→0x7E8) 으로 사전 서명 펌웨어 전송
                     sh """
                         echo '=== [DriveECU] CAN 상태 (UDS 전송 전) ==='
                         ip -details -stats link show ${CAN_IF} || true
@@ -142,11 +227,17 @@ pipeline {
                 }
             }
         }
-        // ── 5. SensorECU OTA ───────────────────────────────────────────────────
-        // DriveECU OTA가 성공한 후 순차 실행한다.
+
+        // ── 8. SensorECU 배포 ─────────────────────────────────────────────────
+        // DriveECU 배포가 성공한 후 순차 실행한다.
         // 두 ECU를 동시에 OTA하지 않는다 (한쪽 ECU가 OTA 중일 때 차량이 멈춘 상태여야 안전).
-        stage('Flash SensorECU') {
-            when { expression { env.SENSOR_CHANGED == 'true' } }
+        stage('Deploy SensorECU') {
+            when {
+                allOf {
+                    expression { env.IS_RELEASE == 'true' }
+                    expression { env.SENSOR_CHANGED == 'true' }
+                }
+            }
             steps {
                 script {
                     // CAN 0x201 헤더에서 현재 활성 슬롯 읽기
@@ -155,18 +246,9 @@ pipeline {
                         returnStdout: true
                     ).trim()
                     def target = (active == 'A') ? 'B' : 'A'
-                    echo "[SensorECU] active=Slot${active} → target=Slot${target}"
+                    echo "[SensorECU] active=Slot${active} → target=Slot${target} (v${env.RELEASE_VERSION})"
 
-                    sh "bash ci/build.sh sensor ${target}"
-
-                    sh """
-                        python3 tools/sign_firmware.py \
-                            artifacts/sensor_slot${target}.bin \
-                            ${PRIVATE_KEY} \
-                            --out artifacts/sensor_slot${target}_signed.bin
-                    """
-
-                    // UDS/ISO-TP over CAN (0x7E1→0x7E9) 으로 펌웨어 전송
+                    // UDS/ISO-TP over CAN (0x7E1→0x7E9) 으로 사전 서명 펌웨어 전송
                     sh """
                         echo '=== [SensorECU] CAN 상태 (UDS 전송 전) ==='
                         ip -details -stats link show ${CAN_IF} || true
@@ -212,7 +294,13 @@ pipeline {
 
     post {
         success {
-            echo 'OTA 파이프라인 완료'
+            script {
+                if (env.IS_RELEASE == 'true') {
+                    echo "릴리스 v${env.RELEASE_VERSION} 배포 파이프라인 완료"
+                } else {
+                    echo 'CI 통과 — 배포하려면 vN 태그를 push 하세요 (ADR-008)'
+                }
+            }
         }
         failure {
             echo '파이프라인 실패 — ECU는 이전 펌웨어 유지'
