@@ -547,6 +547,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
     if (rx_header.StdId == 0x200) {
         g_obstacle_flag = rx_data[0];
         g_distance_cm   = ((uint16_t)rx_data[1] << 8) | rx_data[2];
+        drive_note_sensor_rx();   /* 신선도 감시: 수신 시각 갱신 */
         return;
     }
 

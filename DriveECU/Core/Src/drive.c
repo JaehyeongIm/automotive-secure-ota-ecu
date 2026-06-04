@@ -44,6 +44,11 @@ volatile uint8_t  g_driving_state  = 0;
 volatile uint8_t  g_button_pressed = 0;
 volatile uint16_t g_distance_cm    = 999;
 
+/* 센서(0x200) 신선도 감시 — 침묵 시 fail-safe 정지 (ISO 26262 안전상태). */
+#define SENSOR_TIMEOUT_MS 150u          /* 센서 주기 ~50ms의 3배(E-Gas 3-miss); 실측 보정 대상 */
+static volatile uint32_t s_sensor_rx_tick = 0;
+static volatile uint8_t  s_sensor_seen    = 0;
+
 typedef enum {
     DRIVE_IDLE,
     DRIVE_RUNNING,
@@ -144,6 +149,13 @@ void drive_init(void)
     motor_init();
 }
 
+/* 0x200 수신 시 호출(ISR) — 신선도 감시용 수신 시각·플래그 갱신. */
+void drive_note_sensor_rx(void)
+{
+    s_sensor_rx_tick = HAL_GetTick();
+    s_sensor_seen    = 1;
+}
+
 void drive_update(void)
 {
     if (g_ota_active) {
@@ -154,6 +166,18 @@ void drive_update(void)
     }
 
     uint32_t now = HAL_GetTick();
+
+    /* 센서 신선도 감시 (ISO 26262 안전상태 전이, AUTOSAR E2E 타임아웃):
+     * Sensor(0x200) 침묵 → 장애물 정보 신뢰 불가 → 장애물로 간주하고 정지(fail-safe). */
+    if (!drive_sensor_fresh(s_sensor_seen, now, s_sensor_rx_tick, SENSOR_TIMEOUT_MS)) {
+        if (s_state != DRIVE_IDLE || g_driving_state) {
+            drive_force_stop();
+            printf("[DRIVE] 센서 stale → fail-safe 정지\r\n");
+        }
+        g_driving_state = 0;
+        s_state = DRIVE_IDLE;
+        return;
+    }
 
     switch (s_state) {
 
