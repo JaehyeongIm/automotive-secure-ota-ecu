@@ -59,12 +59,12 @@
 
 ---
 
-## 2. 필요 픽스처 (별도 작업: HIL 항목 2에서 제작)
+## 2. 테스트 픽스처 (제작 완료/방법)
 | ID | 픽스처 | 제작 방법 |
 |---|---|---|
-| F1 | 서명 정상 이미지 v1/v2/v3 | `sign_firmware.py <bin> <key> --version N --ecu-id E` |
-| F2 | **고장 앱**(self-test 실패) | heartbeat 송신 전에 hang하는 빌드(IWDG가 리셋 → confirm 안 됨). 서명 |
-| F3 | **size=0 위조 메타** | `OTA_Metadata_t`(magic 유효, slotX CONFIRMED, slotX_size=0, seq↑, **CRC 재계산**) 바이너리 → ST-Link로 0x08008000 주입. 헬퍼 `tools/forge_meta.py` 신규 |
+| F1 | 서명 정상 이미지 v1/v2/v3 | 앱 빌드 후 `python tools/sign_firmware.py <app.bin> <key.pem> --version N --ecu-id E --out vN_signed.bin` (E: 1=DRIVE, 2=SENSOR) |
+| F2 | **고장 앱**(self-test 실패) | ✅ `#ifdef HIL_SELFTEST_FAIL`(main 루프 진입 직후 hang → IWDG 리셋 → confirm 안 됨). 빌드 시 `-DHIL_SELFTEST_FAIL` 정의 후 상위 --version으로 서명 |
+| F3 | **size=0 위조 메타** | ✅ `python tools/forge_meta.py --preset size0-attack --out meta_size0.bin` → `st-flash --reset write meta_size0.bin 0x08008000` (+ 0x0800C000). CRC가 부트로더 C 구현과 일치 검증됨 |
 
 ---
 

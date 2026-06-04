@@ -272,6 +272,9 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+#ifdef HIL_SELFTEST_FAIL
+    while (1) { }   /* HIL TC-02 픽스처: self-test 전 hang → IWDG 리셋 → 3-strike */
+#endif
     HAL_IWDG_Refresh(&hiwdg);
     uds_process();
 
