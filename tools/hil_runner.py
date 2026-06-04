@@ -11,14 +11,16 @@ HIL 오케스트레이션 — HIL-001 테스트케이스를 실보드에 자동 
   - 전원/센서/버튼 등 물리 동작: 운영자 프롬프트(input)
 
 하드웨어 없이 파싱 로직만 검증:  python hil_runner.py --selftest
-실보드 실행:                     python hil_runner.py --all \
-    --can slcan0 --drive-uart /dev/tty.drive --sensor-uart /dev/tty.sensor \
-    --key keys/ota_priv.pem --img fixtures/
+실보드 한 줄 실행(빌드+셋업+전체):
+    python hil_runner.py --ecu drive --build --setup --all --can slcan0 --uart /dev/ttyUSB0
+  (--build=픽스처 빌드, --setup=부트로더+베이스라인 플래시, --all=전체 TC)
+  단일 단계도 가능: --build만 / --setup --tc 03 등
 
 자극 중 일부(전원 재인가·센서 분리·버튼)는 자동화 불가 → 프롬프트로 운영자에게 지시한다.
 """
 
 import argparse
+import os
 import subprocess
 import sys
 import threading
@@ -156,6 +158,23 @@ def manual(prompt):
     input(f"   [수동] {prompt} — 완료 후 Enter...")
 
 
+def setup_bench(cfg):
+    """known-state 셋업: 부트로더 + 베이스라인 v2(Slot A CONFIRMED) 플래시(멱등)."""
+    print("=== 벤치 셋업: 부트로더 + 베이스라인 v2 (Slot A CONFIRMED) ===")
+    sh(["make", "-C", "Bootloader/Debug", "-j4", "all"])
+    sh(["arm-none-eabi-objcopy", "-O", "binary",
+        "Bootloader/Debug/Bootloader.elf", "/tmp/hil_bl.bin"])
+    sh(["st-flash", "--reset", "write", "/tmp/hil_bl.bin", "0x08000000"])
+    base = f"{cfg.img}/{cfg.ecu}_v2_A.bin"
+    sh(["st-flash", "--reset", "write", base, "0x08010000"])
+    sz = os.path.getsize(base)
+    sh([sys.executable, "tools/forge_meta.py", "--preset", "confirmed-a",
+        "--a-version", "2", "--a-size", str(sz), "--out", "/tmp/hil_meta_ok.bin"])
+    sh(["st-flash", "--reset", "write", "/tmp/hil_meta_ok.bin", "0x08008000"])
+    sh(["st-flash", "--reset", "write", "/tmp/hil_meta_ok.bin", "0x0800C000"])
+    st_reset()
+
+
 # ── 테스트 케이스 ────────────────────────────────────────────────────────────
 class Result:
     def __init__(self, tc, passed, detail=""):
@@ -164,11 +183,12 @@ class Result:
 
 def tc01_anti_rollback(cfg, drv, can):
     """전제: CONFIRMED v2 실행 중. v1(옛) 푸시 → 거부 + v2 복귀."""
+    e = cfg.ecu
     since = time.time()
-    ota_push(cfg, "drive", f"{cfg.img}/drive_v1_signed.bin")
+    ota_push(cfg, e, f"{cfg.img}/{e}_v1_B.bin")
     refused = drv.wait_for("anti-rollback:", 30, since) and drv.wait_for("refusing", 30, since)
-    recovered = can.wait_version("drive", 2, timeout=30)
-    never_v1 = not (can.latest("drive") and can.latest("drive")[0] == 1)
+    recovered = can.wait_version(e, 2, timeout=30)
+    never_v1 = not (can.latest(e) and can.latest(e)[0] == 1)
     ok = refused and recovered and never_v1
     return Result("TC-01 anti-rollback", ok,
                   f"refused={refused} v2복귀={recovered} v1미부팅={never_v1}")
@@ -176,11 +196,12 @@ def tc01_anti_rollback(cfg, drv, can):
 
 def tc02_three_strike(cfg, drv, can):
     """전제: CONFIRMED v2. 고장 v3 푸시 → 3-strike 후 v2 롤백(~30s)."""
+    e = cfg.ecu
     since = time.time()
-    ota_push(cfg, "drive", f"{cfg.img}/drive_v3_broken_signed.bin")
+    ota_push(cfg, e, f"{cfg.img}/{e}_v3broken_B.bin")
     trial = drv.wait_for("trial start:", 30, since)
     strike = drv.wait_for("3-strike:", 60, since)
-    recovered = can.wait_version("drive", 2, slot=0, timeout=60)
+    recovered = can.wait_version(e, 2, slot=0, timeout=60)
     ok = trial and strike and recovered
     return Result("TC-02 3-strike rollback", ok,
                   f"trial={trial} 3-strike={strike} v2/slotA복귀={recovered}")
@@ -192,7 +213,7 @@ def tc03_fail_closed(cfg, drv, can):
     forge_inject(cfg, "size0-attack")
     st_reset()
     refused = drv.wait_for("fail-closed", 20, since)
-    no_boot = not can.wait_version("drive", 2, timeout=8)   # heartbeat 안 나와야 PASS
+    no_boot = not can.wait_version(cfg.ecu, 2, timeout=8)   # heartbeat 안 나와야 PASS
     ok = refused and no_boot
     return Result("TC-03 fail-closed (size=0)", ok,
                   f"fail-closed로그={refused} 앱미부팅={no_boot}")
@@ -248,26 +269,37 @@ def selftest():
 def main():
     ap = argparse.ArgumentParser(description="HIL-001 오케스트레이션")
     ap.add_argument("--selftest", action="store_true", help="하드웨어 없이 파싱 로직 검증")
+    ap.add_argument("--ecu", default="drive", choices=["drive", "sensor"], help="시험 대상 ECU")
+    ap.add_argument("--build", action="store_true", help="픽스처 빌드(build_fixtures.sh) 먼저")
+    ap.add_argument("--setup", action="store_true", help="부트로더+베이스라인 플래시(known-state)")
     ap.add_argument("--tc", choices=ALL_TCS.keys(), help="단일 TC 실행")
     ap.add_argument("--all", action="store_true", help="전체 TC 실행")
     ap.add_argument("--can", default="slcan0"); ap.add_argument("--interface", default="slcan")
     ap.add_argument("--bitrate", type=int, default=500000)
-    ap.add_argument("--drive-uart"); ap.add_argument("--sensor-uart")
-    ap.add_argument("--key", default="keys/ota_priv.pem")
+    ap.add_argument("--uart", help="시험 대상 ECU 디버그 UART 포트")
+    ap.add_argument("--key", default="ota-private-key.pem")
     ap.add_argument("--img", default="fixtures", help="서명 이미지 디렉토리")
     cfg = ap.parse_args()
 
     if cfg.selftest:
         return selftest()
 
-    if not cfg.drive_uart:
-        ap.error("실보드 실행엔 --drive-uart 필요(또는 --selftest)")
+    if cfg.build:
+        subprocess.run(["bash", "tools/build_fixtures.sh", cfg.ecu], check=True)
 
-    drv = SerialLog(cfg.drive_uart)
+    if not (cfg.all or cfg.tc):
+        return 0   # 빌드만 했으면 종료
+
+    if not cfg.uart:
+        ap.error("실보드 실행엔 --uart 필요(또는 --selftest)")
+
+    drv = SerialLog(cfg.uart)
     can = CanHeartbeat(cfg.can, cfg.interface, cfg.bitrate)
-    tcs = ALL_TCS.values() if cfg.all else [ALL_TCS[cfg.tc]]
     results = []
     try:
+        if cfg.setup:
+            setup_bench(cfg)
+        tcs = ALL_TCS.values() if cfg.all else [ALL_TCS[cfg.tc]]
         for fn in tcs:
             print(f"\n=== {fn.__doc__.splitlines()[0].strip()} ===")
             results.append(fn(cfg, drv, can))
