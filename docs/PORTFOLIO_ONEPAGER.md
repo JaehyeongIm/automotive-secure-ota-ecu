@@ -15,7 +15,7 @@
 | 🛡️ 안전 1종 | 센서 staleness fail‑safe (ISO 26262 안전상태 전이) |
 | ✅ 단위 테스트 78개 | 라인 커버리지 91% · 분기 79%(strict) — 양성 + 음성(거부경로) |
 | 🔬 On‑target 4/4 PASS | 실 OTA·실 CAN·실 RC차로 보안 3 + 안전 1 실증 |
-| 📄 표준 산출물 | SRS · SDD · HARA · TARA · HIL + ADR×9 + 8D×10 (ASPICE SWE.1~6 추적) |
+| 📄 표준 산출물 | SRS · SDD · HARA · TARA · HIL · TR + ADR×9 + 8D×10 (ASPICE SWE.1~6 추적) |
 
 ---
 

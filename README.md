@@ -17,7 +17,7 @@ STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/
 | 🛡️ **안전 기능 1종** | 센서 staleness fail-safe (ISO 26262 안전상태 전이) |
 | ✅ **단위 테스트 78개** | 라인 커버리지 **91%** · 분기 커버리지 **79%** (`ceedling gcov:all`, strict) |
 | 🔬 **On-target 검증 4/4 PASS** | 실 OTA·실 CAN·실 RC차로 보안 3 + 안전 1 실증 ([HIL-001](docs/HIL-001_HIL_Test_Plan.md)) |
-| 📄 **표준 산출물** | SRS·HARA·TARA·SDD·HIL + ADR×9 + 트러블슈팅(8D)×10 — ASPICE SWE.1~6 추적 |
+| 📄 **표준 산출물** | SRS·HARA·TARA·SDD·HIL·TR + ADR×9 + 트러블슈팅(8D)×10 — ASPICE SWE.1~6 추적 |
 | 📦 **규모** | ~6.2K LOC C(부트로더+2앱) + ~2K Python · 130+ commits |
 
 > **프로젝트 서사.** README/SRS가 *구현됐다고 명세한* 보안기능 다수가 실제 코드엔 없던 **문서–코드 갭을 발견** →
@@ -260,4 +260,5 @@ git tag v2 && git push origin v2
 - [ADR-008](docs/adr/ADR-008_OTA_Trigger_CI_Deploy_Separation.md) — OTA 트리거: CI 빌드와 차량 배포 분리(태그 릴리스 + 승인 게이트)
 - [ADR-009](docs/adr/ADR-009_ECU_Identity_Enforcement.md) — ECU 식별 강제(앱 컴파일타임 ID로 타 ECU 이미지 거부)
 - [TEST_SPEC](docs/TEST_SPEC_OTA_v1.0.md) — 소프트웨어 테스트 명세서
+- [TR-001](docs/TR-001_Test_Report.md) — 소프트웨어 테스트 결과서 (단위 78/78 · on-target 4/4 PASS · 공격 시나리오 커버리지)
 - [diagram](docs/diagram.md) — 시스템 다이어그램 (Context / Block / State / Sequence / **보안·안전 흐름**)
