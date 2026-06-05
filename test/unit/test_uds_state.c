@@ -281,3 +281,139 @@ void test_transfer_data_wrong_seq_returns_nrc_wrong_block_sequence(void)
     TEST_ASSERT_EQUAL_UINT8(0x36, s_tx_buf[1]);
     TEST_ASSERT_EQUAL_UINT8(0x73, s_tx_buf[2]);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TC-UT-UDS-004~ : 음성 테스트 — 거부 분기 보강 (분기 커버리지)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* TransferData 정상 블록(seq 일치) → 0x76 + 블록 진행 (성공 경로) */
+void test_transfer_data_correct_seq_returns_positive(void)
+{
+    do_request_download();
+    ota_flash_write_IgnoreAndReturn(HAL_OK);
+    uint8_t req[] = {0x36, 0x01, 0xAA, 0xBB};        /* seq=1 = 기대값 */
+    uds_send(req, sizeof(req));
+    TEST_ASSERT_EQUAL_UINT8(0x76, s_tx_buf[0]);
+    TEST_ASSERT_EQUAL_UINT8(0x01, s_tx_buf[1]);
+}
+
+/* TransferData 중 flash write 실패 → NRC 0x72(transferDataSuspended/general) */
+void test_transfer_data_write_fail_returns_nrc(void)
+{
+    do_request_download();
+    ota_flash_write_IgnoreAndReturn(HAL_ERROR);
+    uint8_t req[] = {0x36, 0x01, 0xAA, 0xBB};
+    uds_send(req, sizeof(req));
+    TEST_ASSERT_EQUAL_UINT8(0x7F, s_tx_buf[0]);
+    TEST_ASSERT_EQUAL_UINT8(0x72, s_tx_buf[2]);
+}
+
+/* RequestDownload size=0 (endless-data 방어) → NRC 0x31(requestOutOfRange) */
+void test_request_download_size_zero_returns_nrc(void)
+{
+    do_unlock();
+    ota_get_active_slot_ExpectAndReturn(0);          /* size 검사 전 호출됨 */
+    uint8_t req[] = {0x34, 0x00, 0x44, 0,0,0,0, 0,0,0,0};   /* size=0 */
+    uds_send(req, sizeof(req));
+    TEST_ASSERT_EQUAL_UINT8(0x7F, s_tx_buf[0]);
+    TEST_ASSERT_EQUAL_UINT8(0x31, s_tx_buf[2]);
+}
+
+/* RequestDownload size > 슬롯 최대(256KB+) → NRC 0x31 (oversized, SR-ATK-007) */
+void test_request_download_size_too_large_returns_nrc(void)
+{
+    do_unlock();
+    ota_get_active_slot_ExpectAndReturn(0);
+    uint8_t req[] = {0x34, 0x00, 0x44, 0,0,0,0, 0x00,0x05,0x00,0x00};  /* 0x50000 > 0x40000 */
+    uds_send(req, sizeof(req));
+    TEST_ASSERT_EQUAL_UINT8(0x7F, s_tx_buf[0]);
+    TEST_ASSERT_EQUAL_UINT8(0x31, s_tx_buf[2]);
+}
+
+/* RequestDownload 잘못된 dataFormat/ALFID(req[2]≠0x44) → NRC 0x31 */
+void test_request_download_bad_format_returns_nrc(void)
+{
+    do_unlock();
+    uint8_t req[] = {0x34, 0x00, 0x55, 0,0,0,0, 0,0,0x80,0};   /* req[2]=0x55 */
+    uds_send(req, sizeof(req));
+    TEST_ASSERT_EQUAL_UINT8(0x7F, s_tx_buf[0]);
+    TEST_ASSERT_EQUAL_UINT8(0x31, s_tx_buf[2]);
+}
+
+/* RequestDownload 슬롯 소거 실패 → NRC 0x72 */
+void test_request_download_erase_fail_returns_nrc(void)
+{
+    do_unlock();
+    ota_get_active_slot_ExpectAndReturn(0);          /* Slot A 활성 → B 대상 */
+    ota_flash_erase_slot_b_ExpectAndReturn(HAL_ERROR);
+    uint8_t req[] = {0x34, 0x00, 0x44, 0,0,0,0, 0,0,0x80,0};   /* size=0x8000 */
+    uds_send(req, sizeof(req));
+    TEST_ASSERT_EQUAL_UINT8(0x7F, s_tx_buf[0]);
+    TEST_ASSERT_EQUAL_UINT8(0x72, s_tx_buf[2]);
+}
+
+/* DOWNLOADING 아닌데 TransferData → NRC 0x22 */
+void test_transfer_data_not_downloading_returns_nrc(void)
+{
+    uint8_t req[] = {0x36, 0x01, 0xAA, 0xBB};
+    uds_send(req, sizeof(req));
+    TEST_ASSERT_EQUAL_UINT8(0x7F, s_tx_buf[0]);
+    TEST_ASSERT_EQUAL_UINT8(0x22, s_tx_buf[2]);
+}
+
+/* DOWNLOADING 아닌데 TransferExit → NRC 0x22 */
+void test_transfer_exit_not_downloading_returns_nrc(void)
+{
+    uint8_t req[] = {0x37};
+    uds_send(req, sizeof(req));
+    TEST_ASSERT_EQUAL_UINT8(0x7F, s_tx_buf[0]);
+    TEST_ASSERT_EQUAL_UINT8(0x22, s_tx_buf[2]);
+}
+
+/* 미지원 SID → NRC 0x11(serviceNotSupported) */
+void test_unknown_sid_returns_nrc_service_not_supported(void)
+{
+    uint8_t req[] = {0x99};
+    uds_send(req, sizeof(req));
+    TEST_ASSERT_EQUAL_UINT8(0x7F, s_tx_buf[0]);
+    TEST_ASSERT_EQUAL_UINT8(0x99, s_tx_buf[1]);
+    TEST_ASSERT_EQUAL_UINT8(0x11, s_tx_buf[2]);
+}
+
+/* DiagnosticSessionControl 미지원 subfunction → NRC 0x12 */
+void test_session_unknown_subfunction_returns_nrc(void)
+{
+    uint8_t req[] = {0x10, 0x03};
+    uds_send(req, sizeof(req));
+    TEST_ASSERT_EQUAL_UINT8(0x7F, s_tx_buf[0]);
+    TEST_ASSERT_EQUAL_UINT8(0x12, s_tx_buf[2]);
+}
+
+/* SecurityAccess 미지원 subfunction → NRC 0x12 */
+void test_sa_unknown_subfunction_returns_nrc(void)
+{
+    do_extended_session();
+    uint8_t req[] = {0x27, 0x03};
+    uds_send(req, sizeof(req));
+    TEST_ASSERT_EQUAL_UINT8(0x7F, s_tx_buf[0]);
+    TEST_ASSERT_EQUAL_UINT8(0x12, s_tx_buf[2]);
+}
+
+/* 길이 부족 메시지 → NRC 0x13(incorrectMessageLength): 0x34 / 0x36 */
+void test_request_download_too_short_returns_nrc_length(void)
+{
+    do_unlock();
+    uint8_t req[] = {0x34, 0x00, 0x44};              /* len 3 < 11 */
+    uds_send(req, sizeof(req));
+    TEST_ASSERT_EQUAL_UINT8(0x7F, s_tx_buf[0]);
+    TEST_ASSERT_EQUAL_UINT8(0x13, s_tx_buf[2]);
+}
+
+void test_transfer_data_too_short_returns_nrc_length(void)
+{
+    do_request_download();
+    uint8_t req[] = {0x36};                          /* len 1 < 2 */
+    uds_send(req, sizeof(req));
+    TEST_ASSERT_EQUAL_UINT8(0x7F, s_tx_buf[0]);
+    TEST_ASSERT_EQUAL_UINT8(0x13, s_tx_buf[2]);
+}
