@@ -124,7 +124,7 @@ Bootloader = bootloader.c + (ota_meta.c·sha256·uECC·psk) — 앱과 ota_meta 
 | `bootloader.c` | 부팅 결정·ECDSA·anti-rollback·메타 커밋·jump | 예(#ifndef UNIT_TEST 분리) | Bootloader/Core/Src | test_bootloader_slot(15) + HIL |
 | **`ota_meta.{c,h}`** | **SSOT**: 메타구조·CRC·select·plan_boot/confirm·img header·version_allowed | **아니오(순수)** | 3곳 복제(Sensor/Drive/BL) | test_meta·ota_meta·meta_lifecycle·anti_rollback(31) |
 | `ota_flash.c` | 슬롯 erase/write·메타 ping-pong 쓰기·self_confirm | 예 | {Drive,Sensor}/Core/Src | test_ota_meta(RAM 하니스) |
-| `uds.c` | UDS 서버: SecurityAccess·RequestDownload·TransferData/Exit | 일부 | {Drive,Sensor}/Core/Src | test_uds_state(12) |
+| `uds.c` | UDS 서버: SecurityAccess·RequestDownload·TransferData/Exit | 일부 | {Drive,Sensor}/Core/Src | test_uds_state(25) |
 | `isotp.c` | ISO-TP(15765) 세그먼테이션·흐름제어 | 예 | 〃 | mock 기반 |
 | `hmac_sha256`·`sha256` | SecurityAccess·ECDSA 해시 | 아니오 | 〃 | test_hmac(RFC4231) |
 | `uECC` | ECDSA-P256 verify | 아니오 | Bootloader/Core/Lib | HIL(ECDSA OK) |
@@ -243,13 +243,13 @@ select(metaA,metaB) → plan_boot(meta,max=3)
 | FR-AB-004 self-test commit | §5.3 | ota_meta_self_confirm·main.c | test_ota_meta(10) | HIL TC-01 경유 |
 | FR-AB-003 fail-closed | §6.2 | bootloader_verify_decision | test_bootloader_slot(15) | **HIL TC-03 PASS** |
 | FR-BL-008/AB-008 anti-rollback | §4.3, 6.3 | img_header_read·version_allowed | test_anti_rollback(6) | **HIL TC-01 PASS** |
-| FR-CAN-010 SecurityAccess | §6.5 | uds.c·hmac_sha256 | test_uds_state(12)·test_hmac(3) | HIL TC-01/02 unlock |
+| FR-CAN-010 SecurityAccess | §6.5 | uds.c·hmac_sha256 | test_uds_state(25)·test_hmac(3) | HIL TC-01/02 unlock |
 | ISO 26262 센서 staleness | §5.5, 6.7 | drive_sensor_fresh·drive.c | gcc(6 케이스) | **HIL TC-04 PASS** |
 
 ---
 
 ## 9. 검증 요약
-- **호스트 단위테스트 61개**(Ceedling) + gcc 독립검증(drive_sensor_fresh 6) — *순수 로직*.
+- **호스트 단위테스트 74개**(Ceedling, 라인 92%·분기 81% 커버리지 `ceedling gcov:all`) + gcc 독립검증(drive_sensor_fresh 6) — *순수 로직*.
 - **On-target 벤치 4종(HIL-001)** — 실 ECU·실 CAN·실 OTA로 보안 3(fail-closed·anti-rollback·3-strike) + 안전 1(staleness) 실증, 전부 PASS(2026-06-04).
 - 추적: §8로 *요구사항↔설계↔코드↔테스트* 양방향 연결.
 
