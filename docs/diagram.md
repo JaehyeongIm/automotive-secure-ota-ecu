@@ -203,3 +203,71 @@ sequenceDiagram
     CAN->>JEN: 슬롯 전환 확인 (A→B)
     JEN->>JEN: OTA 완료 ✓
 ```
+
+---
+
+## 5. 보안·안전 흐름 다이어그램
+
+구현 + on-target(HIL-001) 검증된 부트로더 보안 결정과 안전 fail-safe 흐름.
+
+### 5.1 부팅 결정 + 검증 게이팅 (fail-closed · anti-rollback)
+
+```mermaid
+flowchart TD
+    R["전원 / 리셋"] --> SEL["ota_meta_select<br/>(CRC 유효 + seq 최대 사본)"]
+    SEL --> PLAN{"plan_boot<br/>5상태 결정"}
+    PLAN -->|"CONFIRMED"| GATE{"verify_decision"}
+    PLAN -->|"UPDATED → TRIAL(1)"| GATE
+    PLAN -->|"TRIAL 재시도 (count ≤ 3)"| GATE
+    PLAN -->|"TRIAL count > 3 → 롤백"| GATE
+    PLAN -->|"메타 없음 → factory A"| GATE
+    GATE -->|"메타 없음 (factory)"| SKIP["검증 SKIP (미서명 dev)"]
+    GATE -->|"size 비정상 (0/초과)"| REFUSE["REFUSE → safe_state<br/>★ fail-closed (TC-03)"]
+    GATE -->|"size 정상"| ECDSA["SHA-256 + ECDSA-P256"]
+    ECDSA -->|"실패"| REFUSE
+    ECDSA -->|"성공"| AR{"anti-rollback<br/>헤더 ver ≥ 기준선?"}
+    AR -->|"아니오"| ARJ["거부 → 이전 CONFIRMED 롤백 + reset<br/>★ 다운그레이드 차단 (TC-01)"]
+    AR -->|"예"| JUMP["jump_to_app (slot + 0x200)"]
+    SKIP --> JUMP
+```
+
+### 5.2 anti-rollback 거부 시퀀스 (다운그레이드 공격 차단)
+
+```mermaid
+sequenceDiagram
+    participant GW as Gateway
+    participant BL as 부트로더
+    Note over BL: 현재 CONFIRMED v2 (기준선 = 2)
+    GW->>BL: OTA — 서명된 v1 (옛 버전)
+    BL->>BL: write_pending: Slot B = UPDATED(v1) → 리셋
+    BL->>BL: plan_boot: UPDATED → TRIAL
+    BL->>BL: ECDSA OK (v1도 정상 서명)
+    BL->>BL: anti-rollback: v1 < 기준선 v2 → 거부
+    BL->>BL: Slot B INVALID + active = A + reset
+    Note over BL: CONFIRMED v2 부팅 — 다운그레이드 차단 (HIL TC-01 PASS)
+```
+
+### 5.3 슬롯 5상태 생명주기 + 3-strike 롤백
+
+```mermaid
+stateDiagram-v2
+    [*] --> INVALID
+    INVALID --> UPDATING : OTA erase/write 시작
+    UPDATING --> UPDATED : 기록 완료
+    UPDATED --> TRIAL : 첫 시험부팅 (count=1)
+    TRIAL --> CONFIRMED : self-test PASS (count=0)
+    TRIAL --> TRIAL : self-test 실패 → 리셋 (count++)
+    TRIAL --> INVALID : count > 3 (3-strike)
+    INVALID --> [*] : 이전 CONFIRMED 롤백 (HIL TC-02)
+    CONFIRMED --> [*] : 정상 운영
+```
+
+### 5.4 센서 staleness fail-safe (ISO 26262 안전상태)
+
+```mermaid
+flowchart LR
+    RX["CAN 0x200 수신"] --> TS["drive_note_sensor_rx<br/>수신 시각 기록"]
+    LOOP["drive_update (20ms 주기)"] --> FRESH{"age ≤ 150ms?"}
+    FRESH -->|"예 (fresh)"| RUN["정상 주행 로직"]
+    FRESH -->|"아니오 (stale) / 미수신"| STOP["force_stop + IDLE<br/>★ fail-safe 정지 (TC-04)"]
+```

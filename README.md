@@ -252,4 +252,4 @@ git tag v2 && git push origin v2
 - [ADR-007](docs/adr/ADR-007_Anti_Rollback_Design.md) — Anti-rollback 설계(서명 이미지 헤더 + 메타 버전 기준선)
 - [ADR-008](docs/adr/ADR-008_OTA_Trigger_CI_Deploy_Separation.md) — OTA 트리거: CI 빌드와 차량 배포 분리(태그 릴리스 + 승인 게이트)
 - [TEST_SPEC](docs/TEST_SPEC_OTA_v1.0.md) — 소프트웨어 테스트 명세서
-- [diagram](docs/diagram.md) — 시스템 다이어그램 (Context / Block / State / Sequence)
+- [diagram](docs/diagram.md) — 시스템 다이어그램 (Context / Block / State / Sequence / **보안·안전 흐름**)
