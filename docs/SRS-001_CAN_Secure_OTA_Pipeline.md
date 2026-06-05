@@ -5,7 +5,7 @@
 | 문서 ID | SRS-001 |
 | 문서명 | CAN 기반 UDS over ISO-TP Secure OTA 파이프라인 요구사항 명세서 |
 | 프로젝트명 | Dual ECU 버튼 트리거 직진 주행 Secure OTA 시스템 |
-| 버전 | 2.10 |
+| 버전 | 2.11 |
 | 작성일 | 2026-05-25 |
 | 작성 목적 | Dual ECU 버튼 트리거 직진 주행 + 장애물 회피 OTA 데모 시스템 소프트웨어 요구사항 정의 |
 | 주요 대상 | Raspberry Pi 5 Gateway, STM32F446RE ECU 2대, CAN Bus, Custom Bootloader, RC 차량 데모 플랫폼 |
@@ -315,7 +315,7 @@
 | FR-CAN-008 | 명령 구조는 UDS 리프로그래밍 절차를 따르며, FR-CAN-009~015가 이를 구성하는 개별 요구사항이다. | Must | FR-CAN-009~015 요구사항이 모두 구현되어야 한다. |
 | FR-CAN-009 | Diagnostic Session Control 명령을 지원해야 한다. | Must | Default(0x01)와 **Programming Session(0x02, ISO 14229)** 상태를 구분해야 한다. (현 코드의 "Extended" 명칭은 Programming으로 정정 대상) |
 | FR-CAN-010 | Security Access 명령을 지원해야 한다. | Must | ECU가 4바이트 Seed(소프트웨어 nonce — TRNG 부재, ADR-004)를 발급하고, Gateway가 **HMAC-SHA256(key=PSK, msg=Seed)**의 앞 4바이트를 Key로 응답하면 인증이 성공해야 한다. 연속 3회 Key 오류 시 NRC 0x36(exceededNumberOfAttempts) 반환 + 10초 잠금(잠금 중 NRC 0x37). 상세 §13.6. |
-| FR-CAN-011 | Request Download 명령을 지원해야 한다. | Must | image_size·target_slot·**target_ecu_id·hardware_id**를 확인하고 불일치 시 즉시 NRC 0x31/0x33으로 거부(fail-fast)해야 한다. firmware_version이 현 CONFIRMED보다 낮으면 거부(SR-FW-003); 최종 anti-rollback은 부팅 시 서명 헤더(FR-BL-008). |
+| FR-CAN-011 | Request Download 명령을 지원해야 한다. | Must | image_size·target_slot·**target_ecu_id·hardware_id**를 확인하고 불일치 시 즉시 NRC 0x31/0x33으로 거부(fail-fast)해야 한다. firmware_version이 현 CONFIRMED보다 낮으면 거부(SR-FW-003); 최종 anti-rollback은 부팅 시 서명 헤더(FR-BL-008). **구현 현황:** `target_ecu_id`는 위조불가 서명 헤더 기반으로 RequestTransferExit(0x37)에서 강제(ADR-009); `hardware_id`는 단일 보드종(F446) 구성에서 잉여이므로 후속으로 이연(§19.1 L-2). |
 | FR-CAN-012 | Transfer Data 명령을 지원해야 한다. | Must | Sequence Number와 Chunk 길이를 확인하고, **누적 수신이 RequestDownload의 image_size를 초과하면 NRC 0x31(requestOutOfRange)로 거부 후 세션 종료**해야 한다(endless-data 방어, SR-ATK-007). |
 | FR-CAN-013 | Request Transfer Exit 명령을 지원해야 한다. | Must | **누적 수신 == image_size를 확인**(불일치 시 NRC 0x24/0x72)한 뒤 검증 단계로 진입해야 한다. |
 | FR-CAN-014 | Routine Control - Verify Image 명령을 지원해야 한다. | Must | Hash/Signature/Version/ECU ID 검증 결과를 반환하며, **검증을 통과해야만 슬롯을 UPDATED로 표시**(미통과·미수행 시 부팅 대상 불가, fail-closed, FR-AB-003 연계)해야 한다. |
@@ -916,9 +916,25 @@ TSR-001  (SUP.9)
 6. ASPICE는 공식 준수 또는 평가가 아니라, 요구사항 기반 개발과 추적성 개념을 참고한 수준으로 적용한다.
 7. 공격자 시나리오는 자체 제작한 CAN 테스트 네트워크 내부에서만 수행한다.
 8. 실제 차량의 IGN 상태, 배터리 전압 조건, DTC, 네트워크 슬립/웨이크업, 서비스센터 복구 정책은 1차 범위에서 제외한다.
-9. **직진 주행이 보장되지 않는다.** 실제 테스트 시 매 실행마다 진행 방향이 달라지는 현상이 확인된다 (고정된 편향이 아니라 실행마다 방향이 좌·우 불규칙하게 변함). 원인은 미파악 상태이며, 모터 PWM 초기 타이밍 불일치, 기구적 요인, 또는 소프트웨어 로직 요인 중 하나 또는 복합 원인으로 추정된다. 추후 원인 분석 및 해결이 필요하다.
+9. **직진 주행 안정화 불가 (개루프 제어).** 실 테스트에서 매 실행마다 진행 방향이 좌·우로 불규칙하게 변하는 현상이 확인된다. **근본 원인은 휠 엔코더·IMU 부재로 인한 개루프(open-loop) 차동 구동**이다 — 모터/기구 편차나 휠 슬립이 발생해도 주행거리·헤딩 피드백이 없어 *실시간 보정이 불가능*하다. 휠 엔코더(주행거리)+IMU(헤딩) 입고 시 폐루프 헤딩 제어(PID 등)로 직진 안정화가 가능하다(§19.1 L-7). 단 본 데모의 핵심(Secure OTA·A/B 슬롯 전환·센서 staleness fail-safe에 의한 장애물 정지)은 직진성과 독립이며 정상 동작한다.
 
 이러한 한계를 인정한 상태에서, 본 프로젝트는 개인이 구현 가능한 범위 내에서 Secure OTA의 핵심 설계 사고와 전장 펌웨어 개발 역량을 증명하는 것을 목표로 한다.
+
+### 19.1 한계 및 잔여 위험 레지스터 (Known Limitations & Residual Risk)
+
+§19의 한계 중 **구체적 해소 경로(후속 트리거)를 가진 항목**을 한 곳에 모아 추적한다. 각 항목은 *현재 왜 수용 가능한가(완화)* · *무엇이 들어오면 해소되는가(트리거)* · *근거 ADR*을 함께 명시한다. 이는 ISO/SAE 21434의 **잔여 위험 수용(residual risk acceptance)** 과 ASPICE 추적성(SWE.6) 원칙을 따른 것으로, 해당 항목이 "미구현"이 아니라 **근거 있는 범위 결정**임을 기록한다. 보안 항목 대부분은 **Secure Element(ATECC608A, SparkFun DEV-18077 — 주문 완료·입고 대기)** 통합 한 번으로 해소된다.
+
+| ID | 범주 | 한계 | 영향 요구사항 | 현재 영향 / 완화 (왜 지금 수용 가능한가) | 후속 해소 트리거 | 근거 |
+|---|---|---|---|---|---|---|
+| L-1 | 보안 | Replay 방어(session/sequence/freshness) 미구현 | FR-CAN-017(Should), SR-ATK-005 | 정상 OTA는 SecurityAccess(HMAC-SHA256) 인증 + CAN 물리 접근 필요 → 원격 무인증 replay 차단. 단 세션 내 freshness 카운터는 부재 | ATECC608A TRNG로 강한 seed freshness 확보 후 구현 | ADR-004, ADR-006 |
+| L-2 | 보안 | `hardware_id` 호환성 검사 미구현(`target_ecu_id`만 강제) | FR-CAN-011(Must) | 단일 보드종(F446) + 2-ECU 구성에서 `target_ecu_id`(Drive/Sensor)가 식별을 충족 → 핵심 위협(타 ECU 이미지 설치) 차단. HW revision 검사는 현 구성에선 잉여 | 다(多)-보드/리비전 확장 또는 ATECC608A 프로비저닝 시 추가 | ADR-009 |
+| L-3 | 보안 | SecurityAccess 잠금 RAM 기반(전원 리셋 시 해제) | FR-CAN-010 | 10s 잠금 + HMAC Key 필요, 리셋마다 seed 재발급되어 무차별 대입 비용 존재. 단 리셋으로 잠금 카운터 우회 가능 | ATECC608A monotonic counter로 NV 잠금 | ADR-003, ADR-006 |
+| L-4 | 보안 | Seed = SW nonce(TRNG 부재, 약 엔트로피) | FR-CAN-010, §13.6 | UID+SysTick+카운터 SHA-256 혼합 — 원격 위협모델엔 충분, 물리 관측·재부팅 replay는 모델 밖 | ATECC608A TRNG → HMAC_DRBG seed | ADR-004, ADR-006 |
+| L-5 | 보안 | Anti-rollback 기준선 = 메타 NV(CRC-only) | FR-BL-008, FR-AB-008 | 원격 다운그레이드 차단; CRC는 우발적 손상 검출용이라 *물리 위조*만 잔여 위험 | ATECC608A 보호 슬롯에 기준선 저장 | ADR-007, ADR-006 |
+| L-6 | 보안 | ECU-id 강제 = 앱 레벨만(UDS 우회 직접 플래시 미차단) | FR-CAN-011, FR-AB-008 | 원격 OTA 경로 차단(0x37 NRC 0x31); 직접 플래시는 물리 접근 필요(이미 더 큰 위협) | 부트로더 점프 직전 재검사(defense-in-depth) + per-ECU 정체성(ATECC608A) | ADR-009, ADR-006 |
+| L-7 | 제어/안전 | 직진 주행 안정화 불가(휠 엔코더·IMU 부재 → 개루프) | FR-DRV-001, §19(9) | 주행거리·헤딩 피드백 부재로 실시간 보정 불가 → 실행마다 좌·우 편차. **단 Secure OTA·A/B 전환·센서 staleness fail-safe(장애물 정지)는 직진성과 독립이며 정상 동작** | 휠 엔코더(주행거리) + IMU(헤딩) 입고 시 폐루프 헤딩 제어(PID 등) | §19(9) |
+
+> 위 항목은 모두 **두 하드웨어 입고 이벤트**(ATECC608A / 엔코더·IMU)로 해소되는 *하드웨어 의존 후속*이며, 각 근거 ADR에 상세 설계·트레이드오프가 기록돼 있다. 입고 지연으로 본 1차 범위에서는 위와 같이 잔여 위험을 명시·수용한다.
 
 ---
 
@@ -1039,4 +1055,5 @@ TSR-001  (SUP.9)
 | 2.8 | 2026-06-03 | anti-rollback(FR-BL-008/FR-AB-008) 구현 — ADR-007 추가(앞 서명 헤더, MCUboot 정석). 서명 이미지 `[헤더0x200][코드][서명64]`, ECDSA가 (헤더+코드) 덮음, 앱 링커 origin +0x200, 부트로더 점프/검증 +0x200·ECDSA 후 헤더 fw_version을 메타 CONFIRMED 버전과 비교해 다운그레이드 거부. sign_firmware.py `--version`, write_pending이 헤더 fw_version 기록. 구현은 헤더 subset(magic/fw_version/target_ecu_id) — header_version/hw_id/hash·Manifest 출처는 후속. 단위테스트 anti_rollback 6 신규(총 54), CRC 기준선·HIL 부팅 검증 한계는 ADR-007 기록 |
 | 2.9 | 2026-06-03 | ECDSA 검증 게이팅 fail-closed 구현(FR-AB-003, CWE-636) — 기존 부트로더는 메타 size가 비정상(0/초과/0xFFFFFFFF)이면 ECDSA를 *건너뛰고 부팅*(fail-open 우회). `bootloader_verify_decision`(순수) 도입: 메타 유효+size 비정상 → BL_VERIFY_REFUSE→safe_state(부팅 거부), 메타 부재(factory/ST-Link)만 SKIP, 정상 size만 REQUIRED. 검증 *우회* 대신 *부팅 거부*로 deny-by-default 충족. test_bootloader_slot 7 신규(총 15, 누적 61) |
 | 2.10 | 2026-06-05 | ECU 식별 강제 구현(FR-CAN-011) — 서명 헤더 `target_ecu_id`가 정의·서명만 되고 *아무도 거부하지 않던* 갭 해소. 앱 컴파일타임 ID(`OTA_ECU_ID` Drive=1/Sensor=2)로 RequestTransferExit(0x37)에서 헤더 ecu_id≠자기ID면 NRC 0x31 거부(메타 commit 전). FR-CAN-011은 0x34 *요청필드* 검사를 상정했으나, 구현은 *서명 헤더*(위조불가)를 0x37에서 검사해 의도를 더 강하게 충족. 순수함수 `ota_meta_ecu_id_allowed`(SSOT 3곳), test_anti_rollback 4 신규(총 10, 누적 78). UDS 우회(직접플래시) 차단=부트로더 defense-in-depth 후속, ADR-009 |
+| 2.11 | 2026-06-05 | **한계·잔여위험 통합 레지스터 신설(§19.1)** — 흩어져 있던 후속 항목을 한 표로 색인(ISO/SAE 21434 잔여위험 수용·ASPICE SWE.6): 보안 6항목(L-1 replay·L-2 hardware_id·L-3 잠금NV·L-4 seed·L-5 anti-rollback 기준선·L-6 ECU-id 앱레벨 — 대부분 ATECC608A 입고로 해소) + 제어 1항목(L-7 직진 안정화 — 엔코더·IMU 입고로 해소)을 *현재완화·후속트리거·근거ADR*과 함께 명시. FR-CAN-011에 `hardware_id` 후속 이연 표기, §19(9) 직진 이슈 근본원인 규명(엔코더·IMU 부재→개루프, 폐루프 제어로 해소). README에 레지스터 포인터 추가 |
 

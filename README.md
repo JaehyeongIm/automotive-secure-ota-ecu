@@ -78,6 +78,8 @@ STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/
 | Uptane-lite | ⬜ 계획 | Manifest 검증·ECU Inventory·Campaign (로드맵) |
 
 > ⚠️ SecurityAccess의 seed는 F446 TRNG 부재로 SW nonce(엔트로피 약함, [ADR-004](docs/adr/ADR-004_SecurityAccess_Seed_RNG.md)), 잠금은 RAM([ADR-003](docs/adr/ADR-003_SecurityAccess_Lockout_Storage.md)), anti-rollback 기준선은 CRC 메타라 물리공격엔 한계 — 정석은 Secure Element([ADR-006](docs/adr/ADR-006_Secure_Element_Adoption.md))로 해소(HW 도입 중).
+>
+> 📋 보안·제어 전 항목의 한계·잔여위험과 *후속 해소 트리거*(ATECC608A / 엔코더·IMU 입고)는 **[SRS §19.1 한계 및 잔여 위험 레지스터](docs/SRS-001_CAN_Secure_OTA_Pipeline.md)** 에 통합 정리.
 
 ### UDS over ISO-TP (CAN Classic 500 Kbps)
 
