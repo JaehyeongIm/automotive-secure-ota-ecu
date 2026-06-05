@@ -3,6 +3,10 @@
 CAN 버스 기반 Dual ECU 환경에서 **UDS over ISO-TP Secure OTA 파이프라인**을 구현한 임베디드 시스템 프로젝트.  
 STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/CD 서버로 구성해 전장 OTA의 핵심 기능을 실물 RC 차량으로 실증합니다.
 
+**🎬 데모 영상** — RC 차량 OTA + A/B 슬롯 전환 실증 → **[▶ YouTube](https://youtu.be/_RbVwU_nPHI)**
+
+[![Secure OTA 데모](https://img.youtube.com/vi/_RbVwU_nPHI/hqdefault.jpg)](https://youtu.be/_RbVwU_nPHI)
+
 ---
 
 ## 핵심 지표 (KPI)
@@ -238,6 +242,7 @@ git tag v2 && git push origin v2
 
 ## 문서
 
+- [📋 1-Page 요약](docs/PORTFOLIO_ONEPAGER.md) — 프로젝트 한눈에 (KPI · 기능 · 검증 · 설계결정 · 스토리)
 - [SRS-001](docs/SRS-001_CAN_Secure_OTA_Pipeline.md) — 소프트웨어 요구사항 명세서
 - [SDD-001](docs/SDD-001_Secure_OTA_Software_Design.md) — 소프트웨어 설계서 (SWE.2 아키텍처 + SWE.3 상세설계, 추적성)
 - [HARA-001](docs/HARA-001_Hazard_Analysis_Risk_Assessment.md) — 위험원 분석·리스크 평가 (ISO 26262)
