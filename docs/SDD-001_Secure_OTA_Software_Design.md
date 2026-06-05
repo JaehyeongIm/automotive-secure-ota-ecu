@@ -6,7 +6,7 @@
 | 범위 | Bootloader + DriveECU/SensorECU App + 공유 모듈 + 게이트웨이 도구 |
 | 레벨 | SW 아키텍처 설계(ASPICE SWE.2) + SW 상세 설계(SWE.3), IEEE 1016 |
 | 작성일 | 2026-06-04 |
-| 참조 | SRS-001(v2.11), ADR-002~009, HIL-001, HARA-001, TARA-001 |
+| 참조 | SRS-001(v2.12), ADR-002~009, HIL-001, HARA-001, TARA-001 |
 | 표준 근거 | ISO 24089(SW update), AUTOSAR(UCM/NvM/Fee/Csm 패턴), ISO 14229(UDS)·15765(ISO-TP), ISO 26262-6, ISO/SAE 21434 |
 
 > 본 문서는 *무엇을(SRS)* → *어떻게(설계)* → *어디에(코드)* → *증명(테스트)* 의 추적을 기술한다.

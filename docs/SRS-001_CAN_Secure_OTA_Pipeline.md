@@ -5,7 +5,7 @@
 | 문서 ID | SRS-001 |
 | 문서명 | CAN 기반 UDS over ISO-TP Secure OTA 파이프라인 요구사항 명세서 |
 | 프로젝트명 | Dual ECU 버튼 트리거 직진 주행 Secure OTA 시스템 |
-| 버전 | 2.11 |
+| 버전 | 2.12 |
 | 작성일 | 2026-05-25 |
 | 작성 목적 | Dual ECU 버튼 트리거 직진 주행 + 장애물 회피 OTA 데모 시스템 소프트웨어 요구사항 정의 |
 | 주요 대상 | Raspberry Pi 5 Gateway, STM32F446RE ECU 2대, CAN Bus, Custom Bootloader, RC 차량 데모 플랫폼 |
@@ -522,10 +522,10 @@ Jenkins 기반 CI/CD 파이프라인은 Raspberry Pi 5에서 운용되며, Git p
 
 | Requirement ID | Design 항목 | Implementation 예시 | Test Case | 결과 |
 |---|---|---|---|---|
-| SR-FW-002 | Signature Verification | boot_verify_signature() | TC-SEC-002 | PASS/FAIL 기록 |
+| SR-FW-002 | Signature Verification | boot_verify_signature() | TC-ATK-002 | PASS/FAIL 기록 |
 | FR-AB-004 | Rollback State Machine | boot_select_slot() | TC-FAIL-004 | PASS/FAIL 기록 |
 | FR-CAN-012 | TransferData Sequence Check | uds_transfer_data_handler() | TC-FAIL-002 | PASS/FAIL 기록 |
-| SR-ATK-005 | Replay Defense | session_counter_check() | TC-SEC-005 | PASS/FAIL 기록 |
+| SR-ATK-005 | Replay Defense | session_counter_check() | TC-ATK-005 | PASS/FAIL 기록 |
 | PRC-006 | Troubleshooting Record | TSR-001 | TC-DBG-001~ | PASS/FAIL 기록 |
 
 ---
@@ -757,16 +757,16 @@ STM32F446RE Linker Script 및 실제 구현 기준으로 확정된 파티션.
 
 | 테스트 ID | 관련 요구사항 | 공격 시나리오 | 기대 결과 |
 |---|---|---|---|
-| TC-SEC-001 | SR-ATK-001 | Firmware 1바이트 변조 | Hash mismatch로 거부 |
-| TC-SEC-002 | SR-ATK-002 | unsigned firmware 설치 시도 | Signature verification failure |
-| TC-SEC-003 | SR-ATK-003 | 낮은 버전 firmware 설치 | Anti-rollback으로 거부 |
-| TC-SEC-004 | SR-ATK-004 | ECU ID 불일치 image 전송 | Target mismatch로 거부 |
-| TC-SEC-005 | SR-ATK-005 | 이전 Transfer Data replay | Sequence/Freshness 오류로 거부 |
-| TC-SEC-006 | SR-ATK-006 | Security Access 없이 Request Download | Security Access Denied |
-| TC-SEC-007 | SR-ATK-007 | Manifest size 초과 Transfer Data | Endless data 방어, 세션 종료 |
-| TC-SEC-008 | SR-ATK-008 | CAN Flood 중 업데이트 | Timeout/Abort 후 기존 App 유지 |
-| TC-SEC-009 | SR-ATK-009 | Fake complete 명령 전송 | ECU 내부 검증 실패 시 commit 거부 |
-| TC-SEC-010 | SR-ATK-010 | 한 ECU만 업데이트 성공 | Campaign partial/fail 기록 |
+| TC-ATK-001 | SR-ATK-001 | Firmware 1바이트 변조 | Hash mismatch로 거부 |
+| TC-ATK-002 | SR-ATK-002 | unsigned firmware 설치 시도 | Signature verification failure |
+| TC-ATK-003 | SR-ATK-003 | 낮은 버전 firmware 설치 | Anti-rollback으로 거부 |
+| TC-ATK-004 | SR-ATK-004 | ECU ID 불일치 image 전송 | Target mismatch로 거부 |
+| TC-ATK-005 | SR-ATK-005 | 이전 Transfer Data replay | Sequence/Freshness 오류로 거부 |
+| TC-ATK-006 | SR-ATK-006 | Security Access 없이 Request Download | Security Access Denied |
+| TC-ATK-007 | SR-ATK-007 | Manifest size 초과 Transfer Data | Endless data 방어, 세션 종료 |
+| TC-ATK-008 | SR-ATK-008 | CAN Flood 중 업데이트 | Timeout/Abort 후 기존 App 유지 |
+| TC-ATK-009 | SR-ATK-009 | Fake complete 명령 전송 | ECU 내부 검증 실패 시 commit 거부 |
+| TC-ATK-010 | SR-ATK-010 | 한 ECU만 업데이트 성공 | Campaign partial/fail 기록 |
 
 ### 15.4 개발 프로세스 및 디버깅 검증 (SWE.4/SWE.5 — 단위/통합 수준)
 
@@ -793,15 +793,15 @@ STM32F446RE Linker Script 및 실제 구현 기준으로 확정된 파티션.
 
 | 요구사항 그룹 | 대표 ID | 관련 테스트 |
 |---|---|---|
-| Gateway | FR-GW-001 ~ FR-GW-008 | TC-NOR-001, TC-NOR-003, TC-SEC-010 |
+| Gateway | FR-GW-001 ~ FR-GW-008 | TC-NOR-001, TC-NOR-003, TC-ATK-010 |
 | Bootloader | FR-BL-001 ~ FR-BL-012 | TC-NOR-002, TC-NOR-003, TC-FAIL-001 ~ TC-FAIL-005 |
 | A/B Rollback | FR-AB-001 ~ FR-AB-007 | TC-NOR-004, TC-FAIL-001, TC-FAIL-004 |
-| CAN / ISO-TP / UDS | FR-CAN-001 ~ FR-CAN-019 | TC-NOR-003, TC-FAIL-002, TC-SEC-005 |
+| CAN / ISO-TP / UDS | FR-CAN-001 ~ FR-CAN-019 | TC-NOR-003, TC-FAIL-002, TC-ATK-005 |
 | Drive ECU App | FR-DRV-001 ~ FR-DRV-008 | TC-NOR-005, TC-NOR-006, TC-NOR-007 |
 | Sensor ECU App | FR-SEN-001 ~ FR-SEN-005 | TC-NOR-005, TC-NOR-006, TC-NOR-007 |
-| Manifest / Firmware Security | SR-MF-001 ~ SR-MF-008, SR-FW-001 ~ SR-FW-006 | TC-SEC-001 ~ TC-SEC-004 |
-| Attack Defense | SR-ATK-001 ~ SR-ATK-010 | TC-SEC-001 ~ TC-SEC-010 |
-| Uptane-lite | SR-UP-001 ~ SR-UP-005 | TC-NOR-001, TC-SEC-003, TC-SEC-010 |
+| Manifest / Firmware Security | SR-MF-001 ~ SR-MF-008, SR-FW-001 ~ SR-FW-006 | TC-ATK-001 ~ TC-ATK-004 |
+| Attack Defense | SR-ATK-001 ~ SR-ATK-010 | TC-ATK-001 ~ TC-ATK-010 |
+| Uptane-lite | SR-UP-001 ~ SR-UP-005 | TC-NOR-001, TC-ATK-003, TC-ATK-010 |
 | Flash Partition | FR-FL-001 ~ FR-FL-005 | TC-NOR-002, TC-FAIL-005 |
 | 개발 프로세스 | PRC-001 ~ PRC-007 | TC-PRC-001, TC-PRC-002 |
 | 추적성 관리 | RTM-001 ~ RTM-005 | TC-PRC-001, TC-PRC-002 |
@@ -990,7 +990,7 @@ TSR-001  (SUP.9)
 |---|---|---|
 | 05/30 ~ 05/31 | Drive ECU App v1(즉시 정지) + App v2(자동 후진 복귀) 구현, 장애물 임계값 10cm 고정 (FR-DRV-001~008, FR-SEN-002~004) | v1/v2 버튼 트리거 주행 및 장애물 반응 동작 확인 |
 | 06/01 | OTA로 App v1→v2 순차 배포 및 장애물 반응 차이 실증, Uptane 지연 활성화 확인 (FR-DRV-007, FR-DRV-008) | TC-NOR-005~006 PASS |
-| 06/02 ~ 06/03 | 보안 공격 시나리오 테스트 10종 수행 (SR-ATK-001~010) | TC-SEC-001~010 PASS |
+| 06/02 ~ 06/03 | 보안 공격 시나리오 테스트 수행 (SR-ATK-001~010 중 구현분) | 구현분 PASS (replay·campaign 등 미구현은 §19.1 후속) |
 | 06/04 | Jenkins Stage 4~5 완성 (서명 자동화 + OTA 자동 배포) (FR-CICD-006~009) | TC-CICD-001~003 PASS |
 | 06/05 ~ 06/06 | 필수 문서 7종 완성 (SAD, SDD, RTM, TP, TR, TSR) + 최종 검토 | 필수 문서 7종 완료 |
 
@@ -1001,7 +1001,7 @@ TSR-001  (SUP.9)
 | MS-001 | 2026-05-22 | Bootloader에서 App jump 성공, Jenkins 빌드 파이프라인 동작 |
 | MS-002 | 2026-05-29 | 전체 OTA 흐름 성공 (SHA-256/ECDSA 검증 포함), Rollback 동작 확인 |
 | MS-003 | 2026-06-01 | App v1/v2 OTA 실증 완료 (버튼 트리거 주행 + 장애물 반응 단계별 차이 확인, Uptane 지연 활성화 확인) |
-| MS-004 | 2026-06-04 | 보안 공격 시나리오 10종 통과, Jenkins 전체 파이프라인 완성 |
+| MS-004 | 2026-06-04 | 보안 공격 시나리오 구현분 통과(미구현 replay·campaign 등은 §19.1 잔여), Jenkins 전체 파이프라인 완성 |
 | MS-005 | 2026-06-06 | 필수 문서 7종 완성, 프로젝트 1차 완료 |
 
 ---
@@ -1056,4 +1056,5 @@ TSR-001  (SUP.9)
 | 2.9 | 2026-06-03 | ECDSA 검증 게이팅 fail-closed 구현(FR-AB-003, CWE-636) — 기존 부트로더는 메타 size가 비정상(0/초과/0xFFFFFFFF)이면 ECDSA를 *건너뛰고 부팅*(fail-open 우회). `bootloader_verify_decision`(순수) 도입: 메타 유효+size 비정상 → BL_VERIFY_REFUSE→safe_state(부팅 거부), 메타 부재(factory/ST-Link)만 SKIP, 정상 size만 REQUIRED. 검증 *우회* 대신 *부팅 거부*로 deny-by-default 충족. test_bootloader_slot 7 신규(총 15, 누적 61) |
 | 2.10 | 2026-06-05 | ECU 식별 강제 구현(FR-CAN-011) — 서명 헤더 `target_ecu_id`가 정의·서명만 되고 *아무도 거부하지 않던* 갭 해소. 앱 컴파일타임 ID(`OTA_ECU_ID` Drive=1/Sensor=2)로 RequestTransferExit(0x37)에서 헤더 ecu_id≠자기ID면 NRC 0x31 거부(메타 commit 전). FR-CAN-011은 0x34 *요청필드* 검사를 상정했으나, 구현은 *서명 헤더*(위조불가)를 0x37에서 검사해 의도를 더 강하게 충족. 순수함수 `ota_meta_ecu_id_allowed`(SSOT 3곳), test_anti_rollback 4 신규(총 10, 누적 78). UDS 우회(직접플래시) 차단=부트로더 defense-in-depth 후속, ADR-009 |
 | 2.11 | 2026-06-05 | **한계·잔여위험 통합 레지스터 신설(§19.1)** — 흩어져 있던 후속 항목을 한 표로 색인(ISO/SAE 21434 잔여위험 수용·ASPICE SWE.6): 보안 6항목(L-1 replay·L-2 hardware_id·L-3 잠금NV·L-4 seed·L-5 anti-rollback 기준선·L-6 ECU-id 앱레벨 — 대부분 ATECC608A 입고로 해소) + 제어 1항목(L-7 직진 안정화 — 엔코더·IMU 입고로 해소)을 *현재완화·후속트리거·근거ADR*과 함께 명시. FR-CAN-011에 `hardware_id` 후속 이연 표기, §19(9) 직진 이슈 근본원인 규명(엔코더·IMU 부재→개루프, 폐루프 제어로 해소). README에 레지스터 포인터 추가 |
+| 2.12 | 2026-06-05 | (1) 보안 공격 테스트 ID 충돌 해소 — SRS의 `TC-SEC-001~010`을 `TC-ATK-001~010`으로 개명(SR-ATK와 1:1 대응, TEST_SPEC의 `TC-SEC` 실행스펙(양성 테스트 포함)과 네임스페이스 분리). (2) §21.2·MS-004의 "공격 10종 통과/PASS" → "구현분 통과"로 calibrate(replay·campaign 등 미구현은 §19.1 후속과 정합). (3) 테스트 결과서 **TR-001** 신규 작성(단위 78/78·on-target 4/4 PASS 기록·공격 시나리오 커버리지 매핑). SDD 참조 v2.12 동기화 |
 
