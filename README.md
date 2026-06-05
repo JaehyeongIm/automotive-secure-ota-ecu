@@ -131,8 +131,8 @@ Gateway가 CAN heartbeat의 `driving_state`를 모니터링하여 ECU가 IDLE �
 0x08000000  Bootloader      (Sector 0–1, WRP 보호)
 0x08008000  Boot Metadata A  (Sector 2)  ┐ 이중화(redundant)
 0x0800C000  Boot Metadata B  (Sector 3)  ┘ CRC32 + seq_counter, 원자적 갱신
-0x08010000  Slot A App       (~192 KB)
-0x08040000  Slot B App       (~256 KB)
+0x08010000  Slot A App       (~192 KB)  ┐ 앱 벡터 = slot+0x200
+0x08040000  Slot B App       (~256 KB)  ┘ (앞 0x200 = 서명 이미지 헤더, ADR-007)
 ```
 
 ---
@@ -166,31 +166,28 @@ Gateway가 CAN heartbeat의 `driving_state`를 모니터링하여 ECU가 IDLE �
 ## 디렉터리 구조
 
 ```
-├── Bootloader/          STM32 Custom Secure Bootloader
-├── DriveECU/            Drive ECU 펌웨어 (App v1/v2, Slot A/B 링커)
-├── SensorECU/           Sensor/Body ECU 펌웨어
-├── test/                Ceedling 단위 테스트 (Bootloader, OTA 메타, UDS 상태머신)
+├── Bootloader/           STM32 Custom Secure Bootloader
+├── DriveECU/             Drive ECU 펌웨어 (App v1/v2, Slot A/B 링커)
+├── SensorECU/            Sensor/Body ECU 펌웨어
+├── test/unit/            Ceedling 단위 테스트 74개 (gcov 커버리지)
 ├── tools/
-│   ├── ota_client.py    UDS/ISO-TP OTA 전송 클라이언트
-│   ├── sign_firmware.py ECDSA-P256 서명 도구
-│   └── can_monitor.py   CAN 프레임 모니터링
+│   ├── ota_client.py     UDS/ISO-TP OTA 클라이언트 (IDLE 감지 포함)
+│   ├── sign_firmware.py  ECDSA-P256 서명 (앞 이미지 헤더)
+│   ├── forge_meta.py     메타데이터 생성·위조 (HIL 픽스처)
+│   ├── build_fixtures.sh HIL 픽스처 일괄 빌드 (v1/v2/v3·고장앱)
+│   ├── hil_runner.py     on-target 테스트 오케스트레이션
+│   └── can_monitor.py    CAN 프레임 모니터
 ├── ci/
-│   ├── build.sh         크로스컴파일 스크립트
-│   └── read_slot.py     CAN heartbeat에서 활성 슬롯 읽기
-├── Jenkinsfile          CI/CD 파이프라인 정의
+│   ├── build.sh          슬롯별 크로스컴파일
+│   └── read_slot.py      heartbeat에서 활성 슬롯 읽기
+├── Jenkinsfile           CI/CD (CI / 태그릴리스 / 승인 게이트 / 배포)
+├── project.yml           Ceedling 설정 (gcov 포함)
 └── docs/
-    ├── SRS-001_CAN_Secure_OTA_Pipeline.md
-    ├── adr/
-    │   ├── ADR-001_OTA_Activation_Architecture.md
-    │   ├── ADR-002_Boot_Timing_Measurement.md
-    │   ├── ADR-003_SecurityAccess_Lockout_Storage.md
-    │   ├── ADR-004_SecurityAccess_Seed_RNG.md
-    │   ├── ADR-005_Troubleshooting_Doc_Naming.md
-    │   ├── ADR-006_Secure_Element_Adoption.md
-    │   ├── ADR-007_Anti_Rollback_Design.md
-    │   └── ADR-008_OTA_Trigger_CI_Deploy_Separation.md
+    ├── SRS-001 · SDD-001 · HARA-001 · TARA-001 · HIL-001
+    ├── adr/              ADR-001 ~ 008 (MADR)
+    ├── troubleshooting/  ISS / EXP (8D) ×10
     ├── TEST_SPEC_OTA_v1.0.md
-    └── diagram.md       Context / Block / State / Sequence 다이어그램
+    └── diagram.md        Context / Block / State / Sequence 다이어그램
 ```
 
 ---
@@ -220,11 +217,13 @@ ceedling gcov:all          # 라인/분기 커버리지 측정
 python3 tools/hil_runner.py --selftest      # 파싱 로직 검증(장비 불필요)
 python3 tools/hil_runner.py --ecu drive --build --setup --tc 03 --uart <UART포트>
 
-# Jenkins E2E 시연: App 버전 수정 후 push
-# → GitHub Webhook → Jenkins → 단위 테스트 → cppcheck → 빌드 → 서명 → OTA → 슬롯 전환 확인
-git add DriveECU/Core/Inc/drive.h
-git commit -m "feat: DriveECU app v2"
-git push origin main
+# Jenkins 시연 (CI와 배포 분리, ADR-008)
+# (1) push = CI 검증만 (단위테스트 → cppcheck → 컴파일)
+git commit -am "feat: DriveECU app v2" && git push origin main
+
+# (2) 릴리스 = 태그 vN → 빌드·서명 → Jenkins 'input' 배포 승인(승인자 기록)
+#                → ECU IDLE 대기 → OTA 전송 → heartbeat로 슬롯 전환 확인
+git tag v2 && git push origin v2
 ```
 
 ---
