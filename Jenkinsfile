@@ -85,6 +85,8 @@ pipeline {
                             cppcheck \
                                 --error-exitcode=1 \
                                 --suppress=missingIncludeSystem \
+                                --suppress=toomanyconfigs \
+                                --suppress=normalCheckLevelMaxBranches \
                                 --inline-suppr \
                                 -I DriveECU/Core/Inc \
                                 DriveECU/Core/Src
@@ -96,6 +98,8 @@ pipeline {
                             cppcheck \
                                 --error-exitcode=1 \
                                 --suppress=missingIncludeSystem \
+                                --suppress=toomanyconfigs \
+                                --suppress=normalCheckLevelMaxBranches \
                                 --inline-suppr \
                                 -I SensorECU/Core/Inc \
                                 SensorECU/Core/Src
