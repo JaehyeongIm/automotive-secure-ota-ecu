@@ -15,9 +15,9 @@ STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/
 |---|---|
 | 🔐 **보안 기능 6종** | Secure Boot(ECDSA-P256)·Anti-rollback·Fail-closed 검증게이팅·SecurityAccess(HMAC)·3-strike 롤백·메타 이중화 원자성 |
 | 🛡️ **안전 기능 1종** | 센서 staleness fail-safe (ISO 26262 안전상태 전이) |
-| ✅ **단위 테스트 74개** | 라인 커버리지 **92%** · 분기 커버리지 **81%** (`ceedling gcov:all`, strict) |
+| ✅ **단위 테스트 78개** | 라인 커버리지 **91%** · 분기 커버리지 **79%** (`ceedling gcov:all`, strict) |
 | 🔬 **On-target 검증 4/4 PASS** | 실 OTA·실 CAN·실 RC차로 보안 3 + 안전 1 실증 ([HIL-001](docs/HIL-001_HIL_Test_Plan.md)) |
-| 📄 **표준 산출물** | SRS·HARA·TARA·SDD·HIL + ADR×8 + 트러블슈팅(8D)×10 — ASPICE SWE.1~6 추적 |
+| 📄 **표준 산출물** | SRS·HARA·TARA·SDD·HIL + ADR×9 + 트러블슈팅(8D)×10 — ASPICE SWE.1~6 추적 |
 | 📦 **규모** | ~6.2K LOC C(부트로더+2앱) + ~2K Python · 130+ commits |
 
 > **프로젝트 서사.** README/SRS가 *구현됐다고 명세한* 보안기능 다수가 실제 코드엔 없던 **문서–코드 갭을 발견** →
@@ -73,7 +73,7 @@ STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/
 | 3-strike 롤백 | ✅ HIL | 시험부팅 3회 초과 시 INVALID + 이전 CONFIRMED 자동 롤백 |
 | SecurityAccess | ✅ HIL | Key = **HMAC-SHA256(PSK, Seed)[:4]**, 3회 실패 → 10초 잠금 |
 | 메타 이중화 원자성 | ✅ 단위 | 섹터 2·3 redundant + CRC32 + seq, ping-pong 원자적 갱신(전원차단 안전) |
-| ECU 식별 | 🔶 부분 | 서명 헤더에 `target_ecu_id` 포함(부트로더 강제 거부는 후속) |
+| ECU 식별 | ✅ 단위 | 서명 헤더 `target_ecu_id` ≠ 자기 ID면 OTA 거부(NRC 0x31, FR-CAN-011) — 직접 플래시(UDS 우회) 차단은 부트로더 후속([ADR-009](docs/adr/ADR-009_ECU_Identity_Enforcement.md)) |
 | Replay 방어 | ⬜ 계획 | Session/Sequence/Freshness (FR-CAN-017) |
 | Uptane-lite | ⬜ 계획 | Manifest 검증·ECU Inventory·Campaign (로드맵) |
 
@@ -112,8 +112,8 @@ Gateway가 CAN heartbeat의 `driving_state`를 모니터링하여 ECU가 IDLE �
 ## 검증 (Verification) — 2단계
 
 **① 호스트 단위 테스트** (순수 로직, `ceedling gcov:all`)
-- **74개** 테스트 · 라인 커버리지 **92%** · 분기 커버리지 **81%**(strict: taken-at-least-once)
-- 양성 + **음성 테스트**(잘못된 SID·세션·시퀀스·`size=0`/초과 등 *거부 경로*)로 보안/안전의 분기 검증
+- **78개** 테스트 · 라인 커버리지 **91%** · 분기 커버리지 **79%**(strict: taken-at-least-once)
+- 양성 + **음성 테스트**(잘못된 SID·세션·시퀀스·`size=0`/초과·**타 ECU 이미지** 등 *거부 경로*)로 보안/안전의 분기 검증
 - HAL 의존부와 분리한 *순수 코어*(메타 상태머신·anti-rollback·검증게이팅·crypto)를 호스트에서 검증
 
 **② On-target(실보드) 검증** — [HIL-001](docs/HIL-001_HIL_Test_Plan.md) · 실 ECU 2대·실 CAN·실 OTA
@@ -173,7 +173,7 @@ Gateway가 CAN heartbeat의 `driving_state`를 모니터링하여 ECU가 IDLE �
 ├── Bootloader/           STM32 Custom Secure Bootloader
 ├── DriveECU/             Drive ECU 펌웨어 (App v1/v2, Slot A/B 링커)
 ├── SensorECU/            Sensor/Body ECU 펌웨어
-├── test/unit/            Ceedling 단위 테스트 74개 (gcov 커버리지)
+├── test/unit/            Ceedling 단위 테스트 78개 (gcov 커버리지)
 ├── tools/
 │   ├── ota_client.py     UDS/ISO-TP OTA 클라이언트 (IDLE 감지 포함)
 │   ├── sign_firmware.py  ECDSA-P256 서명 (앞 이미지 헤더)
@@ -188,7 +188,7 @@ Gateway가 CAN heartbeat의 `driving_state`를 모니터링하여 ECU가 IDLE �
 ├── project.yml           Ceedling 설정 (gcov 포함)
 └── docs/
     ├── SRS-001 · SDD-001 · HARA-001 · TARA-001 · HIL-001
-    ├── adr/              ADR-001 ~ 008 (MADR)
+    ├── adr/              ADR-001 ~ 009 (MADR)
     ├── troubleshooting/  ISS / EXP (8D) ×10
     ├── TEST_SPEC_OTA_v1.0.md
     └── diagram.md        Context / Block / State / Sequence 다이어그램
@@ -214,7 +214,7 @@ gem install ceedling
 pip install python-can
 
 # 단위 테스트 + 커버리지
-ceedling test:all          # 74개 단위 테스트
+ceedling test:all          # 78개 단위 테스트
 ceedling gcov:all          # 라인/분기 커버리지 측정
 
 # On-target(실보드) 검증 — 실 ECU·CAN 연결 후 (HIL-001)
@@ -256,5 +256,6 @@ git tag v2 && git push origin v2
 - [ADR-006](docs/adr/ADR-006_Secure_Element_Adoption.md) — Secure Element(ATECC608A) 도입 — TRNG·NV 한계 하드웨어 해소
 - [ADR-007](docs/adr/ADR-007_Anti_Rollback_Design.md) — Anti-rollback 설계(서명 이미지 헤더 + 메타 버전 기준선)
 - [ADR-008](docs/adr/ADR-008_OTA_Trigger_CI_Deploy_Separation.md) — OTA 트리거: CI 빌드와 차량 배포 분리(태그 릴리스 + 승인 게이트)
+- [ADR-009](docs/adr/ADR-009_ECU_Identity_Enforcement.md) — ECU 식별 강제(앱 컴파일타임 ID로 타 ECU 이미지 거부)
 - [TEST_SPEC](docs/TEST_SPEC_OTA_v1.0.md) — 소프트웨어 테스트 명세서
 - [diagram](docs/diagram.md) — 시스템 다이어그램 (Context / Block / State / Sequence / **보안·안전 흐름**)

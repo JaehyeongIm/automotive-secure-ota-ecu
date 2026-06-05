@@ -13,9 +13,9 @@
 |---|---|
 | 🔐 보안 6종 | Secure Boot(ECDSA‑P256) · Anti‑rollback · Fail‑closed 검증게이팅 · SecurityAccess(HMAC) · 3‑strike 롤백 · 메타 이중화 원자성 |
 | 🛡️ 안전 1종 | 센서 staleness fail‑safe (ISO 26262 안전상태 전이) |
-| ✅ 단위 테스트 74개 | 라인 커버리지 92% · 분기 81%(strict) — 양성 + 음성(거부경로) |
+| ✅ 단위 테스트 78개 | 라인 커버리지 91% · 분기 79%(strict) — 양성 + 음성(거부경로) |
 | 🔬 On‑target 4/4 PASS | 실 OTA·실 CAN·실 RC차로 보안 3 + 안전 1 실증 |
-| 📄 표준 산출물 | SRS · SDD · HARA · TARA · HIL + ADR×8 + 8D×10 (ASPICE SWE.1~6 추적) |
+| 📄 표준 산출물 | SRS · SDD · HARA · TARA · HIL + ADR×9 + 8D×10 (ASPICE SWE.1~6 추적) |
 
 ---
 
@@ -36,7 +36,7 @@
 
 ## 검증 전략 — V‑모델 양방향
 
-- **① 호스트 단위(`ceedling gcov:all`)** — HAL과 분리한 *순수 코어*(메타 상태머신·anti‑rollback·검증게이팅·crypto)를 74개 테스트로. *음성 테스트*로 거부 분기까지(분기 81%).
+- **① 호스트 단위(`ceedling gcov:all`)** — HAL과 분리한 *순수 코어*(메타 상태머신·anti‑rollback·검증게이팅·crypto)를 78개 테스트로. *음성 테스트*로 거부 분기까지(분기 79%).
 - **② On‑target 벤치(HIL‑001)** — 실 ECU 2대·실 CAN·실 OTA로 보안 3 + 안전 1을 실증(4/4 PASS). *plant 시뮬레이터 기반 HIL이 아닌 실물 환경*임을 명시.
 
 ---

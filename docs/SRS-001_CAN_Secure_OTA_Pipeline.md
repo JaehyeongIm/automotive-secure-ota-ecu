@@ -5,7 +5,7 @@
 | 문서 ID | SRS-001 |
 | 문서명 | CAN 기반 UDS over ISO-TP Secure OTA 파이프라인 요구사항 명세서 |
 | 프로젝트명 | Dual ECU 버튼 트리거 직진 주행 Secure OTA 시스템 |
-| 버전 | 2.9 |
+| 버전 | 2.10 |
 | 작성일 | 2026-05-25 |
 | 작성 목적 | Dual ECU 버튼 트리거 직진 주행 + 장애물 회피 OTA 데모 시스템 소프트웨어 요구사항 정의 |
 | 주요 대상 | Raspberry Pi 5 Gateway, STM32F446RE ECU 2대, CAN Bus, Custom Bootloader, RC 차량 데모 플랫폼 |
@@ -1038,4 +1038,5 @@ TSR-001  (SUP.9)
 | 2.7 | 2026-06-03 | self-test commit + 3-strike 롤백 구현(FR-AB-004/007) + 슬롯 5상태 정합: 코드의 SLOT_PENDING을 UPDATED/TRIAL/UPDATING로 분리(§7.3.1 5상태 실코드화), ota_meta_plan_boot(증가-먼저-점프·3회 초과 INVALID+롤백)·plan_confirm(TRIAL→CONFIRMED) 추가, 부트로더 bl_meta_commit, 앱 self-test(heartbeat 성공)→ota_meta_self_confirm, §13.3·FR-BL-002·FR-AB-006의 pending 어휘 5상태 정정. 단위테스트 48개 통과 |
 | 2.8 | 2026-06-03 | anti-rollback(FR-BL-008/FR-AB-008) 구현 — ADR-007 추가(앞 서명 헤더, MCUboot 정석). 서명 이미지 `[헤더0x200][코드][서명64]`, ECDSA가 (헤더+코드) 덮음, 앱 링커 origin +0x200, 부트로더 점프/검증 +0x200·ECDSA 후 헤더 fw_version을 메타 CONFIRMED 버전과 비교해 다운그레이드 거부. sign_firmware.py `--version`, write_pending이 헤더 fw_version 기록. 구현은 헤더 subset(magic/fw_version/target_ecu_id) — header_version/hw_id/hash·Manifest 출처는 후속. 단위테스트 anti_rollback 6 신규(총 54), CRC 기준선·HIL 부팅 검증 한계는 ADR-007 기록 |
 | 2.9 | 2026-06-03 | ECDSA 검증 게이팅 fail-closed 구현(FR-AB-003, CWE-636) — 기존 부트로더는 메타 size가 비정상(0/초과/0xFFFFFFFF)이면 ECDSA를 *건너뛰고 부팅*(fail-open 우회). `bootloader_verify_decision`(순수) 도입: 메타 유효+size 비정상 → BL_VERIFY_REFUSE→safe_state(부팅 거부), 메타 부재(factory/ST-Link)만 SKIP, 정상 size만 REQUIRED. 검증 *우회* 대신 *부팅 거부*로 deny-by-default 충족. test_bootloader_slot 7 신규(총 15, 누적 61) |
+| 2.10 | 2026-06-05 | ECU 식별 강제 구현(FR-CAN-011) — 서명 헤더 `target_ecu_id`가 정의·서명만 되고 *아무도 거부하지 않던* 갭 해소. 앱 컴파일타임 ID(`OTA_ECU_ID` Drive=1/Sensor=2)로 RequestTransferExit(0x37)에서 헤더 ecu_id≠자기ID면 NRC 0x31 거부(메타 commit 전). FR-CAN-011은 0x34 *요청필드* 검사를 상정했으나, 구현은 *서명 헤더*(위조불가)를 0x37에서 검사해 의도를 더 강하게 충족. 순수함수 `ota_meta_ecu_id_allowed`(SSOT 3곳), test_anti_rollback 4 신규(총 10, 누적 78). UDS 우회(직접플래시) 차단=부트로더 defense-in-depth 후속, ADR-009 |
 

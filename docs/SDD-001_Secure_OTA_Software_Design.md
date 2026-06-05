@@ -6,7 +6,7 @@
 | 범위 | Bootloader + DriveECU/SensorECU App + 공유 모듈 + 게이트웨이 도구 |
 | 레벨 | SW 아키텍처 설계(ASPICE SWE.2) + SW 상세 설계(SWE.3), IEEE 1016 |
 | 작성일 | 2026-06-04 |
-| 참조 | SRS-001(v2.9), ADR-002~007, HIL-001, HARA-001, TARA-001 |
+| 참조 | SRS-001(v2.10), ADR-002~009, HIL-001, HARA-001, TARA-001 |
 | 표준 근거 | ISO 24089(SW update), AUTOSAR(UCM/NvM/Fee/Csm 패턴), ISO 14229(UDS)·15765(ISO-TP), ISO 26262-6, ISO/SAE 21434 |
 
 > 본 문서는 *무엇을(SRS)* → *어떻게(설계)* → *어디에(코드)* → *증명(테스트)* 의 추적을 기술한다.
@@ -122,7 +122,7 @@ Bootloader = bootloader.c + (ota_meta.c·sha256·uECC·psk) — 앱과 ota_meta 
 | 모듈 | 책임 | HAL 의존 | 위치 | 검증 |
 |---|---|---|---|---|
 | `bootloader.c` | 부팅 결정·ECDSA·anti-rollback·메타 커밋·jump | 예(#ifndef UNIT_TEST 분리) | Bootloader/Core/Src | test_bootloader_slot(15) + HIL |
-| **`ota_meta.{c,h}`** | **SSOT**: 메타구조·CRC·select·plan_boot/confirm·img header·version_allowed | **아니오(순수)** | 3곳 복제(Sensor/Drive/BL) | test_meta·ota_meta·meta_lifecycle·anti_rollback(31) |
+| **`ota_meta.{c,h}`** | **SSOT**: 메타구조·CRC·select·plan_boot/confirm·img header·version_allowed·ecu_id_allowed | **아니오(순수)** | 3곳 복제(Sensor/Drive/BL) | test_meta·ota_meta·meta_lifecycle·anti_rollback(35) |
 | `ota_flash.c` | 슬롯 erase/write·메타 ping-pong 쓰기·self_confirm | 예 | {Drive,Sensor}/Core/Src | test_ota_meta(RAM 하니스) |
 | `uds.c` | UDS 서버: SecurityAccess·RequestDownload·TransferData/Exit | 일부 | {Drive,Sensor}/Core/Src | test_uds_state(25) |
 | `isotp.c` | ISO-TP(15765) 세그먼테이션·흐름제어 | 예 | 〃 | mock 기반 |
@@ -217,7 +217,7 @@ select(metaA,metaB) → plan_boot(meta,max=3)
 | 6.3 | **anti-rollback** `img_header_read`+`version_allowed` | 서명헤더 ver vs CONFIRMED 최고 ver | FR-BL-008, ADR-007. ⚠기준선=메타(CRC)→물리공격 한계→ATECC608A |
 | 6.4 | **메타 원자성** `ota_meta_select`+ping-pong | seq+CRC, 비활성 사본 후 CRC 마지막 | FR-AB-005, AUTOSAR NvM |
 | 6.5 | **SecurityAccess** | key=HMAC-SHA256(PSK,Seed)[:4], 3회→잠금 | FR-CAN-010, RFC2104. ⚠seed=SW nonce(ADR-004)·잠금=RAM(ADR-003) |
-| 6.6 | **OTA 프로토콜** uds.c+isotp.c | UDS 0x10/27/34/36/37 over ISO-TP | ISO 14229/15765 |
+| 6.6 | **OTA 프로토콜·ECU 식별** uds.c+isotp.c | UDS 0x10/27/34/36/37 over ISO-TP; 0x37에서 헤더 target_ecu_id≠자기ID→NRC 0x31 | ISO 14229/15765, FR-CAN-011, ADR-009. ⚠UDS 우회(직접플래시)는 부트로더 후속 |
 | 6.7 | **센서 freshness** `drive_sensor_fresh` | unsigned 뺄셈(wrap 안전), seen+timeout | ISO 26262 안전상태 |
 
 ---
@@ -231,6 +231,7 @@ select(metaA,metaB) → plan_boot(meta,max=3)
 | 005 | ADR=MADR, ISS=8D, 파일명 규칙 | accepted |
 | 006 | ATECC608A(secure element) 도입 — TRNG·monotonic counter·PSK 슬롯 | accepted(HW 주문) |
 | 007 | anti-rollback: 앞 서명헤더 + 메타(CRC) 기준선 | accepted(잠정 기준선) |
+| 009 | ECU 식별: 앱 컴파일타임 ID로 타 ECU 이미지 거부(0x37 NRC 0x31) | accepted(부트로더 후속) |
 
 ---
 
@@ -242,14 +243,15 @@ select(metaA,metaB) → plan_boot(meta,max=3)
 | FR-AB-007 3-strike | §5.4, 6.1 | ota_meta_plan_boot | test_meta_lifecycle(8) | **HIL TC-02 PASS** |
 | FR-AB-004 self-test commit | §5.3 | ota_meta_self_confirm·main.c | test_ota_meta(10) | HIL TC-01 경유 |
 | FR-AB-003 fail-closed | §6.2 | bootloader_verify_decision | test_bootloader_slot(15) | **HIL TC-03 PASS** |
-| FR-BL-008/AB-008 anti-rollback | §4.3, 6.3 | img_header_read·version_allowed | test_anti_rollback(6) | **HIL TC-01 PASS** |
+| FR-BL-008/AB-008 anti-rollback | §4.3, 6.3 | img_header_read·version_allowed | test_anti_rollback(10) | **HIL TC-01 PASS** |
+| FR-CAN-011 ECU 식별 | §4.3, 6.6 | ecu_id_allowed·uds.c(0x37 NRC 0x31) | test_anti_rollback(10) | (코드리뷰·ADR-009) |
 | FR-CAN-010 SecurityAccess | §6.5 | uds.c·hmac_sha256 | test_uds_state(25)·test_hmac(3) | HIL TC-01/02 unlock |
 | ISO 26262 센서 staleness | §5.5, 6.7 | drive_sensor_fresh·drive.c | gcc(6 케이스) | **HIL TC-04 PASS** |
 
 ---
 
 ## 9. 검증 요약
-- **호스트 단위테스트 74개**(Ceedling, 라인 92%·분기 81% 커버리지 `ceedling gcov:all`) + gcc 독립검증(drive_sensor_fresh 6) — *순수 로직*.
+- **호스트 단위테스트 78개**(Ceedling, 라인 91%·분기 79% 커버리지 `ceedling gcov:all`) + gcc 독립검증(drive_sensor_fresh 6) — *순수 로직*.
 - **On-target 벤치 4종(HIL-001)** — 실 ECU·실 CAN·실 OTA로 보안 3(fail-closed·anti-rollback·3-strike) + 안전 1(staleness) 실증, 전부 PASS(2026-06-04).
 - 추적: §8로 *요구사항↔설계↔코드↔테스트* 양방향 연결.
 
@@ -257,3 +259,4 @@ select(metaA,metaB) → plan_boot(meta,max=3)
 | 버전 | 날짜 | 내용 |
 |---|---|---|
 | 1.0 | 2026-06-04 | 최초 — 구현·단위테스트·on-target 검증 완료 시점 기준 아키텍처(SWE.2)+상세설계(SWE.3) 기술, 추적성 매트릭스 포함 |
+| 1.1 | 2026-06-05 | ECU 식별 강제(FR-CAN-011) 구현 반영 — §6.6에 0x37 target_ecu_id 검사(NRC 0x31) 추가, 순수함수 `ota_meta_ecu_id_allowed`(§8 추적 행 신설), ADR-009 채택. 단위테스트 78개(라인 91%·분기 79%) |

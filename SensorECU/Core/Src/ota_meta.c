@@ -142,3 +142,8 @@ int ota_meta_version_allowed(const OTA_Metadata_t *m, uint32_t incoming_version)
     if (m->slot_b_status == SLOT_CONFIRMED && m->slot_b_version > baseline) baseline = m->slot_b_version;
     return incoming_version >= baseline;
 }
+
+int ota_meta_ecu_id_allowed(uint32_t header_ecu_id, uint32_t my_ecu_id)
+{
+    return header_ecu_id == 0u || header_ecu_id == my_ecu_id;
+}

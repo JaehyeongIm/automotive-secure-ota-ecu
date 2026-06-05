@@ -80,9 +80,13 @@ int ota_meta_plan_confirm(const OTA_Metadata_t *in, uint32_t my_slot, OTA_Metada
 typedef struct {
     uint32_t magic;          /* = IMG_HEADER_MAGIC */
     uint32_t fw_version;     /* anti-rollback 비교 대상 */
-    uint32_t target_ecu_id;  /* 1=DRIVE, 2=SENSOR (선택 검증) */
+    uint32_t target_ecu_id;  /* 1=DRIVE, 2=SENSOR (FR-CAN-011 ECU 식별) */
     uint32_t reserved;
 } OTA_ImgHeader_t;           /* 16 bytes (나머지 IMG_HEADER_SIZE는 패딩) */
+
+/* target_ecu_id 값. 헤더는 ECDSA 서명영역이라 위조 불가. */
+#define OTA_ECU_ID_DRIVE   1u
+#define OTA_ECU_ID_SENSOR  2u
 
 /* 이미지 맨 앞(offset 0)의 헤더를 읽는다. magic 유효 시 1. */
 int ota_img_header_read(const uint8_t *image_start, OTA_ImgHeader_t *out);
@@ -90,5 +94,9 @@ int ota_img_header_read(const uint8_t *image_start, OTA_ImgHeader_t *out);
 /* anti-rollback(FR-BL-008): incoming_version이 CONFIRMED 슬롯들의 최고 버전(기준선)
  * 이상이면 1(허용), 낮으면 0(다운그레이드 거부). 기준선은 메타 NV(CRC) — ADR-007 한계. */
 int ota_meta_version_allowed(const OTA_Metadata_t *m, uint32_t incoming_version);
+
+/* ECU 식별(FR-CAN-011): 이미지 헤더 target_ecu_id가 이 ECU(my_ecu_id)와 일치하면 1(허용).
+ * header_ecu_id==0(미지정)은 호환 위해 허용, 그 외 불일치는 0(타 ECU 이미지 거부). */
+int ota_meta_ecu_id_allowed(uint32_t header_ecu_id, uint32_t my_ecu_id);
 
 #endif /* OTA_META_H */

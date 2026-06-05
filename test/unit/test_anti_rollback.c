@@ -77,3 +77,33 @@ void test_version_baseline_is_max_confirmed(void)
     TEST_ASSERT_EQUAL_INT(0, ota_meta_version_allowed(&m, 7u));     /* 7 < 8 → 거부 */
     TEST_ASSERT_EQUAL_INT(1, ota_meta_version_allowed(&m, 8u));     /* 8 == 8 → 허용 */
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ota_meta_ecu_id_allowed — ECU 식별: 타 ECU용 이미지 거부 (FR-CAN-011)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* TC-UT-AR-007: 헤더 ecu_id == 이 ECU → 허용 */
+void test_ecu_id_match_allows(void)
+{
+    TEST_ASSERT_EQUAL_INT(1, ota_meta_ecu_id_allowed(OTA_ECU_ID_SENSOR, OTA_ECU_ID_SENSOR));
+}
+
+/* TC-UT-AR-008: 핵심 위협 — Drive 이미지(1)를 Sensor 보드(2)에 → 거부 */
+void test_ecu_id_mismatch_rejects(void)
+{
+    TEST_ASSERT_EQUAL_INT(0, ota_meta_ecu_id_allowed(OTA_ECU_ID_DRIVE, OTA_ECU_ID_SENSOR));
+    TEST_ASSERT_EQUAL_INT(0, ota_meta_ecu_id_allowed(OTA_ECU_ID_SENSOR, OTA_ECU_ID_DRIVE));
+}
+
+/* TC-UT-AR-009: 헤더 ecu_id == 0(미지정, --ecu-id 미전달 서명) → 호환 위해 허용 */
+void test_ecu_id_unspecified_allows(void)
+{
+    TEST_ASSERT_EQUAL_INT(1, ota_meta_ecu_id_allowed(0u, OTA_ECU_ID_DRIVE));
+    TEST_ASSERT_EQUAL_INT(1, ota_meta_ecu_id_allowed(0u, OTA_ECU_ID_SENSOR));
+}
+
+/* TC-UT-AR-010: 알 수 없는 ecu_id(미래 ECU 3) → 현재 ECU와 불일치 시 거부 */
+void test_ecu_id_unknown_rejects(void)
+{
+    TEST_ASSERT_EQUAL_INT(0, ota_meta_ecu_id_allowed(3u, OTA_ECU_ID_DRIVE));
+}

@@ -20,6 +20,7 @@
 #define SEC_MAX_FAIL    3       /* consecutive Key failures before lockout */
 #define SEC_LOCK_MS     10000U  /* SecurityAccess lockout duration (ISO 14229) */
 #define BUF_SIZE    512U
+#define OTA_ECU_ID  OTA_ECU_ID_DRIVE   /* 이 ECU의 식별자 (FR-CAN-011) */
 
 
 static uint8_t  g_state = STATE_DEFAULT;
@@ -255,7 +256,12 @@ static void handle(const uint8_t *req, uint16_t len)
 
         /* 서명 헤더(slot+0)에서 실제 fw_version을 읽어 메타에 기록(anti-rollback 기준선). */
         OTA_ImgHeader_t hdr;
-        uint32_t fw_version = ota_img_header_read((const uint8_t *)g_fw_addr, &hdr) ? hdr.fw_version : 0;
+        int have_hdr = ota_img_header_read((const uint8_t *)g_fw_addr, &hdr);
+        /* ECU 식별(FR-CAN-011): 타 ECU용 이미지면 거부. 헤더 없음=레거시→스킵. */
+        if (have_hdr && !ota_meta_ecu_id_allowed(hdr.target_ecu_id, OTA_ECU_ID)) {
+            nrc(sid, 0x31); break;                  /* requestOutOfRange */
+        }
+        uint32_t fw_version = have_hdr ? hdr.fw_version : 0;
         if (ota_meta_write_pending(g_target_slot, g_fw_size, fw_version) != HAL_OK) { nrc(sid, 0x72); break; }
 
         uint8_t r[] = {0x77};
