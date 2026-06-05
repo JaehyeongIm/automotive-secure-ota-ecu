@@ -5,6 +5,10 @@
   :test_file_prefix: test_
   :build_root: build/test
 
+:plugins:
+  :enabled:
+    - gcov
+
 :paths:
   :test:
     - test/unit
@@ -21,6 +25,8 @@
 :defines:
   :common:
     - UNIT_TEST
+  :gcov:
+    - UNIT_TEST
 
 :cmock:
   :mock_prefix: mock_
@@ -32,6 +38,13 @@
 
 :flags:
   :test:
+    :compile:
+      :*:
+        - -std=c99
+        - -Wall
+        - -Wno-unused-parameter
+        - -DUNIT_TEST
+  :gcov:
     :compile:
       :*:
         - -std=c99
