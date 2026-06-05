@@ -1,0 +1,63 @@
+################################################################################
+# Automatically-generated file. Do not edit!
+# Toolchain: GNU Tools for STM32 (14.3.rel1)
+################################################################################
+
+# Add inputs and outputs from these tool invocations to the build variables 
+C_SRCS += \
+../Core/Src/ota_meta.c \
+../Core/Src/sha256.c \
+../Core/Src/hmac_sha256.c \
+../Core/Src/hcsr04.c \
+../Core/Src/isotp.c \
+../Core/Src/main.c \
+../Core/Src/ota_flash.c \
+../Core/Src/stm32f4xx_hal_msp.c \
+../Core/Src/stm32f4xx_it.c \
+../Core/Src/syscalls.c \
+../Core/Src/sysmem.c \
+../Core/Src/system_stm32f4xx.c \
+../Core/Src/uds.c 
+
+OBJS += \
+./Core/Src/ota_meta.o \
+./Core/Src/sha256.o \
+./Core/Src/hmac_sha256.o \
+./Core/Src/hcsr04.o \
+./Core/Src/isotp.o \
+./Core/Src/main.o \
+./Core/Src/ota_flash.o \
+./Core/Src/stm32f4xx_hal_msp.o \
+./Core/Src/stm32f4xx_it.o \
+./Core/Src/syscalls.o \
+./Core/Src/sysmem.o \
+./Core/Src/system_stm32f4xx.o \
+./Core/Src/uds.o 
+
+C_DEPS += \
+./Core/Src/ota_meta.d \
+./Core/Src/sha256.d \
+./Core/Src/hmac_sha256.d \
+./Core/Src/hcsr04.d \
+./Core/Src/isotp.d \
+./Core/Src/main.d \
+./Core/Src/ota_flash.d \
+./Core/Src/stm32f4xx_hal_msp.d \
+./Core/Src/stm32f4xx_it.d \
+./Core/Src/syscalls.d \
+./Core/Src/sysmem.d \
+./Core/Src/system_stm32f4xx.d \
+./Core/Src/uds.d 
+
+
+# Each subdirectory must supply rules for building sources it contributes
+Core/Src/%.o Core/Src/%.su Core/Src/%.cyclo: ../Core/Src/%.c Core/Src/subdir.mk
+	arm-none-eabi-gcc "$<" -mcpu=cortex-m4 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F446xx -c -I../Core/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I../Drivers/CMSIS/Include -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -MMD -MP -MF"$(@:%.o=%.d)" -MT"$@" --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -o "$@"
+
+clean: clean-Core-2f-Src
+
+clean-Core-2f-Src:
+	-$(RM) ./Core/Src/hcsr04.cyclo ./Core/Src/hcsr04.d ./Core/Src/hcsr04.o ./Core/Src/hcsr04.su ./Core/Src/isotp.cyclo ./Core/Src/isotp.d ./Core/Src/isotp.o ./Core/Src/isotp.su ./Core/Src/main.cyclo ./Core/Src/main.d ./Core/Src/main.o ./Core/Src/main.su ./Core/Src/ota_flash.cyclo ./Core/Src/ota_flash.d ./Core/Src/ota_flash.o ./Core/Src/ota_flash.su ./Core/Src/stm32f4xx_hal_msp.cyclo ./Core/Src/stm32f4xx_hal_msp.d ./Core/Src/stm32f4xx_hal_msp.o ./Core/Src/stm32f4xx_hal_msp.su ./Core/Src/stm32f4xx_it.cyclo ./Core/Src/stm32f4xx_it.d ./Core/Src/stm32f4xx_it.o ./Core/Src/stm32f4xx_it.su ./Core/Src/syscalls.cyclo ./Core/Src/syscalls.d ./Core/Src/syscalls.o ./Core/Src/syscalls.su ./Core/Src/sysmem.cyclo ./Core/Src/sysmem.d ./Core/Src/sysmem.o ./Core/Src/sysmem.su ./Core/Src/system_stm32f4xx.cyclo ./Core/Src/system_stm32f4xx.d ./Core/Src/system_stm32f4xx.o ./Core/Src/system_stm32f4xx.su ./Core/Src/uds.cyclo ./Core/Src/uds.d ./Core/Src/uds.o ./Core/Src/uds.su
+
+.PHONY: clean-Core-2f-Src
+
