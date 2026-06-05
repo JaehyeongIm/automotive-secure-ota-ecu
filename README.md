@@ -27,10 +27,13 @@ STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/
 
 ```
 [개발자 PC]
-     │ git push
+     │ git push (코드)  /  git tag vN (릴리스)
      ▼
-[Raspberry Pi 5] ── Jenkins CI/CD (단위 테스트 → 정적 분석 → 크로스컴파일 → 서명 → OTA)
-     │              └── OTA Gateway (ECU Inventory, IDLE 감지 후 전송)
+[Raspberry Pi 5] ── Jenkins
+     │   ├ CI (push마다)      : 단위테스트 → 정적분석 → 컴파일 검증
+     │   ├ 릴리스 (태그 vN)   : 빌드 → ECDSA 서명(ver=N) → 아티팩트 보관
+     │   ├ ★배포 승인 게이트  : input — 승인자 기록 (UN R156 SUMS)
+     │   └ OTA Gateway       : 승인 후 ECU IDLE 감지 시 UDS/ISO-TP 전송
      │ CAN Bus (500 Kbps)
      ├──────────────────────────────────┐
      ▼                                  ▼
@@ -86,17 +89,19 @@ ISO-TP SF/FF/CF/FC 프레임 처리 및 UDS 상태머신을 C로 직접 구현.
 
 Gateway가 CAN heartbeat의 `driving_state`를 모니터링하여 ECU가 IDLE 상태일 때만 OTA 전송을 시작합니다. Flash Erase 중 CPU 블로킹으로 인한 주행 중 위험을 원천 차단하며, Uptane 표준의 "안전 조건 확인 후 설치" 원칙을 구현합니다.
 
-### Jenkins CI/CD 파이프라인
+### Jenkins CI/CD 파이프라인 — CI와 배포 분리 + 승인 게이트
 
-git push 한 번으로 ECU 슬롯 전환 확인까지 자동 수행. 변경된 ECU만 선택적으로 빌드/배포.
+**`git push`는 CI(검증)만** 수행하고 **차량 배포는 분리**합니다 — 태그 릴리스(`vN`) + **명시적 배포 승인 게이트**(승인자 기록) 후에만 OTA가 나갑니다. ([ADR-008](docs/adr/ADR-008_OTA_Trigger_CI_Deploy_Separation.md) — UN R156 SUMS 승인 / Uptane *Image·Director* 분리로 blast-radius 최소화)
 
-1. **단위 테스트** — `ceedling test:all`, 실패 시 이후 단계 전부 차단
-2. **정적 분석** — `cppcheck` error 등급 이상 시 중단
-3. **변경 ECU 감지** — `git diff`로 DriveECU / SensorECU 구분
-4. **크로스컴파일** — `arm-none-eabi-gcc`, 슬롯별 링커스크립트 적용
-5. **바이너리 크기 검사** — Slot 한계(128 KB) 초과 시 중단
-6. **서명** — ECDSA 개인키는 Jenkins Credentials로만 관리
-7. **OTA 배포** — ECU IDLE 확인 후 UDS/ISO-TP 전송, heartbeat로 슬롯 전환 검증
+**CI — 모든 `git push`**
+1. **단위 테스트** — `ceedling test:all`, 실패 시 이후 차단
+2. **정적 분석** — `cppcheck` error 이상 시 중단
+3. **컴파일 검증** — 변경 ECU(`git diff`)만, 슬롯별 링커스크립트
+
+**릴리스·배포 — 태그 `vN`에서만**
+4. **빌드 + 서명** — 슬롯별 크로스컴파일 + 크기 검사 + ECDSA 서명(`version=N`, anti-rollback). 개인키는 Jenkins Credentials로만 관리
+5. **★ 배포 승인 게이트** — Jenkins `input`으로 **승인자를 기록**(UN R156 SUMS 승인의 미니어처)
+6. **OTA 배포** — 승인 후 ECU IDLE 확인 → UDS/ISO-TP 전송 → heartbeat로 슬롯 전환 검증
 
 ---
 
