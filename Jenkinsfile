@@ -31,23 +31,32 @@ pipeline {
                     env.RELEASE_VERSION = (tag ==~ /v\d+/) ? tag.replaceFirst('v', '') : ''
 
                     // 변경 ECU 감지. 릴리스면 직전 태그와, 아니면 직전 커밋과 비교한다.
+                    // 단, 첫 릴리스는 직전 태그가 없어 증분 diff 기준선이 없다 → 전체 ECU 배포(deploy-all).
                     def base = 'HEAD~1'
+                    def firstRelease = false
                     if (env.IS_RELEASE == 'true') {
                         def prev = sh(
                             script: "git describe --tags --abbrev=0 ${tag}^ 2>/dev/null || true",
                             returnStdout: true
                         ).trim()
-                        if (prev) { base = prev }
+                        if (prev) { base = prev } else { firstRelease = true }
                     }
-                    def changed = sh(
-                        script: "git diff --name-only ${base} HEAD",
-                        returnStdout: true
-                    ).trim()
-                    env.DRIVE_CHANGED  = changed.contains('DriveECU/')  ? 'true' : 'false'
-                    env.SENSOR_CHANGED = changed.contains('SensorECU/') ? 'true' : 'false'
+                    if (firstRelease) {
+                        // 첫 릴리스: 비교 기준선이 없으므로 두 ECU 모두 배포한다(full release).
+                        env.DRIVE_CHANGED  = 'true'
+                        env.SENSOR_CHANGED = 'true'
+                    } else {
+                        def changed = sh(
+                            script: "git diff --name-only ${base} HEAD",
+                            returnStdout: true
+                        ).trim()
+                        env.DRIVE_CHANGED  = changed.contains('DriveECU/')  ? 'true' : 'false'
+                        env.SENSOR_CHANGED = changed.contains('SensorECU/') ? 'true' : 'false'
+                    }
 
                     echo "release=${env.IS_RELEASE} version=${env.RELEASE_VERSION} " +
-                         "(base=${base})  drive=${env.DRIVE_CHANGED} sensor=${env.SENSOR_CHANGED}"
+                         "(base=${firstRelease ? 'first-release→deploy-all' : base})  " +
+                         "drive=${env.DRIVE_CHANGED} sensor=${env.SENSOR_CHANGED}"
                 }
             }
         }
