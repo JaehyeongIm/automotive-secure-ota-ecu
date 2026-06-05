@@ -5,6 +5,24 @@ STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/
 
 ---
 
+## 핵심 지표 (KPI)
+
+| | |
+|---|---|
+| 🔐 **보안 기능 6종** | Secure Boot(ECDSA-P256)·Anti-rollback·Fail-closed 검증게이팅·SecurityAccess(HMAC)·3-strike 롤백·메타 이중화 원자성 |
+| 🛡️ **안전 기능 1종** | 센서 staleness fail-safe (ISO 26262 안전상태 전이) |
+| ✅ **단위 테스트 74개** | 라인 커버리지 **92%** · 분기 커버리지 **81%** (`ceedling gcov:all`, strict) |
+| 🔬 **On-target 검증 4/4 PASS** | 실 OTA·실 CAN·실 RC차로 보안 3 + 안전 1 실증 ([HIL-001](docs/HIL-001_HIL_Test_Plan.md)) |
+| 📄 **표준 산출물** | SRS·HARA·TARA·SDD·HIL + ADR×8 + 트러블슈팅(8D)×10 — ASPICE SWE.1~6 추적 |
+| 📦 **규모** | ~6.2K LOC C(부트로더+2앱) + ~2K Python · 125 commits |
+
+> **프로젝트 서사.** README/SRS가 *구현됐다고 명세한* 보안기능 다수가 실제 코드엔 없던 **문서–코드 갭을 발견** →
+> 실무자가 던지는 적대적 질문(신뢰경계·원자성·측정가능성·fail-closed 등)으로 **요구사항을 강화** →
+> HAL 의존부와 순수 로직을 분리해 **TDD로 구현·단위검증** → 운영 OTA 경로 그대로 **on-target(실보드) 실증**.
+> 요구↔설계↔코드↔테스트의 V-모델을 양방향으로 닫았습니다.
+
+---
+
 ## 시스템 구성
 
 ```
@@ -37,15 +55,22 @@ STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/
 
 ### OTA 보안
 
-| 항목 | 구현 |
-|---|---|
-| 무결성 | SHA-256 이미지 해시 검증 |
-| 인증성 | ECDSA-P256 서명 검증 |
-| Anti-rollback | firmware_version 비교, 다운그레이드 거부 |
-| Security Access | HMAC-SHA256(Seed ‖ PSK) 기반 Key 인증, 3회 실패 시 10초 잠금 |
-| ECU 식별 | target_ecu_id / hardware_id 불일치 이미지 거부 |
-| Replay 방어 | Session ID, Sequence Number, Freshness Counter |
-| Uptane-lite | Manifest 기반 검증, ECU Inventory, Campaign 단위 결과 관리 |
+> 구현 상태를 정직하게 표기합니다 — ✅ 구현+on-target 검증, 🔶 부분, ⬜ 계획/로드맵.
+
+| 항목 | 상태 | 내용 |
+|---|---|---|
+| 무결성 | ✅ HIL | SHA-256 이미지 해시 |
+| 인증성 | ✅ HIL | ECDSA-P256 서명 검증 (uECC 직접 포팅) |
+| Anti-rollback | ✅ HIL | 서명 이미지 헤더 `fw_version` vs CONFIRMED 슬롯 기준선, 다운그레이드 거부 |
+| Fail-closed 검증 | ✅ HIL | 메타 `size` 비정상 시 *검증 우회 차단*(deny-by-default, CWE-636) |
+| 3-strike 롤백 | ✅ HIL | 시험부팅 3회 초과 시 INVALID + 이전 CONFIRMED 자동 롤백 |
+| SecurityAccess | ✅ HIL | Key = **HMAC-SHA256(PSK, Seed)[:4]**, 3회 실패 → 10초 잠금 |
+| 메타 이중화 원자성 | ✅ 단위 | 섹터 2·3 redundant + CRC32 + seq, ping-pong 원자적 갱신(전원차단 안전) |
+| ECU 식별 | 🔶 부분 | 서명 헤더에 `target_ecu_id` 포함(부트로더 강제 거부는 후속) |
+| Replay 방어 | ⬜ 계획 | Session/Sequence/Freshness (FR-CAN-017) |
+| Uptane-lite | ⬜ 계획 | Manifest 검증·ECU Inventory·Campaign (로드맵) |
+
+> ⚠️ SecurityAccess의 seed는 F446 TRNG 부재로 SW nonce(엔트로피 약함, [ADR-004](docs/adr/ADR-004_SecurityAccess_Seed_RNG.md)), 잠금은 RAM([ADR-003](docs/adr/ADR-003_SecurityAccess_Lockout_Storage.md)), anti-rollback 기준선은 CRC 메타라 물리공격엔 한계 — 정석은 Secure Element([ADR-006](docs/adr/ADR-006_Secure_Element_Adoption.md))로 해소(HW 도입 중).
 
 ### UDS over ISO-TP (CAN Classic 500 Kbps)
 
@@ -72,6 +97,26 @@ git push 한 번으로 ECU 슬롯 전환 확인까지 자동 수행. 변경된 E
 5. **바이너리 크기 검사** — Slot 한계(128 KB) 초과 시 중단
 6. **서명** — ECDSA 개인키는 Jenkins Credentials로만 관리
 7. **OTA 배포** — ECU IDLE 확인 후 UDS/ISO-TP 전송, heartbeat로 슬롯 전환 검증
+
+---
+
+## 검증 (Verification) — 2단계
+
+**① 호스트 단위 테스트** (순수 로직, `ceedling gcov:all`)
+- **74개** 테스트 · 라인 커버리지 **92%** · 분기 커버리지 **81%**(strict: taken-at-least-once)
+- 양성 + **음성 테스트**(잘못된 SID·세션·시퀀스·`size=0`/초과 등 *거부 경로*)로 보안/안전의 분기 검증
+- HAL 의존부와 분리한 *순수 코어*(메타 상태머신·anti-rollback·검증게이팅·crypto)를 호스트에서 검증
+
+**② On-target(실보드) 검증** — [HIL-001](docs/HIL-001_HIL_Test_Plan.md) · 실 ECU 2대·실 CAN·실 OTA
+
+| TC | 검증 | 결과 |
+|---|---|---|
+| TC-01 | anti-rollback — 옛 버전(v1) OTA → 거부 + v2 자동 복귀 | ✅ PASS |
+| TC-02 | 3-strike — 고장 업데이트 → 3회 시도 후 자동 롤백 | ✅ PASS |
+| TC-03 | fail-closed — `size=0` 위조 메타 → 서명검증 우회 차단 | ✅ PASS |
+| TC-04 | 센서 staleness — 센서 침묵 → ~150ms 내 fail-safe 정지 | ✅ PASS |
+
+> 실 RC차 **on-target 벤치** 테스트(실물 환경). plant를 실시간 시뮬레이션하는 *엄밀한 의미의 HIL*과는 구분됩니다.
 
 ---
 
@@ -162,8 +207,13 @@ sudo apt install -y ruby-full gcc-arm-none-eabi cppcheck
 gem install ceedling
 pip install python-can
 
-# 단위 테스트 + OTA 통합 테스트 (3라운드)
-python3 ci/test_all.py --channel can0 --key <개인키>
+# 단위 테스트 + 커버리지
+ceedling test:all          # 74개 단위 테스트
+ceedling gcov:all          # 라인/분기 커버리지 측정
+
+# On-target(실보드) 검증 — 실 ECU·CAN 연결 후 (HIL-001)
+python3 tools/hil_runner.py --selftest      # 파싱 로직 검증(장비 불필요)
+python3 tools/hil_runner.py --ecu drive --build --setup --tc 03 --uart <UART포트>
 
 # Jenkins E2E 시연: App 버전 수정 후 push
 # → GitHub Webhook → Jenkins → 단위 테스트 → cppcheck → 빌드 → 서명 → OTA → 슬롯 전환 확인
@@ -185,6 +235,10 @@ git push origin main
 ## 문서
 
 - [SRS-001](docs/SRS-001_CAN_Secure_OTA_Pipeline.md) — 소프트웨어 요구사항 명세서
+- [SDD-001](docs/SDD-001_Secure_OTA_Software_Design.md) — 소프트웨어 설계서 (SWE.2 아키텍처 + SWE.3 상세설계, 추적성)
+- [HARA-001](docs/HARA-001_Hazard_Analysis_Risk_Assessment.md) — 위험원 분석·리스크 평가 (ISO 26262)
+- [TARA-001](docs/TARA-001_Threat_Analysis_Risk_Assessment.md) — 위협 분석·리스크 평가 (ISO/SAE 21434)
+- [HIL-001](docs/HIL-001_HIL_Test_Plan.md) — on-target(실보드) 테스트 플랜·실행기록 (보안 3 + 안전 1 PASS)
 - [ADR-001](docs/adr/ADR-001_OTA_Activation_Architecture.md) — OTA 활성화 아키텍처 의사결정
 - [ADR-002](docs/adr/ADR-002_Boot_Timing_Measurement.md) — 부트 타이밍(Tboot) 측정 방식 결정
 - [ADR-003](docs/adr/ADR-003_SecurityAccess_Lockout_Storage.md) — SecurityAccess 잠금 상태 저장 위치(RAM vs NV)
