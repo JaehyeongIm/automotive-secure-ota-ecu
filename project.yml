@@ -46,9 +46,8 @@
         - -DUNIT_TEST
   :gcov:
     :compile:
-      :*:
-        - -std=c99
-        - -Wall
-        - -Wno-unused-parameter
-        - -DUNIT_TEST
+      - -std=c99
+      - -Wall
+      - -Wno-unused-parameter
+      - -DUNIT_TEST
 
