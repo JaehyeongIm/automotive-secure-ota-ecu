@@ -42,6 +42,10 @@ PY=${PYTHON:-python3}
 SF=(st-flash --serial "$SERIAL")
 IMG="fixtures/${ECU}_v2_A.bin"
 
+# st-flash 1회 재시도 래퍼 — ST-Link "0 KiB flash / Unknown memory region" 글리치 대응.
+# 쓰기 사이엔 reset하지 않고(타깃 halt 유지) 마지막에만 reset → 도는 앱의 SWD 간섭 방지.
+sf() { "${SF[@]}" "$@" || { echo "  ! st-flash 실패 → 1s 후 재시도"; sleep 1; "${SF[@]}" "$@"; }; }
+
 if [ "$DO_BUILD" = 1 ]; then
   echo "== [재빌드+재서명] 최신 소스(ABOM 등) → $IMG =="
   KEY=${KEY:-ota-private-key.pem} bash tools/build_fixtures.sh "$ECU"
@@ -57,17 +61,17 @@ if [ "$DO_BL" = 1 ]; then
   echo "== [부트로더] 빌드 + 플래시(0x08000000) =="
   make -C Bootloader/Debug -j4 all
   arm-none-eabi-objcopy -O binary Bootloader/Debug/Bootloader.elf /tmp/flash_bl.bin
-  "${SF[@]}" --reset write /tmp/flash_bl.bin 0x08000000
+  sf write /tmp/flash_bl.bin 0x08000000
 fi
 
 echo "== [앱+메타] $ECU 플래시 (ST-Link $SERIAL) =="
 SZ=$("$PY" -c "import os,sys; print(os.path.getsize(sys.argv[1]))" "$IMG")   # 메타 a-size = 서명이미지 크기
 META="/tmp/flash_meta_${ECU}.bin"
 "$PY" tools/forge_meta.py --preset confirmed-a --a-version 2 --a-size "$SZ" --out "$META"
-"${SF[@]}" --reset write "$IMG"  0x08010000      # 서명 앱 → 슬롯 A([헤더][코드][서명])
-"${SF[@]}" --reset write "$META" 0x08008000      # 메타 A (CONFIRMED, a-size=$SZ)
-"${SF[@]}" --reset write "$META" 0x0800C000      # 메타 B (이중화)
-"${SF[@]}" reset
+sf write "$IMG"  0x08010000      # 서명 앱 → 슬롯 A([헤더][코드][서명])  (halt 유지)
+sf write "$META" 0x08008000      # 메타 A (CONFIRMED, a-size=$SZ)
+sf write "$META" 0x0800C000      # 메타 B (이중화) — 둘 다 써야 옛 high-seq 사본을 덮음
+"${SF[@]}" reset                 # 마지막에 한 번만 reset → 새 펌웨어 부팅
 
 echo ""
 echo "== 완료: $ECU 보드가 v2(슬롯A CONFIRMED)로 부팅. UART에서 부팅 로그 확인 =="
