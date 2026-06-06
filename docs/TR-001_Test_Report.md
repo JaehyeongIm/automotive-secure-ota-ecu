@@ -65,6 +65,7 @@
 | SIT-TC-04 센서 staleness | ISO 26262 안전상태 | `[DRIVE] 센서 stale → fail-safe 정지`(센서 0x200 분리 후 ~150ms) | **PASS** | 2026-06-04 |
 
 - 실증 경로: 실 OTA(35400 B, ISO-TP/UDS)로 전달 → 부트로더 검증·전이·거부 사유를 UART/CAN heartbeat로 자동 대조(SIT-001 §6).
+- **재검증(2026-06-07):** ABOM(ISS-CAN-006)·endless-data(FR-CAN-012/013) 펌웨어 변경 후 SIT-TC-01~04 on-target **4/4 재통과(회귀 없음)**. OTA 전송은 cf-delay 0.02로 수행(ISS-OTA-006 완화). 진단 중 발견·해결 이슈: ISS-CAN-006·ISS-HW-001·ISS-SEC-002.
 - **미실행:** SIT-TC-00(베이스라인)·SIT-TC-01b/03b/04b(음성 대조) → 후속(SIT-001 §6 기록과 일치).
 
 ---
@@ -136,3 +137,4 @@
 | 1.0 | 2026-06-05 | 최초 — 호스트 단위 78/78·on-target 4/4 PASS 결과 기록, 보안 공격 시나리오(TC-ATK-001~010) 커버리지(✅3·🔶4·⬜3) 및 미실행·이연 항목의 §19.1 연결 매핑 포함 |
 | 1.1 | 2026-06-06 | endless-data(TC-ATK-007) 정정 — FR-CAN-012 누적상한 + FR-CAN-013 완료검증이 문서엔 "구현"이나 코드 미반영이던 갭(ISS-SEC-001) 수정. 두 ECU uds.c 패치 + 단위 2종(총 80). 커버리지 ✅4·🔶3·⬜3로 갱신, on-target SIT-TC-05~08 §7 이연 |
 | 1.2 | 2026-06-07 | on-target 하네스 보강 — SIT-TC-05~08을 `hil_runner --tc 05..08`로 자동/반자동화(`ota_client --declared-size`, `forge_image.py`, cangen 반자동). **§5 008(CAN flood) 과대표기 정정** — FR-CAN-019 S3 타임아웃이 문서엔 "구현"이나 코드 미반영 확인 → §7 이연 항목으로 추가(부분 OTA는 메타 미commit로 부팅 안전) |
+| 1.3 | 2026-06-07 | **SIT-TC-01~04 on-target 재검증 4/4 PASS** — ABOM(ISS-CAN-006)·endless-data(FR-CAN-012/013) 펌웨어 변경 후 회귀 없음 확인(§4). 재검증 중 발견·해결: ISS-HW-001(ST-Link 글리치), ISS-SEC-002(PSK/구버전 클라이언트), ISS-OTA-006(고부하 FIFO, cf-delay 완화). 신규 SIT-TC-05~08은 후속 |
