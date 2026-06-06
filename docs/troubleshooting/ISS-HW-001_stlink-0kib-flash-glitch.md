@@ -35,6 +35,7 @@
   - 쓰기 사이의 `--reset` 제거 → **쓰는 동안 타깃 halt 유지**(앱이 안 돌아 SWD 간섭 없음), **마지막에 한 번만 reset**.
   - st-flash 1회 **재시도 래퍼** `sf()` 추가(글리치 시 1s 후 1회 재시도).
 - 검증: 수정 후 3개 쓰기 모두 `Flash written and verified! jolly good!` + 최종 reset → Drive가 `slot 0 / version v2 OK`로 정상 부팅(옛 B 사본까지 덮임).
+- **2차 발현(2026-06-07, hil_runner):** TC-03의 `forge_inject`도 동일 글리치로 메타 B 주입 실패 → 옛 high-seq 메타가 선택돼 fail-closed 미발현(TC-03 FAIL). 같은 패턴 적용: `forge_inject`는 두 사본을 **--reset 없이**(halt 유지) 쓰고 reset은 호출부에서, `stflash()`에 **1회 재시도** 추가. 재실행 시 TC-03 정상.
 
 ## D7. 재발 방지 (Lessons Learned)
 

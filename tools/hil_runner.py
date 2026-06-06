@@ -152,11 +152,16 @@ def sh(cmd):
 
 
 def stflash(cfg, *args):
-    """st-flash 호출. --st-serial 주면 해당 ST-Link만 타깃(보드 2개 동시연결 대응)."""
+    """st-flash 호출. --st-serial 주면 해당 ST-Link만 타깃(보드 2개 동시연결 대응).
+    ST-Link '0 KiB flash / Unknown memory region' 글리치 시 1회 재시도(ISS-HW-001)."""
     cmd = ["st-flash"]
     if cfg.st_serial:
         cmd += ["--serial", cfg.st_serial]
-    return sh(cmd + list(args))
+    r = sh(cmd + list(args))
+    if r.returncode != 0:
+        time.sleep(1)
+        r = sh(cmd + list(args))
+    return r
 
 
 def ota_push(cfg, ecu, image, extra=None):
@@ -186,10 +191,12 @@ def forge_image(cfg, src, mode):
 
 
 def forge_inject(cfg, preset, addr="0x08008000"):
+    """위조 메타를 두 사본(A·B)에 주입. 쓰기 사이 --reset 안 함(halt 유지) →
+    옛 high-seq 사본이 살아남아 선택되는 것 방지(ISS-HW-001). reset은 호출부(st_reset)에서."""
     out = "/tmp/hil_meta.bin"
     sh([sys.executable, "tools/forge_meta.py", "--preset", preset, "--out", out])
-    r1 = stflash(cfg, "--reset", "write", out, addr)
-    r2 = stflash(cfg, "--reset", "write", out, "0x0800C000")
+    r1 = stflash(cfg, "write", out, addr)
+    r2 = stflash(cfg, "write", out, "0x0800C000")
     return r1.returncode == 0 and r2.returncode == 0
 
 
