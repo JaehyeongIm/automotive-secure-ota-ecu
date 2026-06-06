@@ -82,7 +82,7 @@
 | 005 | Replay(이전 Transfer 재전송) | ⬜ | **미구현 — §19.1 L-1**(강한 seed freshness=ATECC608A 후속) |
 | 006 | SecurityAccess 우회 RequestDownload | ✅(단위) | `test_uds_state`(미잠금/세션 거부 분기) |
 | 007 | endless-data(size 초과) | ✅(단위) | **FR-CAN-012 누적상한 + FR-CAN-013 완료검증 구현**(ISS-SEC-001) + 단위 2종(누적초과→0x31·불완전→0x24). on-target SIT-TC-05 이연 |
-| 008 | CAN flood 중 업데이트 | ⬜ | S3 타임아웃(FR-CAN-019) 구현, 부하 시험 후속 |
+| 008 | CAN flood 중 업데이트 | ⬜ | ⚠ **S3 타임아웃(FR-CAN-019)은 문서엔 "구현"이나 코드 미반영**(uds.c에 세션 타임아웃 로직 없음). 부분 OTA는 메타 미commit로 부팅 안전, 단 멈춘 세션 자동 abort는 미구현. SIT-TC-08(no-brick)·부하 시험 후속 |
 | 009 | fake complete | 🔶 | fail-closed verify(**SIT-TC-03**·`verify_decision` 단위)로 commit 거부 경로 확인 |
 | 010 | Campaign partial(한 ECU만) | ⬜ | Uptane-lite 로드맵(README ⬜계획) — §19.1 계열 |
 
@@ -116,6 +116,7 @@
 | SIT-TC-00 / -01b / -03b / -04b | 베이스라인·음성 대조 | SIT-001 §6 후속 |
 | SIT-TC-05/06/07/08 (endless-data·tamper·unsigned·CAN flood) | on-target 신규 — 구현/단위 완료분의 실보드 실증 | SIT-001 §3 후속 |
 | FR-CAN-018 RDBID(0x22, Should) | 미구현(Should) | — |
+| **FR-CAN-019 S3 세션 타임아웃(Must)** | ⚠ 문서엔 "구현"이나 **코드 미반영**(uds.c 세션 타임아웃 없음) — 멈춘 OTA 세션 자동 abort 안 됨 | §19.1 후속(부분 OTA는 메타 미commit로 부팅 안전) |
 
 모든 이연 항목은 **SRS §19.1 한계·잔여 위험 레지스터**와 정합하며, 본 결과서는 이를 PASS로 위장하지 않는다.
 
@@ -134,3 +135,4 @@
 |---|---|---|
 | 1.0 | 2026-06-05 | 최초 — 호스트 단위 78/78·on-target 4/4 PASS 결과 기록, 보안 공격 시나리오(TC-ATK-001~010) 커버리지(✅3·🔶4·⬜3) 및 미실행·이연 항목의 §19.1 연결 매핑 포함 |
 | 1.1 | 2026-06-06 | endless-data(TC-ATK-007) 정정 — FR-CAN-012 누적상한 + FR-CAN-013 완료검증이 문서엔 "구현"이나 코드 미반영이던 갭(ISS-SEC-001) 수정. 두 ECU uds.c 패치 + 단위 2종(총 80). 커버리지 ✅4·🔶3·⬜3로 갱신, on-target SIT-TC-05~08 §7 이연 |
+| 1.2 | 2026-06-07 | on-target 하네스 보강 — SIT-TC-05~08을 `hil_runner --tc 05..08`로 자동/반자동화(`ota_client --declared-size`, `forge_image.py`, cangen 반자동). **§5 008(CAN flood) 과대표기 정정** — FR-CAN-019 S3 타임아웃이 문서엔 "구현"이나 코드 미반영 확인 → §7 이연 항목으로 추가(부분 OTA는 메타 미commit로 부팅 안전) |

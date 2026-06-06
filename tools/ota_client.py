@@ -246,6 +246,9 @@ def main() -> None:
                         help="ECU IDLE 대기 최대 시간(초). 0이면 즉시 진행 (default: 120)")
     parser.add_argument("--cf-delay", type=float, default=0.005,
                         help="ISO-TP Consecutive Frame 전송 간격(초) (default: 0.005)")
+    parser.add_argument("--declared-size", type=int, default=None,
+                        help="RequestDownload에 선언할 size(공격용). 실제 파일보다 작게 주면 "
+                             "endless-data 시험 — 누적 초과 시 ECU가 NRC 0x31로 거부해야 정상")
     parser.add_argument("firmware", help="Signed firmware .bin file")
     args = parser.parse_args()
 
@@ -265,9 +268,17 @@ def main() -> None:
             client.wait_for_idle(timeout=args.idle_timeout)
         client.session_extended()
         client.security_access()
-        max_data = client.request_download(len(fw))
+        declared = args.declared_size if args.declared_size is not None else len(fw)
+        max_data = client.request_download(declared)
         max_data = min(max_data, CHUNK)
-        client.transfer_data(fw, max_data)
+        try:
+            client.transfer_data(fw, max_data)
+        except UDSError as e:
+            if args.declared_size is not None and len(fw) > declared:
+                print(f"\n[ATTACK] endless-data: ECU가 선언 size({declared}B) 초과 전송을 "
+                      f"거부함 (기대된 결과) — {e}")
+                return
+            raise
         client.transfer_exit()
     except (UDSError, ISOTPError) as e:
         print(f"\n[OTA] ERROR: {e}", file=sys.stderr)

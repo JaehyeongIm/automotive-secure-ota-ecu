@@ -68,7 +68,8 @@
 ## 2. 실행 자동화 (`tools/hil_runner.py`)
 
 자극→관측→판정을 자동화한다. 관측은 CAN heartbeat(0x100/0x201) + ECU UART 로그,
-자극은 `ota_client.py`(OTA)·`forge_meta.py`+st-flash(메타 위조)·운영자 프롬프트(전원·센서·버튼)를 엮는다.
+자극은 `ota_client.py`(OTA·`--declared-size`로 endless-data)·`forge_meta.py`+st-flash(메타 위조)·
+`forge_image.py`(이미지 변조/미서명)·`cangen`(CAN flood, 반자동)·운영자 프롬프트(전원·센서·버튼)를 엮는다.
 
 ```bash
 # 하드웨어 없이 파싱 로직(heartbeat 디코드·로그 매처) 검증
@@ -78,11 +79,13 @@ python tools/hil_runner.py --selftest
 python tools/hil_runner.py --all --can slcan0 \
     --drive-uart /dev/tty.drive --sensor-uart /dev/tty.sensor \
     --key keys/ota_priv.pem --img fixtures/
-# 단일 TC: --tc 01|02|03|04
+# 단일 TC: --tc 01..08  (05 endless-data · 06 변조 · 07 미서명 · 08 CAN flood[반자동])
 ```
 
 픽스처(전제): F1 `sign_firmware.py … --version N`, F2 `-DHIL_SELFTEST_FAIL` 빌드,
-F3 `forge_meta.py --preset size0-attack`. TC별 합격기준은 §3, 판정은 로그·heartbeat 자동 대조.
+F3 `forge_meta.py --preset size0-attack`, **F4 `forge_image.py --tamper|--unsign`**(TC-06/07),
+**F5 `ota_client … --declared-size 256`**(TC-05). TC-08은 `cangen`을 Pi에서 띄우라는 프롬프트(반자동).
+TC별 합격기준은 §3, 판정은 로그·heartbeat 자동 대조.
 
 ---
 
@@ -146,7 +149,7 @@ F3 `forge_meta.py --preset size0-attack`. TC별 합격기준은 §3, 판정은 �
 - **기대(관측):** 초과 블록에서 `[UDS] NRC SID=0x36 code=0x31` → **세션 종료**(이후 0x36은 `code=0x22`). 슬롯 경계 밖 미기록
 - **합격:** 초과 시점 0x31 + 추가 전송 거부(0x22). 정상 size 전송은 그대로 완료(회귀 없음)
 - **음성 대조 SIT-TC-05b(불완전):** size=N 선언 후 N 미만만 전송하고 0x37 → `NRC … code=0x24`
-- **자극:** 공격용 UDS 송신(작은 size 선언 + 초과/미달 블록). 단위는 `test_uds_state` 2종으로 이미 PASS
+- **자극/실행:** `hil_runner.py --tc 05` (내부: `ota_client … --declared-size 256`로 작은 size 선언+초과 전송). 단위는 `test_uds_state` 2종으로 이미 PASS
 
 ### SIT-TC-06 — firmware 변조 거부 (TC-ATK-001)
 - **목적/추적:** 서명영역 1바이트 변조 → ECDSA 검증 실패 → 부팅 거부. TC-ATK-001, ECDSA 게이트(FR-AB-003 REQUIRED)
@@ -163,12 +166,13 @@ F3 `forge_meta.py --preset size0-attack`. TC별 합격기준은 §3, 판정은 �
 - **기대(관측):** `[BL] ECDSA FAILED … refusing`(size 정상이므로 SKIP/fail-open 아님)
 - **합격:** 미서명 이미지 미부팅 + `ECDSA FAILED` 로그
 
-### SIT-TC-08 — CAN flood 중 OTA: S3 세션 타임아웃 (TC-ATK-008, FR-CAN-019)
-- **목적/추적:** 버스 폭주 중에도 세션이 S3 타임아웃으로 안전 종료, 부분 이미지로 부팅하지 않음. TC-ATK-008, SR-ATK-008
+### SIT-TC-08 — CAN flood 중 OTA: 부분 이미지 미활성·brick 없음 (TC-ATK-008)
+- **목적/추적:** 버스 폭주 중 OTA가 깨져도 부분 이미지로 부팅하지 않고 이전 CONFIRMED를 유지. TC-ATK-008, SR-ATK-008
 - **전제:** OTA 진행 가능 상태(Unlock)
-- **절차:** ① OTA 시작 → ② Pi에서 `cangen can0 -g 1 -I 0x010 -L 8 -D r`로 버스 폭주 주입 → ③ 관측
-- **기대(관측):** ISO-TP/UDS 진행 지연·중단 시 **S3 타임아웃**으로 DOWNLOADING 종료(세션 리셋), 메타 미commit → 슬롯은 이전 CONFIRMED 유지
-- **합격:** 폭주 중 hang/brick 없음 + 세션 graceful 종료 + 이전 펌웨어 유지
+- **절차(반자동):** `hil_runner.py --tc 08` → ① "Pi에서 cangen 시작" 프롬프트(`cangen can0 -g 1 -L 8 -D r`) → ② OTA 시도 → ③ "cangen 중지 후 리셋" 프롬프트 → 관측
+- **기대(관측):** 전송 깨지면 transfer_exit 미도달 → **메타 미commit** → 리셋 후 부트로더가 이전 CONFIRMED(v2) 부팅(`version v2 OK`). brick/hang 없음
+- **합격:** 폭주 후 이전 펌웨어(v2) 정상 부팅 + brick 없음
+- **⚠️ 한계(중요):** SRS **FR-CAN-019 "S3 세션 타임아웃(5s 무요청→Default 복귀)"는 현재 코드 미구현** — 폭주로 멈춘 세션이 *자동 abort*되지 않고 DOWNLOADING에 머문다(리셋 전까지 새 OTA 거부). 본 TC는 "부분 이미지 미활성·brick 없음"만 판정하고, **S3 자동복귀는 별도 미구현 항목(§19.1 후속)**으로 분리한다.
 - **비고:** 부하 시험(`cangen`=can-utils). 정량 KPI(주입 부하율 vs 복구) 기록 권장
 
 ---
@@ -184,7 +188,7 @@ F3 `forge_meta.py --preset size0-attack`. TC별 합격기준은 §3, 판정은 �
 | TC-05 | FR-CAN-012/013 | test_uds_state(누적초과·불완전 2종) | 본 플랜 |
 | TC-06 | TC-ATK-001(ECDSA 변조) | test_bootloader_slot(verify_decision REQUIRED) | 본 플랜 · forge_image --tamper |
 | TC-07 | TC-ATK-002(서명무효) | test_bootloader_slot(REQUIRED) | 본 플랜 · forge_image --unsign |
-| TC-08 | FR-CAN-019(S3 타임아웃) | — | 본 플랜 · cangen 부하 |
+| TC-08 | TC-ATK-008(no-brick) · ⚠FR-CAN-019(S3) 미구현 | — | 본 플랜 · cangen 부하(반자동) |
 
 ---
 

@@ -159,20 +159,30 @@ def stflash(cfg, *args):
     return sh(cmd + list(args))
 
 
-def ota_push(cfg, ecu, image):
-    # 운영 경로(ngrok→Pi 게이트웨이 등) 재사용: {img},{ecu} 치환 후 실행
-    if cfg.ota_cmd:
+def ota_push(cfg, ecu, image, extra=None):
+    # 운영 경로(ngrok→Pi 게이트웨이 등) 재사용: {img},{ecu} 치환 후 실행.
+    # 단, 공격 옵션(extra, 예: --declared-size)은 raw UDS 경로가 필요 → ota_cmd 우회.
+    if cfg.ota_cmd and not extra:
         cmd_str = cfg.ota_cmd.format(img=image, ecu=ecu)
         print(f"   $ {cmd_str}")
         return subprocess.run(cmd_str, shell=True, capture_output=True, text=True)
     cmd = [sys.executable, "tools/ota_client.py", "--ecu", ecu,
            "--channel", cfg.can or "slcan0", "--interface", cfg.interface,
            "--bitrate", str(cfg.bitrate), image]
+    if extra:
+        cmd += list(extra)
     if cfg.ota_remote:            # CAN이 다른 머신(Pi)에 있을 때: Pi에서 수동 푸시
         manual("Pi에서 OTA 푸시 실행:\n        " + " ".join(cmd) +
                f"\n        (이미지 {image} 가 Pi에 있어야 함 — 미리 scp)")
         return None
     return sh(cmd)
+
+
+def forge_image(cfg, src, mode):
+    """src 서명 이미지에서 변조(--tamper)/미서명(--unsign) 픽스처 생성 → 출력 경로 반환."""
+    out = src.replace(".bin", "_tampered.bin" if mode == "--tamper" else "_unsigned.bin")
+    sh([sys.executable, "tools/forge_image.py", src, mode, "--out", out])
+    return out
 
 
 def forge_inject(cfg, preset, addr="0x08008000"):
@@ -258,11 +268,62 @@ def tc04_staleness(cfg, drv, can):
     return Result("TC-04 sensor staleness", stale, f"fail-safe정지={stale}")
 
 
+def tc05_endless_data(cfg, drv, can):
+    """endless-data: 작은 size 선언 후 초과 전송 → NRC 0x31 거부 + 세션 종료(FR-CAN-012)."""
+    e = cfg.ecu
+    since = time.time()
+    # 선언 size=256B로 작게 → 실제 이미지가 초과 → ECU가 0x36에서 0x31로 거부해야 함
+    ota_push(cfg, e, f"{cfg.img}/{e}_v3_B.bin", extra=["--declared-size", "256"])
+    refused = drv.wait_for("NRC SID=0x36 code=0x31", 40, since)
+    return Result("TC-05 endless-data", refused, f"누적초과거부(0x36/0x31)={refused}")
+
+
+def tc06_tamper(cfg, drv, can):
+    """firmware 변조: 서명영역 1바이트 flip → 부트로더 ECDSA 실패로 거부(TC-ATK-001)."""
+    e = cfg.ecu
+    bad = forge_image(cfg, f"{cfg.img}/{e}_v3_B.bin", "--tamper")
+    since = time.time()
+    ota_push(cfg, e, bad)
+    failed = drv.wait_for("ECDSA FAILED", 40, since)
+    return Result("TC-06 firmware tamper", failed,
+                  f"ECDSA거부={failed} safe_state={drv.saw('Safe State', since)}")
+
+
+def tc07_unsigned(cfg, drv, can):
+    """미서명: 서명 64B=0 이미지 → REQUIRED 게이트가 ECDSA 실패로 거부(TC-ATK-002)."""
+    e = cfg.ecu
+    bad = forge_image(cfg, f"{cfg.img}/{e}_v3_B.bin", "--unsign")
+    since = time.time()
+    ota_push(cfg, e, bad)
+    failed = drv.wait_for("ECDSA FAILED", 40, since)
+    return Result("TC-07 unsigned reject", failed,
+                  f"ECDSA거부={failed} safe_state={drv.saw('Safe State', since)}")
+
+
+def tc08_can_flood(cfg, drv, can):
+    """CAN flood 중 OTA: brick 없이 이전 CONFIRMED 유지(반자동). S3 자동복귀는 FR-CAN-019(별도)."""
+    e = cfg.ecu
+    manual(f"Pi에서 버스 폭주 시작(별도 터미널, 계속 실행): cangen {cfg.can or '<can>'} -g 1 -L 8 -D r")
+    since = time.time()
+    ota_push(cfg, e, f"{cfg.img}/{e}_v3_B.bin")        # 폭주 중 OTA 시도(지연/실패 가능)
+    manual("Pi에서 cangen 중지(Ctrl-C) 후 ECU 리셋(전원 재인가)")
+    st_reset(cfg)
+    alive = drv.wait_for("version v2 OK", 30, since)
+    if not alive and can:
+        alive = can.wait_version(e, 2, timeout=20)
+    return Result("TC-08 CAN flood (no-brick)", bool(alive),
+                  f"이전CONFIRMED(v2)유지={bool(alive)} · S3 graceful-abort=FR-CAN-019(미구현 별도확인)")
+
+
 ALL_TCS = {
     "01": tc01_anti_rollback,
     "02": tc02_three_strike,
     "03": tc03_fail_closed,
     "04": tc04_staleness,
+    "05": tc05_endless_data,
+    "06": tc06_tamper,
+    "07": tc07_unsigned,
+    "08": tc08_can_flood,
 }
 
 
@@ -291,6 +352,12 @@ def selftest():
     check("wait_for 존재 패턴", lb.wait_for("anti-rollback:", 0.2, since=t0))
     check("wait_for 부재 패턴 → False", lb.wait_for("fail-closed", 0.1, since=t0) is False)
     check("saw rollback", lb.saw("rollback to slot"))
+
+    # 신규 TC 판정 패턴(TC-05 endless-data / TC-06·07 ECDSA 거부)
+    lb.feed("[UDS] NRC SID=0x36 code=0x31")
+    lb.feed("[BL] ECDSA FAILED at 0x08040000 — refusing to boot")
+    check("TC-05 endless-data NRC 0x31", lb.saw("NRC SID=0x36 code=0x31"))
+    check("TC-06/07 ECDSA FAILED", lb.saw("ECDSA FAILED"))
 
     print("\nSELFTEST:", "ALL PASS" if not fails else f"{len(fails)} FAIL")
     return 1 if fails else 0
