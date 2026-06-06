@@ -1,8 +1,8 @@
-# HIL-001: On-Target 벤치(실보드) 테스트 플랜 — Secure OTA 보안·안전 기능
+# SIT-001: 시스템 통합 테스트(On-Target 벤치) 플랜 — Secure OTA 보안·안전 기능
 
 | 항목 | 내용 |
 |---|---|
-| 문서 ID | HIL-001 |
+| 문서 ID | SIT-001 |
 | 레벨 | 시스템/통합 테스트 — **on-target 벤치**(실 타깃 보드·실 CAN·실 액추에이터) (ASPICE SWE.6, ISO 26262-6) |
 | 대상 | DriveECU + SensorECU + RPi5 게이트웨이 + CAN 버스 (on-target) |
 | 작성일 | 2026-06-04 |
@@ -12,11 +12,11 @@
 > 실제로 그렇게 동작하는가*(플래시 쓰기·부팅·점프·CAN·타이밍)를 검증한다. 둘은 상호보완이며,
 > 단위테스트가 못 잡는 통합/하드웨어 결함을 여기서 잡는다.
 >
-> **용어 주의 — 본 검증은 on-target 벤치 테스트다.** 실 ECU 2개 + *실물* 환경(실제 CAN·모터·
-> 센서·RPi5 게이트웨이)으로 수행한다. plant(차량 동역학·센서)를 **실시간 시뮬레이터로 모사하는
-> 엄밀한 의미의 HIL**(dSPACE/NI/Vector 등)과는 구분된다 — 실 ECU를 루프에 넣어 실증한다는
-> *성격*은 HIL과 같으나, 환경이 시뮬레이션이 아니라 *실물*이다. 문서 ID `HIL-001`은 업계에서
-> 통용되는 느슨한 약칭을 따른 것이다.
+> **용어 — 본 검증은 on-target 시스템 통합 테스트(SIT)다.** 실 ECU 2개 + *실물* 환경(실제 CAN·
+> 모터·센서·RPi5 게이트웨이)으로 수행한다. plant(차량 동역학·센서·타 ECU)를 **실시간 시뮬레이터로
+> 대체하는 HIL**(dSPACE/NI/Vector 등)과는 구분된다 — HIL은 정의상 plant가 *시뮬레이션*이지만,
+> 본 벤치는 plant가 전부 *실물*이라 HIL이 아니다. 그래서 HIL이라는 명칭 대신 ASPICE SWE.5의
+> 정식 용어인 **시스템 통합 테스트(System Integration Test)**로 명명한다.
 
 ---
 
@@ -88,7 +88,7 @@ F3 `forge_meta.py --preset size0-attack`. TC별 합격기준은 §3, 판정은 �
 
 ## 3. 테스트 케이스
 
-### HIL-TC-00 — 베이스라인: 정상 OTA + self-test commit (sanity)
+### SIT-TC-00 — 베이스라인: 정상 OTA + self-test commit (sanity)
 - **목적/추적:** FR-AB-004 — 정상 업데이트가 부팅·자가확정(TRIAL→CONFIRMED)되는지(이후 TC의 기준)
 - **전제:** Slot A=CONFIRMED v1 실행 중(heartbeat 0x100: ver=1, slot=0)
 - **절차:** ① 게이트웨이로 v2 서명이미지 OTA 푸시 → ② ECU 자동 리셋
@@ -98,7 +98,7 @@ F3 `forge_meta.py --preset size0-attack`. TC별 합격기준은 §3, 판정은 �
   - 두 번째 리셋(전원 재인가) 후에도 v2가 CONFIRMED로 유지(롤백 안 됨)
 - **합격:** heartbeat 0x100 ver=2 + 재부팅해도 v2 유지(= self-test commit 성공)
 
-### HIL-TC-01 — anti-rollback: 서명된 옛 버전 거부 (FR-BL-008/FR-AB-008)
+### SIT-TC-01 — anti-rollback: 서명된 옛 버전 거부 (FR-BL-008/FR-AB-008)
 - **목적:** 정상 서명됐지만 *더 낮은* 버전을 부트로더가 거부
 - **전제:** Slot=CONFIRMED **v2** 실행(기준선=2). 픽스처 F1의 서명 **v1** 준비
 - **절차:** ① v1 서명이미지를 비활성 슬롯으로 OTA 푸시 → ② 리셋
@@ -107,9 +107,9 @@ F3 `forge_meta.py --preset size0-attack`. TC별 합격기준은 §3, 판정은 �
     → `rollback to slot N (CONFIRMED) + reset` → 리셋 후 CONFIRMED v2 부팅
   - heartbeat: **v1이 한 번도 안 나타남**, v2 자동 복귀
 - **합격:** v1 미부팅 + 거부 로그 + 자동으로 v2(CONFIRMED) 복귀(halt 아님). 폴백 CONFIRMED가 없으면 safe_state
-- **음성 대조 HIL-TC-01b:** 같은 슬롯에 v3(상위) 푸시 → `version v3 OK` → 부팅. (상위는 허용)
+- **음성 대조 SIT-TC-01b:** 같은 슬롯에 v3(상위) 푸시 → `version v3 OK` → 부팅. (상위는 허용)
 
-### HIL-TC-02 — 3-strike 롤백: 고장 업데이트 자동 복구 (FR-AB-007)
+### SIT-TC-02 — 3-strike 롤백: 고장 업데이트 자동 복구 (FR-AB-007)
 - **목적:** self-test 실패 업데이트가 3회 시도 후 이전 CONFIRMED로 롤백
 - **전제:** Slot A=CONFIRMED **v2**(정상). 픽스처 F2 **고장 v3**(서명 OK, self-test 실패)
 - **절차:** ① 고장 v3를 Slot B로 OTA 푸시(→UPDATED, active=B) → ② 자동 리셋, 이후 개입 없이 관측
@@ -123,26 +123,26 @@ F3 `forge_meta.py --preset size0-attack`. TC별 합격기준은 §3, 판정은 �
 - **기대 최종:** heartbeat 0x100 **ver=2, slot=0**(롤백 완료), 고장 v3 더 이상 시도 안 됨
 - **합격:** ≤4 사이클 내 v2/SlotA 자동 복구 + 각 단계 trial/3-strike 로그 관측
 
-### HIL-TC-03 — fail-closed: size=0 서명검증 우회 차단 (FR-AB-003)
+### SIT-TC-03 — fail-closed: size=0 서명검증 우회 차단 (FR-AB-003)
 - **목적:** 메타 size가 비정상이면 ECDSA를 *건너뛰지 않고* 부팅 거부
 - **전제:** Slot A=CONFIRMED v2 실행
 - **절차:** ① ST-Link로 픽스처 F3(slot_a_size=0, CRC 유효, seq↑) 메타를 0x08008000 주입 → ② 리셋
 - **기대(관측):** 부트로더 **`metadata size invalid (0x00000000) — fail-closed, refusing`** → `Safe State`. **앱 미부팅(heartbeat 없음)**
 - **합격:** size=0인데도 부팅되지 않음 + fail-closed 로그
-- **음성 대조 HIL-TC-03b:** 정상 size 메타로 복구(재-OTA 또는 정상 메타 주입) → `ECDSA OK` → 정상 부팅(정상 경로 회귀 확인)
+- **음성 대조 SIT-TC-03b:** 정상 size 메타로 복구(재-OTA 또는 정상 메타 주입) → `ECDSA OK` → 정상 부팅(정상 경로 회귀 확인)
 
-### HIL-TC-04 — 센서 staleness fail-safe (ISO 26262 안전상태)
+### SIT-TC-04 — 센서 staleness fail-safe (ISO 26262 안전상태)
 - **목적:** Sensor 침묵 시 Drive가 타임아웃 내 정지
 - **전제:** 양 ECU 정상, Sensor 0x200 송신 중(장애물 없음), Drive 출발(B1) → 전진 중(모터 ON, 0x100 driving=1)
 - **절차:** ① Drive 주행 확인 → ② **SensorECU 전원/CAN 분리**(0x200 중단)
 - **기대(관측):** 마지막 0x200 후 **~150ms 내** Drive `[DRIVE] 센서 stale → fail-safe 정지`, 모터 정지(0x100 driving=0)
 - **합격:** 센서 침묵 후 ≤~150ms 내 정지 + stale 로그
-- **음성 대조 HIL-TC-04b(시동 stale):** Sensor OFF 상태로 Drive 전원 인가 → B1 눌러도 **출발 안 함**(첫 0x200 전 = stale). Sensor ON 후 B1 → 정상 출발
+- **음성 대조 SIT-TC-04b(시동 stale):** Sensor OFF 상태로 Drive 전원 인가 → B1 눌러도 **출발 안 함**(첫 0x200 전 = stale). Sensor ON 후 B1 → 정상 출발
 
 ---
 
 ## 4. 추적 매트릭스
-| TC | 요구사항 | 단위테스트(로직) | HIL(실보드) |
+| TC | 요구사항 | 단위테스트(로직) | on-target(실보드) |
 |---|---|---|---|
 | TC-00 | FR-AB-004 | test_ota_meta(self_confirm) | 본 플랜 |
 | TC-01 | FR-BL-008/FR-AB-008 | test_anti_rollback(version_allowed) | 본 플랜 |
@@ -155,7 +155,7 @@ F3 `forge_meta.py --preset size0-attack`. TC별 합격기준은 §3, 판정은 �
 ## 5. 관측성 개선 (플랜 작성 중 발견 → 반영 완료)
 1. ✅ **boot event 로그** — `plan_boot`가 `OTA_BootEvent_t`(TRIAL_START/RETRY/ROLLBACK/FALLBACK/CONFIRMED/FACTORY/SAFE)를 반환하고 부트로더가 사유별 로그 출력. 3-strike는 `3-strike: slot X reached limit -> INVALID, rollback`로 명확히 관측됨(단위테스트 event 검증).
 2. ✅ **anti-rollback graceful fallback** — 거부 시 halt 대신 거부 슬롯 INVALID 마킹 + 이전 CONFIRMED로 active 전환 + 리셋 → CONFIRMED 부팅. 보안(옛 버전 미실행)은 유지하면서 가용성↑. 폴백 CONFIRMED 없으면 safe_state.
-3. ⬜ **fail-closed 자극엔 메타 위조 도구 필요** — `tools/forge_meta.py`(CRC 포함) 제작 전제(픽스처 F3, HIL 항목 2).
+3. ⬜ **fail-closed 자극엔 메타 위조 도구 필요** — `tools/forge_meta.py`(CRC 포함) 제작 전제(픽스처 F3, §2 항목 2).
 
 ---
 

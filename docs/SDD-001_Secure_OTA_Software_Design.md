@@ -6,7 +6,7 @@
 | 범위 | Bootloader + DriveECU/SensorECU App + 공유 모듈 + 게이트웨이 도구 |
 | 레벨 | SW 아키텍처 설계(ASPICE SWE.2) + SW 상세 설계(SWE.3), IEEE 1016 |
 | 작성일 | 2026-06-04 |
-| 참조 | SRS-001(v2.12), ADR-002~009, HIL-001, HARA-001, TARA-001 |
+| 참조 | SRS-001(v2.12), ADR-002~009, SIT-001, HARA-001, TARA-001 |
 | 표준 근거 | ISO 24089(SW update), AUTOSAR(UCM/NvM/Fee/Csm 패턴), ISO 14229(UDS)·15765(ISO-TP), ISO 26262-6, ISO/SAE 21434 |
 
 > 본 문서는 *무엇을(SRS)* → *어떻게(설계)* → *어디에(코드)* → *증명(테스트)* 의 추적을 기술한다.
@@ -26,7 +26,7 @@ SRS-001의 기능·보안·안전 요구사항을 실현한 소프트웨어 아�
 
 ### 1.2 설계 원칙 (전체를 관통하는 4가지)
 1. **SSOT/DRY** — 메타데이터·상태머신·암호 규약 등 *진실의 단일 출처*를 `ota_meta`에 두고 부트로더·양 ECU가 동일 정의를 공유(드리프트 방지).
-2. **테스트가능성 우선** — HAL 의존 코드와 *순수 로직*을 분리. 순수 함수는 호스트(Ceedling/gcc)에서 단위 검증, HAL 통합은 on-target(HIL-001)에서 검증.
+2. **테스트가능성 우선** — HAL 의존 코드와 *순수 로직*을 분리. 순수 함수는 호스트(Ceedling/gcc)에서 단위 검증, HAL 통합은 on-target(SIT-001)에서 검증.
 3. **Fail-closed / Deny-by-default** — 검증 불가·비정상 입력은 *허용이 아니라 거부*(CWE-636 failing-open 방지, ISO 24089).
 4. **Defense-in-depth** — 부트로더 WRP 잠금 → ECDSA 서명 → anti-rollback → 메타 CRC 원자성 → SecurityAccess의 다층 방어.
 
@@ -109,11 +109,11 @@ Bootloader = bootloader.c + (ota_meta.c·sha256·uECC·psk) — 앱과 ota_meta 
 | CAN 비트레이트 | 500 kbit/s | 설정 |
 | IWDG 윈도우 | ~8000ms (prescaler 256·reload 999, LSI 32kHz) | 부트로더 arm |
 | Tboot (리셋~self-test 완료) | 측정값, IWDG 윈도우 미만 | ADR-002 |
-| 3-strike 총지연 | ≤ 3 × Tboot_fail ≈ ~30s (HIL TC-02 실측) | FR-AB-007 |
+| 3-strike 총지연 | ≤ 3 × Tboot_fail ≈ ~30s (SIT TC-02 실측) | FR-AB-007 |
 | 센서 staleness 타임아웃 | 150ms (센서 주기 50ms × 3, E-Gas) | §6.7 |
 | S3 UDS 세션 타임아웃 | 5000ms | FR-CAN-019 |
 | SecurityAccess 잠금 | 3회 → 10s | ADR-003 |
-| OTA 처리량 | ~35KB / ~20s (≈1.8 KB/s, ISO-TP CF-delay 5ms) | HIL 실측 |
+| OTA 처리량 | ~35KB / ~20s (≈1.8 KB/s, ISO-TP CF-delay 5ms) | on-target 실측 |
 
 ---
 
@@ -121,14 +121,14 @@ Bootloader = bootloader.c + (ota_meta.c·sha256·uECC·psk) — 앱과 ota_meta 
 
 | 모듈 | 책임 | HAL 의존 | 위치 | 검증 |
 |---|---|---|---|---|
-| `bootloader.c` | 부팅 결정·ECDSA·anti-rollback·메타 커밋·jump | 예(#ifndef UNIT_TEST 분리) | Bootloader/Core/Src | test_bootloader_slot(15) + HIL |
+| `bootloader.c` | 부팅 결정·ECDSA·anti-rollback·메타 커밋·jump | 예(#ifndef UNIT_TEST 분리) | Bootloader/Core/Src | test_bootloader_slot(15) + on-target |
 | **`ota_meta.{c,h}`** | **SSOT**: 메타구조·CRC·select·plan_boot/confirm·img header·version_allowed·ecu_id_allowed | **아니오(순수)** | 3곳 복제(Sensor/Drive/BL) | test_meta·ota_meta·meta_lifecycle·anti_rollback(35) |
 | `ota_flash.c` | 슬롯 erase/write·메타 ping-pong 쓰기·self_confirm | 예 | {Drive,Sensor}/Core/Src | test_ota_meta(RAM 하니스) |
 | `uds.c` | UDS 서버: SecurityAccess·RequestDownload·TransferData/Exit | 일부 | {Drive,Sensor}/Core/Src | test_uds_state(25) |
 | `isotp.c` | ISO-TP(15765) 세그먼테이션·흐름제어 | 예 | 〃 | mock 기반 |
 | `hmac_sha256`·`sha256` | SecurityAccess·ECDSA 해시 | 아니오 | 〃 | test_hmac(RFC4231) |
-| `uECC` | ECDSA-P256 verify | 아니오 | Bootloader/Core/Lib | HIL(ECDSA OK) |
-| `drive.c` | 주행 FSM + 센서 freshness fail-safe | 일부 | DriveECU/Core/Src | gcc(drive_sensor_fresh) + HIL |
+| `uECC` | ECDSA-P256 verify | 아니오 | Bootloader/Core/Lib | on-target(ECDSA OK) |
+| `drive.c` | 주행 FSM + 센서 freshness fail-safe | 일부 | DriveECU/Core/Src | gcc(drive_sensor_fresh) + on-target |
 | `psk.c`/`ota_psk` | PSK 저장(부트로더 WRP)·접근 | 예 | 〃 | — |
 
 **SSOT 메커니즘:** `ota_meta.{c,h}`는 물리적으로 3곳에 *동일 사본*으로 존재하나 정의는 단일. 빌드는 각 프로젝트가 자기 사본을 컴파일하되, 변경 시 3곳 동기화(드리프트 발생 시 메타 레이아웃 불일치 → 즉시 빌드/CRC 실패로 검출). → ADR 없음, 설계 규칙.
@@ -169,7 +169,7 @@ Bootloader = bootloader.c + (ota_meta.c·sha256·uECC·psk) — 앱과 ota_meta 
 ```
 
 ### 4.4 부팅 계획 (`OTA_BootPlan_t` + `OTA_BootEvent_t`)
-`{write, boot_slot, event}` — event ∈ {CONFIRMED, TRIAL_START, TRIAL_RETRY, ROLLBACK, FALLBACK, FACTORY, SAFE}. 부트로더가 event별 진단 로그 출력(HIL 관측성).
+`{write, boot_slot, event}` — event ∈ {CONFIRMED, TRIAL_START, TRIAL_RETRY, ROLLBACK, FALLBACK, FACTORY, SAFE}. 부트로더가 event별 진단 로그 출력(on-target 관측성).
 
 ---
 
@@ -240,19 +240,19 @@ select(metaA,metaB) → plan_boot(meta,max=3)
 | SRS 요구 | 설계 요소(§) | 코드 | 단위테스트 | On-target |
 |---|---|---|---|---|
 | FR-AB-005 메타 원자성 | §4.1, 6.4 | ota_meta_select·meta_write_copy | test_meta(7) | (TC 공통) |
-| FR-AB-007 3-strike | §5.4, 6.1 | ota_meta_plan_boot | test_meta_lifecycle(8) | **HIL TC-02 PASS** |
-| FR-AB-004 self-test commit | §5.3 | ota_meta_self_confirm·main.c | test_ota_meta(10) | HIL TC-01 경유 |
-| FR-AB-003 fail-closed | §6.2 | bootloader_verify_decision | test_bootloader_slot(15) | **HIL TC-03 PASS** |
-| FR-BL-008/AB-008 anti-rollback | §4.3, 6.3 | img_header_read·version_allowed | test_anti_rollback(10) | **HIL TC-01 PASS** |
+| FR-AB-007 3-strike | §5.4, 6.1 | ota_meta_plan_boot | test_meta_lifecycle(8) | **SIT TC-02 PASS** |
+| FR-AB-004 self-test commit | §5.3 | ota_meta_self_confirm·main.c | test_ota_meta(10) | SIT TC-01 경유 |
+| FR-AB-003 fail-closed | §6.2 | bootloader_verify_decision | test_bootloader_slot(15) | **SIT TC-03 PASS** |
+| FR-BL-008/AB-008 anti-rollback | §4.3, 6.3 | img_header_read·version_allowed | test_anti_rollback(10) | **SIT TC-01 PASS** |
 | FR-CAN-011 ECU 식별 | §4.3, 6.6 | ecu_id_allowed·uds.c(0x37 NRC 0x31) | test_anti_rollback(10) | (코드리뷰·ADR-009) |
-| FR-CAN-010 SecurityAccess | §6.5 | uds.c·hmac_sha256 | test_uds_state(25)·test_hmac(3) | HIL TC-01/02 unlock |
-| ISO 26262 센서 staleness | §5.5, 6.7 | drive_sensor_fresh·drive.c | gcc(6 케이스) | **HIL TC-04 PASS** |
+| FR-CAN-010 SecurityAccess | §6.5 | uds.c·hmac_sha256 | test_uds_state(25)·test_hmac(3) | SIT TC-01/02 unlock |
+| ISO 26262 센서 staleness | §5.5, 6.7 | drive_sensor_fresh·drive.c | gcc(6 케이스) | **SIT TC-04 PASS** |
 
 ---
 
 ## 9. 검증 요약
 - **호스트 단위테스트 78개**(Ceedling, 라인 91%·분기 79% 커버리지 `ceedling gcov:all`) + gcc 독립검증(drive_sensor_fresh 6) — *순수 로직*.
-- **On-target 벤치 4종(HIL-001)** — 실 ECU·실 CAN·실 OTA로 보안 3(fail-closed·anti-rollback·3-strike) + 안전 1(staleness) 실증, 전부 PASS(2026-06-04).
+- **On-target 벤치 4종(SIT-001)** — 실 ECU·실 CAN·실 OTA로 보안 3(fail-closed·anti-rollback·3-strike) + 안전 1(staleness) 실증, 전부 PASS(2026-06-04).
 - 추적: §8로 *요구사항↔설계↔코드↔테스트* 양방향 연결.
 
 ## 10. 개정 이력

@@ -7,16 +7,16 @@
 | 증상 | UART로는 CAN 통신이 확인되는데, 오실로스코프 CAN 디코드 이벤트표가 계속 비어있음 |
 | 상태 | ✅ 해결됨 |
 | 심각도 | Low (관측성/툴링 — DUT 결함 아님) |
-| 영향 | HIL 벤치 CAN 파형 관측·디코드 (Rigol DHO804). 제품 동작엔 영향 없음 |
-| 관련 | HIL-001(테스트 플랜) · 벤치 구성(DriveECU↔SensorECU, 500kbps CAN) |
+| 영향 | on-target 벤치 CAN 파형 관측·디코드 (Rigol DHO804). 제품 동작엔 영향 없음 |
+| 관련 | SIT-001(테스트 플랜) · 벤치 구성(DriveECU↔SensorECU, 500kbps CAN) |
 
 ---
 
 ## D2. 문제 정의 (5W2H · Is–Is Not)
 
 - **무엇이**: DHO804로 CAN_H/CAN_L를 프로빙했으나 ① 처음엔 파형 자체가 0V로 안 보이고, ② 파형이 보인 뒤에도 CAN 디코드 이벤트표가 비어있었다.
-- **어디서**: HIL 벤치, 두 노드(DriveECU↔SensorECU) 간 500kbps 표준 CAN. 트랜시버 버스측 CAN_H/CAN_L을 브레드보드에서 프로빙.
-- **언제**: 스코프로 OTA/HIL 트래픽을 관측하려고 디코드를 설정하는 동안.
+- **어디서**: on-target 벤치, 두 노드(DriveECU↔SensorECU) 간 500kbps 표준 CAN. 트랜시버 버스측 CAN_H/CAN_L을 브레드보드에서 프로빙.
+- **언제**: 스코프로 OTA/벤치 트래픽을 관측하려고 디코드를 설정하는 동안.
 - **얼마나**: 디코드 이벤트표 0건. 동시에 UART 로그·노드 간 통신은 정상.
 
 **Is ↔ Is Not (원인 범위 좁히기)**

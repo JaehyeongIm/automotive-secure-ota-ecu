@@ -64,7 +64,7 @@ ISO 26262의 타이밍 검증은 안전 관련 데드라인을 **독립적 기�
 | CI 자동화·구간 분해 | ✓ | △ |
 
 - **주 측정(Tboot 확정): GPIO 토글 + 오실로스코프 / 로직 분석기.** 부트로더 진입에서 마커 HIGH, Self-test Confirm에서 LOW → 펄스폭 = Tboot 실측.
-  - 로직 분석기/스코프가 없으면 RPi GPIO 타임스탬프(ms급)로 대체 — HIL에 이미 RPi가 있어 현실적.
+  - 로직 분석기/스코프가 없으면 RPi GPIO 타임스탬프(ms급)로 대체 — on-target 벤치에 이미 RPi가 있어 현실적.
 - **보조 측정(구간 분해·회귀): DWT CYCCNT.** 앱 진입 후 페리페럴 init vs 첫 heartbeat 등 구간을 분해해 UART/CAN으로 로깅, CI 회귀에 활용(ASPICE SWE.4/5).
 
 확정된 Tboot 실측값은 SRS FR-AB-004 수용 기준에 반영한다(실측 worst-case × 2 이상 여유, IWDG 8000ms 미만).

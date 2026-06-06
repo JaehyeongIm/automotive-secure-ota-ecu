@@ -208,7 +208,7 @@ sequenceDiagram
 
 ## 5. 보안·안전 흐름 다이어그램
 
-구현 + on-target(HIL-001) 검증된 부트로더 보안 결정과 안전 fail-safe 흐름.
+구현 + on-target(SIT-001) 검증된 부트로더 보안 결정과 안전 fail-safe 흐름.
 
 ### 5.1 부팅 결정 + 검증 게이팅 (fail-closed · anti-rollback)
 
@@ -244,7 +244,7 @@ sequenceDiagram
     BL->>BL: ECDSA OK (v1도 정상 서명)
     BL->>BL: anti-rollback: v1 < 기준선 v2 → 거부
     BL->>BL: Slot B INVALID + active = A + reset
-    Note over BL: CONFIRMED v2 부팅 — 다운그레이드 차단 (HIL TC-01 PASS)
+    Note over BL: CONFIRMED v2 부팅 — 다운그레이드 차단 (SIT TC-01 PASS)
 ```
 
 ### 5.3 슬롯 5상태 생명주기 + 3-strike 롤백
@@ -258,7 +258,7 @@ stateDiagram-v2
     TRIAL --> CONFIRMED : self-test PASS (count=0)
     TRIAL --> TRIAL : self-test 실패 → 리셋 (count++)
     TRIAL --> INVALID : count > 3 (3-strike)
-    INVALID --> [*] : 이전 CONFIRMED 롤백 (HIL TC-02)
+    INVALID --> [*] : 이전 CONFIRMED 롤백 (SIT TC-02)
     CONFIRMED --> [*] : 정상 운영
 ```
 

@@ -16,8 +16,8 @@ STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/
 | 🔐 **보안 기능 6종** | Secure Boot(ECDSA-P256)·Anti-rollback·Fail-closed 검증게이팅·SecurityAccess(HMAC)·3-strike 롤백·메타 이중화 원자성 |
 | 🛡️ **안전 기능 1종** | 센서 staleness fail-safe (ISO 26262 안전상태 전이) |
 | ✅ **단위 테스트 78개** | 라인 커버리지 **91%** · 분기 커버리지 **79%** (`ceedling gcov:all`, strict) |
-| 🔬 **On-target 검증 4/4 PASS** | 실 OTA·실 CAN·실 RC차로 보안 3 + 안전 1 실증 ([HIL-001](docs/HIL-001_HIL_Test_Plan.md)) |
-| 📄 **표준 산출물** | SRS·HARA·TARA·SDD·HIL·TR + ADR×9 + 트러블슈팅(8D)×10 — ASPICE SWE.1~6 추적 |
+| 🔬 **On-target 검증 4/4 PASS** | 실 OTA·실 CAN·실 RC차로 보안 3 + 안전 1 실증 ([SIT-001](docs/SIT-001_System_Integration_Test_Plan.md)) |
+| 📄 **표준 산출물** | SRS·HARA·TARA·SDD·SIT·TR + ADR×10 + 트러블슈팅(8D)×10 — ASPICE SWE.1~6 추적 |
 | 📦 **규모** | ~6.2K LOC C(부트로더+2앱) + ~2K Python · 130+ commits |
 
 > **프로젝트 서사.** README/SRS가 *구현됐다고 명세한* 보안기능 다수가 실제 코드엔 없던 **문서–코드 갭을 발견** →
@@ -66,12 +66,12 @@ STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/
 
 | 항목 | 상태 | 내용 |
 |---|---|---|
-| 무결성 | ✅ HIL | SHA-256 이미지 해시 |
-| 인증성 | ✅ HIL | ECDSA-P256 서명 검증 (uECC 직접 포팅) |
-| Anti-rollback | ✅ HIL | 서명 이미지 헤더 `fw_version` vs CONFIRMED 슬롯 기준선, 다운그레이드 거부 |
-| Fail-closed 검증 | ✅ HIL | 메타 `size` 비정상 시 *검증 우회 차단*(deny-by-default, CWE-636) |
-| 3-strike 롤백 | ✅ HIL | 시험부팅 3회 초과 시 INVALID + 이전 CONFIRMED 자동 롤백 |
-| SecurityAccess | ✅ HIL | Key = **HMAC-SHA256(PSK, Seed)[:4]**, 3회 실패 → 10초 잠금 |
+| 무결성 | ✅ on-target | SHA-256 이미지 해시 |
+| 인증성 | ✅ on-target | ECDSA-P256 서명 검증 (uECC 직접 포팅) |
+| Anti-rollback | ✅ on-target | 서명 이미지 헤더 `fw_version` vs CONFIRMED 슬롯 기준선, 다운그레이드 거부 |
+| Fail-closed 검증 | ✅ on-target | 메타 `size` 비정상 시 *검증 우회 차단*(deny-by-default, CWE-636) |
+| 3-strike 롤백 | ✅ on-target | 시험부팅 3회 초과 시 INVALID + 이전 CONFIRMED 자동 롤백 |
+| SecurityAccess | ✅ on-target | Key = **HMAC-SHA256(PSK, Seed)[:4]**, 3회 실패 → 10초 잠금 |
 | 메타 이중화 원자성 | ✅ 단위 | 섹터 2·3 redundant + CRC32 + seq, ping-pong 원자적 갱신(전원차단 안전) |
 | ECU 식별 | ✅ 단위 | 서명 헤더 `target_ecu_id` ≠ 자기 ID면 OTA 거부(NRC 0x31, FR-CAN-011) — 직접 플래시(UDS 우회) 차단은 부트로더 후속([ADR-009](docs/adr/ADR-009_ECU_Identity_Enforcement.md)) |
 | Replay 방어 | ⬜ 계획 | Session/Sequence/Freshness (FR-CAN-017) |
@@ -118,7 +118,7 @@ Gateway가 CAN heartbeat의 `driving_state`를 모니터링하여 ECU가 IDLE �
 - 양성 + **음성 테스트**(잘못된 SID·세션·시퀀스·`size=0`/초과·**타 ECU 이미지** 등 *거부 경로*)로 보안/안전의 분기 검증
 - HAL 의존부와 분리한 *순수 코어*(메타 상태머신·anti-rollback·검증게이팅·crypto)를 호스트에서 검증
 
-**② On-target(실보드) 검증** — [HIL-001](docs/HIL-001_HIL_Test_Plan.md) · 실 ECU 2대·실 CAN·실 OTA
+**② On-target(실보드) 검증** — [SIT-001](docs/SIT-001_System_Integration_Test_Plan.md) · 실 ECU 2대·실 CAN·실 OTA
 
 | TC | 검증 | 결과 |
 |---|---|---|
@@ -179,8 +179,8 @@ Gateway가 CAN heartbeat의 `driving_state`를 모니터링하여 ECU가 IDLE �
 ├── tools/
 │   ├── ota_client.py     UDS/ISO-TP OTA 클라이언트 (IDLE 감지 포함)
 │   ├── sign_firmware.py  ECDSA-P256 서명 (앞 이미지 헤더)
-│   ├── forge_meta.py     메타데이터 생성·위조 (HIL 픽스처)
-│   ├── build_fixtures.sh HIL 픽스처 일괄 빌드 (v1/v2/v3·고장앱)
+│   ├── forge_meta.py     메타데이터 생성·위조 (SIT 픽스처)
+│   ├── build_fixtures.sh SIT 픽스처 일괄 빌드 (v1/v2/v3·고장앱)
 │   ├── hil_runner.py     on-target 테스트 오케스트레이션
 │   └── can_monitor.py    CAN 프레임 모니터
 ├── ci/
@@ -189,8 +189,8 @@ Gateway가 CAN heartbeat의 `driving_state`를 모니터링하여 ECU가 IDLE �
 ├── Jenkinsfile           CI/CD (CI / 태그릴리스 / 승인 게이트 / 배포)
 ├── project.yml           Ceedling 설정 (gcov 포함)
 └── docs/
-    ├── SRS-001 · SDD-001 · HARA-001 · TARA-001 · HIL-001
-    ├── adr/              ADR-001 ~ 009 (MADR)
+    ├── SRS-001 · SDD-001 · HARA-001 · TARA-001 · SIT-001
+    ├── adr/              ADR-001 ~ 010 (MADR)
     ├── troubleshooting/  ISS / EXP (8D) ×10
     ├── TEST_SPEC_OTA_v1.0.md
     └── diagram.md        Context / Block / State / Sequence 다이어그램
@@ -219,7 +219,7 @@ pip install python-can
 ceedling test:all          # 78개 단위 테스트
 ceedling gcov:all          # 라인/분기 커버리지 측정
 
-# On-target(실보드) 검증 — 실 ECU·CAN 연결 후 (HIL-001)
+# On-target(실보드) 검증 — 실 ECU·CAN 연결 후 (SIT-001)
 python3 tools/hil_runner.py --selftest      # 파싱 로직 검증(장비 불필요)
 python3 tools/hil_runner.py --ecu drive --build --setup --tc 03 --uart <UART포트>
 
@@ -249,7 +249,7 @@ git tag v2 && git push origin v2
 - [SDD-001](docs/SDD-001_Secure_OTA_Software_Design.md) — 소프트웨어 설계서 (SWE.2 아키텍처 + SWE.3 상세설계, 추적성)
 - [HARA-001](docs/HARA-001_Hazard_Analysis_Risk_Assessment.md) — 위험원 분석·리스크 평가 (ISO 26262)
 - [TARA-001](docs/TARA-001_Threat_Analysis_Risk_Assessment.md) — 위협 분석·리스크 평가 (ISO/SAE 21434)
-- [HIL-001](docs/HIL-001_HIL_Test_Plan.md) — on-target(실보드) 테스트 플랜·실행기록 (보안 3 + 안전 1 PASS)
+- [SIT-001](docs/SIT-001_System_Integration_Test_Plan.md) — on-target(실보드) 테스트 플랜·실행기록 (보안 3 + 안전 1 PASS)
 - [ADR-001](docs/adr/ADR-001_OTA_Activation_Architecture.md) — OTA 활성화 아키텍처 의사결정
 - [ADR-002](docs/adr/ADR-002_Boot_Timing_Measurement.md) — 부트 타이밍(Tboot) 측정 방식 결정
 - [ADR-003](docs/adr/ADR-003_SecurityAccess_Lockout_Storage.md) — SecurityAccess 잠금 상태 저장 위치(RAM vs NV)
@@ -259,6 +259,7 @@ git tag v2 && git push origin v2
 - [ADR-007](docs/adr/ADR-007_Anti_Rollback_Design.md) — Anti-rollback 설계(서명 이미지 헤더 + 메타 버전 기준선)
 - [ADR-008](docs/adr/ADR-008_OTA_Trigger_CI_Deploy_Separation.md) — OTA 트리거: CI 빌드와 차량 배포 분리(태그 릴리스 + 승인 게이트)
 - [ADR-009](docs/adr/ADR-009_ECU_Identity_Enforcement.md) — ECU 식별 강제(앱 컴파일타임 ID로 타 ECU 이미지 거부)
+- [ADR-010](docs/adr/ADR-010_HIL_to_SIT_Terminology.md) — 실보드 검증 명칭 HIL 폐기·SIT(시스템 통합 테스트) 채택
 - [TEST_SPEC](docs/TEST_SPEC_OTA_v1.0.md) — 소프트웨어 테스트 명세서
 - [TR-001](docs/TR-001_Test_Report.md) — 소프트웨어 테스트 결과서 (단위 78/78 · on-target 4/4 PASS · 공격 시나리오 커버리지)
 - [diagram](docs/diagram.md) — 시스템 다이어그램 (Context / Block / State / Sequence / **보안·안전 흐름**)
