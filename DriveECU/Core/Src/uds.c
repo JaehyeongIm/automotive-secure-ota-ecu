@@ -234,6 +234,15 @@ static void handle(const uint8_t *req, uint16_t len)
         uint16_t chunk_len   = len - 2;
         uint16_t write_len   = (uint16_t)((chunk_len + 3u) & ~3u);  /* 4-byte align */
 
+        /* FR-CAN-012: 누적 수신이 선언 image_size를 초과하면 거부 + 세션 종료
+           (endless-data 방어, SR-ATK-007) */
+        if ((uint32_t)g_fw_written + chunk_len > g_fw_size) {
+            g_state      = STATE_DEFAULT;
+            g_ota_active = 0;
+            nrc(sid, 0x31);
+            break;
+        }
+
         uint8_t padded[260];
         memset(padded, 0xFF, write_len);
         memcpy(padded, chunk, chunk_len);
@@ -253,6 +262,9 @@ static void handle(const uint8_t *req, uint16_t len)
 
     case 0x37: {                                /* RequestTransferExit */
         if (g_state != STATE_DOWNLOADING) { nrc(sid, 0x22); break; }
+
+        /* FR-CAN-013: 누적 수신 == 선언 image_size 확인 (불완전 전송 거부) */
+        if (g_fw_written != g_fw_size) { nrc(sid, 0x24); break; }
 
         /* 서명 헤더(slot+0)에서 실제 fw_version을 읽어 메타에 기록(anti-rollback 기준선). */
         OTA_ImgHeader_t hdr;

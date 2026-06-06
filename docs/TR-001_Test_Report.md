@@ -19,7 +19,7 @@
 
 | 캠페인 | 범위 | 결과 |
 |---|---|---|
-| ① 호스트 단위테스트(Ceedling) | HAL 분리 *순수 코어* 로직 | **78/78 PASS** · 라인 ~91%·분기 ~79% |
+| ① 호스트 단위테스트(Ceedling) | HAL 분리 *순수 코어* 로직 | **80/80 PASS** · 라인 ~91%·분기 ~79% |
 | ② On-target 벤치(SIT-001) | 실 ECU 2대·실 CAN·실 OTA | **4/4 PASS** (보안 3 + 안전 1) |
 
 **판정: 구현 범위 PASS.** 미구현·미실행(replay·campaign·SIT 음성대조 등)은 **§19.1 잔여 위험으로 명시·수용**한다(과대 PASS 주장 없음).
@@ -38,7 +38,7 @@
 
 ---
 
-## 3. ① 호스트 단위테스트 결과 — 78/78 PASS
+## 3. ① 호스트 단위테스트 결과 — 80/80 PASS
 
 | 테스트 파일 | 케이스 | 결과 | 검증 대상(코어) |
 |---|---:|---|---|
@@ -48,8 +48,8 @@
 | `test_meta` | 7 | PASS | 메타 CRC32·`ota_meta_select`(FR-AB-005) |
 | `test_meta_lifecycle` | 8 | PASS | `plan_boot`(증가-먼저·3-strike)·`plan_confirm`(FR-AB-007) |
 | `test_ota_meta` | 10 | PASS | `write_pending`·`self_confirm`(RAM 하니스, FR-AB-004) |
-| `test_uds_state` | 25 | PASS | SecurityAccess·세션·시퀀스·**거부 분기**(음성)(FR-CAN-009~016) |
-| **합계** | **78** | **PASS (0 Failures)** | |
+| `test_uds_state` | 27 | PASS | SecurityAccess·세션·시퀀스·**거부 분기**(음성)·endless-data 상한/완료(FR-CAN-009~016, 012/013) |
+| **합계** | **80** | **PASS (0 Failures)** | |
 
 **커버리지(`gcov:all`, strict):** 라인 **~91%** · 분기 **~79%**. 코어별 실측 — `ota_flash` 98.3%L/73.7%B · `sha256` 94.4%L/83.3%B · `uds` 86.3%L/77.5%B · `hmac_sha256` 77.3%L/75.0%B. (HAL/페리페럴·startup 파일은 단위 범위 밖 — gcov "no coverage" 정상)
 
@@ -81,12 +81,12 @@
 | 004 | ECU ID 불일치 이미지 | ✅(단위) | `test_anti_rollback`(ecu_id 4케이스) + 0x37 NRC 0x31 통합(ADR-009 코드리뷰). on-target 미실행 |
 | 005 | Replay(이전 Transfer 재전송) | ⬜ | **미구현 — §19.1 L-1**(강한 seed freshness=ATECC608A 후속) |
 | 006 | SecurityAccess 우회 RequestDownload | ✅(단위) | `test_uds_state`(미잠금/세션 거부 분기) |
-| 007 | endless-data(size 초과) | 🔶 | FR-CAN-012 누적상한(SR-ATK-007) 구현. 전용 부하 케이스 미실행 |
+| 007 | endless-data(size 초과) | ✅(단위) | **FR-CAN-012 누적상한 + FR-CAN-013 완료검증 구현**(ISS-SEC-001) + 단위 2종(누적초과→0x31·불완전→0x24). on-target SIT-TC-05 이연 |
 | 008 | CAN flood 중 업데이트 | ⬜ | S3 타임아웃(FR-CAN-019) 구현, 부하 시험 후속 |
 | 009 | fake complete | 🔶 | fail-closed verify(**SIT-TC-03**·`verify_decision` 단위)로 commit 거부 경로 확인 |
 | 010 | Campaign partial(한 ECU만) | ⬜ | Uptane-lite 로드맵(README ⬜계획) — §19.1 계열 |
 
-요약: **✅ 3(003·004·006) + 🔶 4(001·002·007·009) + ⬜ 3(005·008·010).** ⬜ 3종은 전부 §19.1/로드맵으로 연결.
+요약: **✅ 4(003·004·006·007) + 🔶 3(001·002·009) + ⬜ 3(005·008·010).** ⬜ 3종은 전부 §19.1/로드맵으로 연결.
 
 ---
 
@@ -102,6 +102,7 @@
 | FR-CAN-010 SecurityAccess | `test_uds_state`(25)·`test_hmac`(3) + on-target unlock | PASS |
 | FR-AB-005 메타 원자성 | `test_meta`·`test_ota_meta` | PASS |
 | ISO 26262 센서 staleness | gcc(drive_sensor_fresh 6) + SIT-TC-04 | PASS |
+| FR-CAN-012/013 endless-data | `test_uds_state`(누적초과 0x31·불완전 0x24, 2종) + SIT-TC-05 | PASS(단위) |
 
 ---
 
@@ -113,6 +114,7 @@
 | TC-ATK-008 CAN flood | 부하 시험 미수행 | 후속 |
 | TC-ATK-010 campaign partial | Uptane-lite 로드맵 | §19.1 계열·README |
 | SIT-TC-00 / -01b / -03b / -04b | 베이스라인·음성 대조 | SIT-001 §6 후속 |
+| SIT-TC-05/06/07/08 (endless-data·tamper·unsigned·CAN flood) | on-target 신규 — 구현/단위 완료분의 실보드 실증 | SIT-001 §3 후속 |
 | FR-CAN-018 RDBID(0x22, Should) | 미구현(Should) | — |
 
 모든 이연 항목은 **SRS §19.1 한계·잔여 위험 레지스터**와 정합하며, 본 결과서는 이를 PASS로 위장하지 않는다.
@@ -121,8 +123,8 @@
 
 ## 8. 결론
 
-구현 범위(보안 6종 + 안전 1종)는 **단위 78/78 + on-target 4/4 전부 PASS**로 검증됐다. 미구현·미실행은 §19.1에 잔여 위험으로 명시·수용했다.
-**회귀(재현):** 단위는 `ceedling test:all`(78개)·`gcov:all`, on-target은 `tools/hil_runner.py --all`로 재현 가능. FAIL 발생 시 8D 트러블슈팅(ISS) 발행(PRC-006).
+구현 범위(보안 6종 + 안전 1종)는 **단위 80/80 + on-target 4/4 전부 PASS**로 검증됐다. 미구현·미실행은 §19.1에 잔여 위험으로 명시·수용했다.
+**회귀(재현):** 단위는 `ceedling test:all`(80개)·`gcov:all`, on-target은 `tools/hil_runner.py --all`로 재현 가능. FAIL 발생 시 8D 트러블슈팅(ISS) 발행(PRC-006).
 
 ---
 
@@ -131,3 +133,4 @@
 | 버전 | 날짜 | 내용 |
 |---|---|---|
 | 1.0 | 2026-06-05 | 최초 — 호스트 단위 78/78·on-target 4/4 PASS 결과 기록, 보안 공격 시나리오(TC-ATK-001~010) 커버리지(✅3·🔶4·⬜3) 및 미실행·이연 항목의 §19.1 연결 매핑 포함 |
+| 1.1 | 2026-06-06 | endless-data(TC-ATK-007) 정정 — FR-CAN-012 누적상한 + FR-CAN-013 완료검증이 문서엔 "구현"이나 코드 미반영이던 갭(ISS-SEC-001) 수정. 두 ECU uds.c 패치 + 단위 2종(총 80). 커버리지 ✅4·🔶3·⬜3로 갱신, on-target SIT-TC-05~08 §7 이연 |

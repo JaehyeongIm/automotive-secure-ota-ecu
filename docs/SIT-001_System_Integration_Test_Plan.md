@@ -8,7 +8,7 @@
 | 작성일 | 2026-06-04 |
 | 추적 | FR-BL-008, FR-AB-003/004/007, FR-AB-008, SR-FW-003, ISO 26262 안전상태 |
 
-> 호스트 단위테스트(78개)는 *순수 로직*("입력 X→반환 Y")을 증명한다. 이 플랜은 *실보드에서
+> 호스트 단위테스트(80개)는 *순수 로직*("입력 X→반환 Y")을 증명한다. 이 플랜은 *실보드에서
 > 실제로 그렇게 동작하는가*(플래시 쓰기·부팅·점프·CAN·타이밍)를 검증한다. 둘은 상호보완이며,
 > 단위테스트가 못 잡는 통합/하드웨어 결함을 여기서 잡는다.
 >
@@ -139,6 +139,38 @@ F3 `forge_meta.py --preset size0-attack`. TC별 합격기준은 §3, 판정은 �
 - **합격:** 센서 침묵 후 ≤~150ms 내 정지 + stale 로그
 - **음성 대조 SIT-TC-04b(시동 stale):** Sensor OFF 상태로 Drive 전원 인가 → B1 눌러도 **출발 안 함**(첫 0x200 전 = stale). Sensor ON 후 B1 → 정상 출발
 
+### SIT-TC-05 — endless-data: 누적 수신 상한·완료 검증 (FR-CAN-012/013, SR-ATK-007)
+- **목적/추적:** 작은 image_size 선언 후 초과 전송 시 거부 + 세션 종료(FR-CAN-012), 불완전 전송 거부(FR-CAN-013). TC-ATK-007 ↔ [ISS-SEC-001](troubleshooting/ISS-SEC-001_endless-data-no-cumulative-cap.md)
+- **전제:** Unlock 후 DOWNLOADING 진입(0x34 size=N, 예 256B)
+- **절차:** ① RequestDownload size=N → ② TransferData(0x36)로 누적이 N을 **초과**하도록 전송
+- **기대(관측):** 초과 블록에서 `[UDS] NRC SID=0x36 code=0x31` → **세션 종료**(이후 0x36은 `code=0x22`). 슬롯 경계 밖 미기록
+- **합격:** 초과 시점 0x31 + 추가 전송 거부(0x22). 정상 size 전송은 그대로 완료(회귀 없음)
+- **음성 대조 SIT-TC-05b(불완전):** size=N 선언 후 N 미만만 전송하고 0x37 → `NRC … code=0x24`
+- **자극:** 공격용 UDS 송신(작은 size 선언 + 초과/미달 블록). 단위는 `test_uds_state` 2종으로 이미 PASS
+
+### SIT-TC-06 — firmware 변조 거부 (TC-ATK-001)
+- **목적/추적:** 서명영역 1바이트 변조 → ECDSA 검증 실패 → 부팅 거부. TC-ATK-001, ECDSA 게이트(FR-AB-003 REQUIRED)
+- **전제:** 정상 서명 v2 이미지 보유
+- **절차:** ① `tools/forge_image.py <signed.bin> --tamper` (코드 1바이트 flip, 64B 서명은 유지) → ② OTA 푸시 → ③ 리셋
+- **기대(관측):** `[BL] ECDSA FAILED at 0x........ — refusing to boot` → 후보 미부팅(이전 CONFIRMED 유지/또는 safe_state)
+- **합격:** 변조 이미지 미부팅 + `ECDSA FAILED` 로그
+- **음성 대조:** 원본(미변조) 서명 이미지는 `[BL] ECDSA OK` → 정상 부팅(정상 경로 회귀)
+
+### SIT-TC-07 — unsigned/서명무효 거부 (TC-ATK-002)
+- **목적/추적:** 서명 64B를 0으로 만든 이미지 → size 정상이라 REQUIRED 경로 진입, ECDSA 실패로 거부(우회 불가). TC-ATK-002, FR-AB-003
+- **전제:** 정상 size(REQUIRED 경로)
+- **절차:** ① `tools/forge_image.py <signed.bin> --unsign` (마지막 64B = 0x00) → ② OTA 푸시 → ③ 리셋
+- **기대(관측):** `[BL] ECDSA FAILED … refusing`(size 정상이므로 SKIP/fail-open 아님)
+- **합격:** 미서명 이미지 미부팅 + `ECDSA FAILED` 로그
+
+### SIT-TC-08 — CAN flood 중 OTA: S3 세션 타임아웃 (TC-ATK-008, FR-CAN-019)
+- **목적/추적:** 버스 폭주 중에도 세션이 S3 타임아웃으로 안전 종료, 부분 이미지로 부팅하지 않음. TC-ATK-008, SR-ATK-008
+- **전제:** OTA 진행 가능 상태(Unlock)
+- **절차:** ① OTA 시작 → ② Pi에서 `cangen can0 -g 1 -I 0x010 -L 8 -D r`로 버스 폭주 주입 → ③ 관측
+- **기대(관측):** ISO-TP/UDS 진행 지연·중단 시 **S3 타임아웃**으로 DOWNLOADING 종료(세션 리셋), 메타 미commit → 슬롯은 이전 CONFIRMED 유지
+- **합격:** 폭주 중 hang/brick 없음 + 세션 graceful 종료 + 이전 펌웨어 유지
+- **비고:** 부하 시험(`cangen`=can-utils). 정량 KPI(주입 부하율 vs 복구) 기록 권장
+
 ---
 
 ## 4. 추적 매트릭스
@@ -149,6 +181,10 @@ F3 `forge_meta.py --preset size0-attack`. TC별 합격기준은 §3, 판정은 �
 | TC-02 | FR-AB-007 | test_meta_lifecycle(plan_boot 3-strike) | 본 플랜 |
 | TC-03 | FR-AB-003 | test_bootloader_slot(verify_decision) | 본 플랜 |
 | TC-04 | ISO 26262 안전상태 | gcc(drive_sensor_fresh) | 본 플랜 |
+| TC-05 | FR-CAN-012/013 | test_uds_state(누적초과·불완전 2종) | 본 플랜 |
+| TC-06 | TC-ATK-001(ECDSA 변조) | test_bootloader_slot(verify_decision REQUIRED) | 본 플랜 · forge_image --tamper |
+| TC-07 | TC-ATK-002(서명무효) | test_bootloader_slot(REQUIRED) | 본 플랜 · forge_image --unsign |
+| TC-08 | FR-CAN-019(S3 타임아웃) | — | 본 플랜 · cangen 부하 |
 
 ---
 

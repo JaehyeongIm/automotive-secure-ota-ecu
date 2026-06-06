@@ -417,3 +417,56 @@ void test_transfer_data_too_short_returns_nrc_length(void)
     TEST_ASSERT_EQUAL_UINT8(0x7F, s_tx_buf[0]);
     TEST_ASSERT_EQUAL_UINT8(0x13, s_tx_buf[2]);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TC-UT-UDS-005: endless-data 방어 — 누적 수신 상한·완료 검증
+   ═══════════════════════════════════════════════════════════════════════════
+   SRS FR-CAN-012(누적 > image_size → NRC 0x31 + 세션 종료, SR-ATK-007)
+       FR-CAN-013(누적 != image_size → NRC 0x24)                            */
+
+/* 누적 수신이 선언 size 초과 → NRC 0x31 + 세션 종료(이후 TransferData는 NRC 0x22) */
+void test_transfer_data_exceeds_declared_size_returns_nrc_and_aborts(void)
+{
+    do_unlock();
+    ota_get_active_slot_ExpectAndReturn(0);          /* Slot A 활성 → B 대상 */
+    ota_flash_erase_slot_b_ExpectAndReturn(HAL_OK);
+    uint8_t dl[] = {0x34, 0x00, 0x44, 0,0,0,0, 0,0,0,4};   /* size = 4 bytes */
+    uds_send(dl, sizeof(dl));
+    TEST_ASSERT_EQUAL_UINT8(0x74, s_tx_buf[0]);
+
+    /* seq=1, chunk_len=8 > size 4 → 쓰기 전에 거부 (flash write 미호출) */
+    uint8_t blk[] = {0x36, 0x01, 1,2,3,4,5,6,7,8};
+    uds_send(blk, sizeof(blk));
+    TEST_ASSERT_EQUAL_UINT8(0x7F, s_tx_buf[0]);
+    TEST_ASSERT_EQUAL_UINT8(0x36, s_tx_buf[1]);
+    TEST_ASSERT_EQUAL_UINT8(0x31, s_tx_buf[2]);
+
+    /* 세션 종료 확인: DOWNLOADING 아님 → 추가 TransferData는 NRC 0x22 */
+    TEST_ASSERT_EQUAL_INT(0, uds_ota_active());
+    uint8_t blk2[] = {0x36, 0x01, 0xAA};
+    uds_send(blk2, sizeof(blk2));
+    TEST_ASSERT_EQUAL_UINT8(0x22, s_tx_buf[2]);
+}
+
+/* RequestTransferExit 시 누적 수신 != 선언 size → NRC 0x24 (불완전 전송 거부) */
+void test_transfer_exit_incomplete_returns_nrc_sequence_error(void)
+{
+    do_unlock();
+    ota_get_active_slot_ExpectAndReturn(0);
+    ota_flash_erase_slot_b_ExpectAndReturn(HAL_OK);
+    uint8_t dl[] = {0x34, 0x00, 0x44, 0,0,0,0, 0,0,0,8};   /* size = 8 bytes */
+    uds_send(dl, sizeof(dl));
+
+    /* 4바이트만 전송(size 8 미만) → 정상 0x76 */
+    ota_flash_write_IgnoreAndReturn(HAL_OK);
+    uint8_t blk[] = {0x36, 0x01, 1,2,3,4};                 /* chunk_len = 4 */
+    uds_send(blk, sizeof(blk));
+    TEST_ASSERT_EQUAL_UINT8(0x76, s_tx_buf[0]);
+
+    /* 0x37 → written(4) != size(8) → NRC 0x24 (헤더 deref 전에 거부) */
+    uint8_t exit_req[] = {0x37};
+    uds_send(exit_req, sizeof(exit_req));
+    TEST_ASSERT_EQUAL_UINT8(0x7F, s_tx_buf[0]);
+    TEST_ASSERT_EQUAL_UINT8(0x37, s_tx_buf[1]);
+    TEST_ASSERT_EQUAL_UINT8(0x24, s_tx_buf[2]);
+}
