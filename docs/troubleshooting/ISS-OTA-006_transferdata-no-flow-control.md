@@ -5,7 +5,7 @@
 | 항목 | 내용 |
 |---|---|
 | 증상 | OTA TransferData가 임의 블록(이번 ~59%, block 83/139)에서 멈추고 Pi가 `No Flow Control from ECU`. ECU는 살아있음(heartbeat 지속) |
-| 상태 | 🔶 진행 중 (완화: `--cf-delay`↑ 시도, 근본수정 후속) |
+| 상태 | 🔶 완화 확정(`--cf-delay 0.02` → 139/139 전량 전송 OK, 2026-06-07), 근본수정 후속 |
 | 심각도 | Medium–High (OTA 신뢰성) |
 | 영향 | ECU ISO-TP/CAN RX 고부하 경로(`isotp.c`/CAN RX) |
 | 관련 | **ISS-OTA-004 §남은 메모**(FIFO0 FULL/OVERRUN deferred), FR-CAN-006/012, `tools/ota_client.py --cf-delay` |
@@ -32,11 +32,12 @@
 
 ## D5–D6. 시정 조치 (진행)
 
-- **완화(펌웨어 무변경):** `ota_client.py --cf-delay 0.005 → 0.02` (CF 간격↑ → ECU FIFO 드레인 여유). 랜덤성이라 재시도로 통과 가능.
+- **완화(펌웨어 무변경) — 검증됨:** `ota_client.py --cf-delay 0.005 → 0.02`(CF 간격↑ → ECU FIFO 드레인 여유). **2026-06-07 재현: cf-delay 0.02로 139/139 블록 완주 + SIT-TC-01 anti-rollback on-target PASS.** 기본값(0.005)에선 여전히 랜덤 실패(~59%, block 83)이므로 *완화*이지 근본수정은 아님.
 - **근본수정(후속, 펌웨어):**
   - OTA 중 블록별 `[UDS] Block N` printf 축소/플래그화(`DEBUG_OTA_DIAG`) — blocking UART가 CAN RX를 막지 않게.
   - CAN RX FIFO0 인터럽트로 즉시 드레인 + 오버런 플래그 복구.
-- **검증 예정:** cf-delay(5/10/20ms)별 통과율, 대용량 A↔B 왕복 OTA regression, FIFO overrun 카운터 관측.
+  - (대안) `ota_client.py` 기본 `--cf-delay`를 0.005→0.01로 상향(안정성↑·속도↓ trade-off).
+- **검증(추가 예정):** cf-delay(5/10/20ms)별 통과율, 대용량 A↔B 왕복 OTA regression, FIFO overrun 카운터 관측.
 
 ## D7. 재발 방지 (Lessons Learned)
 
