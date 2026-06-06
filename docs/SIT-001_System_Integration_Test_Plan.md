@@ -72,6 +72,10 @@
 `forge_image.py`(이미지 변조/미서명)·`cangen`(CAN flood, 반자동)·운영자 프롬프트(전원·센서·버튼)를 엮는다.
 
 ```bash
+# 보드 펌웨어 적용(USB/ST-Link, OTA 불필요) — 서명 앱+CONFIRMED 메타. 보드당 1회
+tools/flash.sh drive  <st-link-serial> --build      # st-info --probe 로 시리얼 확인
+tools/flash.sh sensor <st-link-serial> --build
+
 # 하드웨어 없이 파싱 로직(heartbeat 디코드·로그 매처) 검증
 python tools/hil_runner.py --selftest
 
