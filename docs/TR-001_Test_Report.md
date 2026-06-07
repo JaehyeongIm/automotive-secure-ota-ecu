@@ -116,6 +116,44 @@
 | FR-CAN-012/013 endless-data | `test_uds_state`(누적초과 0x31·불완전 0x24, 2종) + SIT-TC-05 | PASS(단위) |
 | FR-CAN-019 S3 타임아웃 / NFR-REL-003 / FR-BL-012 | `test_uds_state`(S3 abort·미abort 2종) + SIT-TC-08 | PASS(단위) |
 
+### 6.1 계획 테스트명세(TS-OTA-001) ↔ 실행 결과 매핑
+
+> TS-OTA-001(계획서, 28 케이스)은 작성 시점에 전부 N/T였다. 실제 검증은 **호스트 단위(Ceedling `test_*`)**·**on-target(SIT-TC-01~08)** 두 채널에서 다른 명명으로 수행됐다. 아래는 계획 TC를 실행 증거에 연결한 결과다(ASPICE SWE.6 — 계획↔결과 추적).
+> 범례: ✅ 실증(전용 단위 케이스 또는 SIT-TC 직접) · 🔶 부분·간접(인접 테스트로 메커니즘 확인 또는 관측채널로 상시 사용, 전용 정량기록 없음) · ⬜ 미실행
+
+| 계획 TC | 요구사항 | 실행 증거 | 상태 |
+|---|---|---|:--:|
+| TC-CAN-001 하트비트 200ms 주기 | FR-DRV-006 | 0x100 heartbeat가 SIT 관측채널로 상시 수신 확인. 주기 정량측정 전용 기록 없음 | 🔶 |
+| TC-CAN-002 하트비트 페이로드 | FR-DRV-006 | byte[0]버전·byte[1]슬롯은 SIT-TC-01/02 판정에 사용. byte[2/3] 전용 확인 없음 | 🔶 |
+| TC-CAN-003 SensorECU 0x200 장애물 | FR-SEN-002/004 | SIT-TC-04(0x200 분리 staleness) + gcc `drive_sensor_fresh` | ✅ |
+| TC-CAN-004 DriveECU obstacle flag 반영 | FR-DRV-006/FR-SEN-002 | SIT-TC-04 경유 간접 확인 | 🔶 |
+| TC-DRV-001 버튼 전진 | FR-DRV-002 | OTA 주행 시나리오 중 동작 관측, 전용 타이밍 기록 없음 | 🔶 |
+| TC-DRV-002 시간 경과 자동 정지 | FR-DRV-003 | 주행 시나리오 중 관측, 전용 정량기록 없음 | 🔶 |
+| TC-DRV-003 10cm 장애물 즉시 정지 | FR-DRV-003 | **SIT-TC-04 PASS** + gcc `drive_sensor_fresh`(6) | ✅ |
+| TC-DRV-004 v2 정지 후 자동 후진 | FR-DRV-004 | v2 OTA 설치는 확인. v2 거동 전용 검증 미수행 | ⬜ |
+| TC-DRV-005 OTA 중 주행 유지 | FR-DRV-007/NFR-SAFE-001 | OTA 푸시 중 주행 관측(SIT), 전용 기록 부분 | 🔶 |
+| TC-OTA-001 ExtendedSession 진입 | FR-CAN-009 | `test_uds_state` + on-target OTA 세션 진입 | ✅ |
+| TC-OTA-002 SecurityAccess unlock | FR-CAN-010 | `test_uds_state`·`test_hmac` + on-target unlock(§6) | ✅ |
+| TC-OTA-003 잘못된 Key NRC | FR-CAN-010/016 | `test_uds_state` 거부 분기(invalidKey) | ✅ |
+| TC-OTA-004 SA 없이 RDL NRC | FR-CAN-011/SR-ATK-006 | `test_uds_state` 미잠금 거부(=TC-ATK-006) | ✅ |
+| TC-OTA-005 비활성 슬롯 자동 선택 | FR-CAN-011/FR-AB-002 | `test_bootloader_slot` + on-target OTA 슬롯 전환 관측 | ✅ |
+| TC-OTA-006 블록 시퀀스 오류 NRC | FR-CAN-012 | `test_uds_state` 시퀀스 분기(단위) | ✅ |
+| TC-OTA-007 TransferExit + pending | FR-CAN-013/FR-DRV-008 | `test_uds_state` 완료검증 + on-target OTA 완료 | ✅ |
+| TC-OTA-008 IDLE 재부팅·슬롯 전환 | FR-DRV-008/FR-CICD-007 | **on-target SIT-TC-01/02**(슬롯 전환·v2 부팅) | ✅ |
+| TC-SEC-001 ECDSA 정상 부팅 | FR-BL-007/SR-FW-002 | **SIT-TC-01**(version v2 OK) + `test_bootloader_slot`(verify_decision) | ✅ |
+| TC-SEC-002 변조 펌웨어 차단 | SR-ATK-001/FR-BL-007 | **SIT-TC-06 PASS**(=TC-ATK-001) | ✅ |
+| TC-SEC-003 미서명 펌웨어 차단 | SR-ATK-002/SR-FW-002 | **SIT-TC-07 PASS**(=TC-ATK-002) | ✅ |
+| TC-SEC-004 DefaultSession SA NRC | FR-CAN-010/SR-ATK-006 | `test_uds_state` 세션 거부 분기 | ✅ |
+| TC-SLOT-001 메타 없을 때 Slot A 기본 | FR-BL-002/FR-AB-001 | `test_meta`·`test_bootloader_slot`(기본 슬롯, 단위) | ✅ |
+| TC-SLOT-002 A→B 전환 | FR-AB-002/FR-BL-003 | on-target OTA(SIT-TC-01/02 슬롯 전환 관측) | ✅ |
+| TC-SLOT-003 B→A 재전환 | FR-AB-002 | A→B는 실증, 역방향 전용 기록 없음(대칭 로직) | 🔶 |
+| TC-CI-001 git push 자동 트리거 | FR-CICD-002 | Jenkinsfile 구현·운영(최근 커밋), 전용 결과 기록 후속 | 🔶 |
+| TC-CI-002 변경 ECU 선택 빌드 | FR-CICD-003 | Jenkinsfile changed-detection 구현, 전용 기록 후속 | 🔶 |
+| TC-CI-003 E2E OTA(v1→v2) | FR-CICD-007/008 | OTA E2E는 `hil_runner`로 실증. git-push→OTA 완전자동 E2E 전용 기록 후속 | 🔶 |
+| TC-CI-004 OTA 실패 처리(FAILURE) | FR-CICD-010 | 실패 주입(CAN 차단) 전용 케이스 미실행 | ⬜ |
+
+**집계: ✅ 16 · 🔶 10 · ⬜ 2 (28종).** ✅ 16종은 단위 또는 on-target에서 직접 실증됐고, 🔶 10종은 메커니즘은 확인됐으나 전용 정량기록이 후속(주로 주행 거동 타이밍·CI 파이프라인 전용 기록)이며, ⬜ 2종(TC-DRV-004 v2 후진 거동·TC-CI-004 실패 주입)은 미실행으로 §7·§19.1에 연결한다.
+
 ---
 
 ## 7. 미실행·이연 항목 (Not Executed / Deferred)
@@ -126,6 +164,8 @@
 | TC-ATK-010 campaign partial | Uptane-lite 로드맵 | §19.1 계열·README |
 | SIT-TC-00 / -01b / -03b / -04b | 베이스라인·음성 대조 | SIT-001 §6 후속 |
 | FR-CAN-018 RDBID(0x22, Should) | 미구현(Should) | — |
+| TC-DRV-004 v2 후진 거동 | v2 OTA 설치는 확인, 거동 전용 검증 미수행 | §6.1 ⬜ |
+| TC-CI-004 OTA 실패 주입 | Jenkins 실패 경로 전용 케이스 미실행 | §6.1 ⬜ |
 
 모든 이연 항목은 **SRS §19.1 한계·잔여 위험 레지스터**와 정합하며, 본 결과서는 이를 PASS로 위장하지 않는다.
 
@@ -148,3 +188,4 @@
 | 1.3 | 2026-06-07 | **SIT-TC-01~04 on-target 재검증 4/4 PASS** — ABOM(ISS-CAN-006)·endless-data(FR-CAN-012/013) 펌웨어 변경 후 회귀 없음 확인(§4). 재검증 중 발견·해결: ISS-HW-001(ST-Link 글리치), ISS-SEC-002(PSK/구버전 클라이언트), ISS-OTA-006(고부하 FIFO, cf-delay 완화). 신규 SIT-TC-05~08은 후속 |
 | 1.4 | 2026-06-07 | **신규 공격 시나리오 SIT-TC-05~08 on-target 4종 PASS** — endless-data(05)·변조(06)·미서명(07)·CAN flood no-brick(08). §5 커버리지 ✅7·🔶1·⬜2로 승격(001·002·007·008), §4 결과표 추가·§7 해당 이연 제거. on-target 누계 **8/8** |
 | 1.5 | 2026-06-07 | **S3 세션 타임아웃(FR-CAN-019/NFR-REL-003/FR-BL-012) 구현** — 양 ECU `uds_process()`에 5s 무요청→세션 abort. 단위 2종(총 82). §5 008·§6 S3 행 추가, §7 FR-CAN-019 이연 제거. SRS에 FR-CAN-014(0x31)/015(0x11) 구현현황 주석·TC-FAIL-002 매핑 정정 동반 |
+| 1.6 | 2026-06-07 | **계획 테스트명세(TS-OTA-001, 28종) ↔ 실행 결과 매핑** 신설(§6.1) — 단위/on-target 두 채널의 실행 증거를 28개 계획 TC에 연결(✅16·🔶10·⬜2). ⬜ 2종(TC-DRV-004·TC-CI-004) §7 이연 추가. TS-OTA-001 §13 집계·포인터 정합 |
