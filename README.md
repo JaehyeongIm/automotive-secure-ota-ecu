@@ -16,7 +16,7 @@ STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/
 | 🔐 **보안 기능 6종** | Secure Boot(ECDSA-P256)·Anti-rollback·Fail-closed 검증게이팅·SecurityAccess(HMAC)·3-strike 롤백·메타 이중화 원자성 |
 | 🛡️ **안전 기능 1종** | 센서 staleness fail-safe (ISO 26262 안전상태 전이) |
 | ✅ **단위 테스트 80개** | 라인 커버리지 **91%** · 분기 커버리지 **79%** (`ceedling gcov:all`, strict) |
-| 🔬 **On-target 검증 4/4 PASS** | 실 OTA·실 CAN·실 RC차로 보안 3 + 안전 1 실증 ([SIT-001](docs/SIT-001_System_Integration_Test_Plan.md)) |
+| 🔬 **On-target 검증 8/8 PASS** | 실 OTA·실 CAN·실 RC차 — 기본 4(보안 3+안전 1) + 공격 4종(변조·미서명·endless-data·flood) 실증 ([SIT-001](docs/SIT-001_System_Integration_Test_Plan.md)) |
 | 📄 **표준 산출물** | SRS·HARA·TARA·SDD·SIT·TR + ADR×10 + 트러블슈팅(8D)×14 — ASPICE SWE.1~6 추적 |
 | 📦 **규모** | ~6.2K LOC C(부트로더+2앱) + ~2K Python · 130+ commits |
 
@@ -126,6 +126,10 @@ Gateway가 CAN heartbeat의 `driving_state`를 모니터링하여 ECU가 IDLE �
 | TC-02 | 3-strike — 고장 업데이트 → 3회 시도 후 자동 롤백 | ✅ PASS |
 | TC-03 | fail-closed — `size=0` 위조 메타 → 서명검증 우회 차단 | ✅ PASS |
 | TC-04 | 센서 staleness — 센서 침묵 → ~150ms 내 fail-safe 정지 | ✅ PASS |
+| TC-05 | endless-data — 작은 size 선언 후 초과 전송 → `NRC 0x31` + 세션종료 | ✅ PASS |
+| TC-06 | firmware 변조 — 1바이트 변조 → `ECDSA FAILED` 부팅거부 | ✅ PASS |
+| TC-07 | 미서명 — 서명 64B=0 → `ECDSA FAILED`(우회 불가) | ✅ PASS |
+| TC-08 | CAN flood — 폭주 중 OTA 깨져도 brick 없이 known-good 유지 | ✅ PASS |
 
 > 실 RC차 **on-target 벤치** 테스트(실물 환경). plant를 실시간 시뮬레이션하는 *엄밀한 의미의 HIL*과는 구분됩니다.
 
