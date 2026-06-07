@@ -257,8 +257,11 @@ void test_sa_lockout_after_three_wrong_keys(void)
     uds_send(seed_req, sizeof(seed_req));
     TEST_ASSERT_EQUAL_UINT8(0x37, s_tx_buf[2]);
 
-    /* 10초(=SEC_LOCK_MS) 경과 → 잠금 해제, seed 요청 정상 */
+    /* 10초(=SEC_LOCK_MS) 경과 → 잠금 해제. 단 그 사이 5s S3 타임아웃(FR-CAN-019)으로
+       세션이 Default로 abort됐으므로, 잠금 해제 확인 전 Extended 세션 재진입이 필요하다.
+       (잠금 카운터는 세션과 별개로 유지되어 S3로 우회되지 않는다.) */
     g_hal_tick = 10000;
+    do_extended_session();                  /* S3로 끊긴 세션 재진입 */
     uds_send(seed_req, sizeof(seed_req));
     TEST_ASSERT_EQUAL_UINT8(0x67, s_tx_buf[0]);
     TEST_ASSERT_EQUAL_UINT8(0x01, s_tx_buf[1]);
@@ -469,4 +472,34 @@ void test_transfer_exit_incomplete_returns_nrc_sequence_error(void)
     TEST_ASSERT_EQUAL_UINT8(0x7F, s_tx_buf[0]);
     TEST_ASSERT_EQUAL_UINT8(0x37, s_tx_buf[1]);
     TEST_ASSERT_EQUAL_UINT8(0x24, s_tx_buf[2]);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TC-UT-UDS-006: S3 세션 타임아웃 (FR-CAN-019 / FR-BL-012 / NFR-REL-003)
+   ═══════════════════════════════════════════════════════════════════════════
+   비-Default 세션에서 마지막 요청 후 5000ms 무요청이면 세션 abort → Default 복귀.   */
+
+/* 5s 초과 무요청 → 세션 abort. 이후 TransferData는 DOWNLOADING 아님 → NRC 0x22 */
+void test_s3_timeout_aborts_session(void)
+{
+    do_request_download();                       /* DOWNLOADING 진입(tick=0) */
+    TEST_ASSERT_EQUAL_INT(1, uds_ota_active());
+
+    g_hal_tick = 5001;                           /* S3_TIMEOUT_MS(5000) + 1 */
+    uds_process();                               /* 보류 메시지 없이 S3 검사 발화 */
+    TEST_ASSERT_EQUAL_INT(0, uds_ota_active());  /* 세션 abort → DOWNLOADING 아님 */
+
+    uint8_t blk[] = {0x36, 0x01, 0xAA};
+    uds_send(blk, sizeof(blk));
+    TEST_ASSERT_EQUAL_UINT8(0x7F, s_tx_buf[0]);
+    TEST_ASSERT_EQUAL_UINT8(0x22, s_tx_buf[2]);  /* conditionsNotCorrect */
+}
+
+/* 타임아웃 전(5s 이내)엔 abort 안 함 — 정상 전송 회귀 방지 */
+void test_s3_no_abort_within_timeout(void)
+{
+    do_request_download();
+    g_hal_tick = 4999;                           /* S3_TIMEOUT_MS 미만 */
+    uds_process();
+    TEST_ASSERT_EQUAL_INT(1, uds_ota_active());  /* 세션 유지 */
 }

@@ -251,7 +251,7 @@ select(metaA,metaB) → plan_boot(meta,max=3)
 ---
 
 ## 9. 검증 요약
-- **호스트 단위테스트 80개**(Ceedling, 라인 91%·분기 79% 커버리지 `ceedling gcov:all`) + gcc 독립검증(drive_sensor_fresh 6) — *순수 로직*.
+- **호스트 단위테스트 82개**(Ceedling, 라인 91%·분기 79% 커버리지 `ceedling gcov:all`) + gcc 독립검증(drive_sensor_fresh 6) — *순수 로직*.
 - **On-target 벤치 4종(SIT-001)** — 실 ECU·실 CAN·실 OTA로 보안 3(fail-closed·anti-rollback·3-strike) + 안전 1(staleness) 실증, 전부 PASS(2026-06-04).
 - 추적: §8로 *요구사항↔설계↔코드↔테스트* 양방향 연결.
 

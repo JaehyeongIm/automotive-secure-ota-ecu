@@ -8,7 +8,7 @@
 | 작성일 | 2026-06-04 |
 | 추적 | FR-BL-008, FR-AB-003/004/007, FR-AB-008, SR-FW-003, ISO 26262 안전상태 |
 
-> 호스트 단위테스트(80개)는 *순수 로직*("입력 X→반환 Y")을 증명한다. 이 플랜은 *실보드에서
+> 호스트 단위테스트(82개)는 *순수 로직*("입력 X→반환 Y")을 증명한다. 이 플랜은 *실보드에서
 > 실제로 그렇게 동작하는가*(플래시 쓰기·부팅·점프·CAN·타이밍)를 검증한다. 둘은 상호보완이며,
 > 단위테스트가 못 잡는 통합/하드웨어 결함을 여기서 잡는다.
 >
@@ -178,7 +178,7 @@ TC별 합격기준은 §3, 판정은 로그·heartbeat 자동 대조.
 - **절차(반자동):** `hil_runner.py --tc 08` → ① "Pi에서 cangen 시작" 프롬프트(`cangen can0 -g 1 -L 8 -D r`) → ② OTA 시도 → ③ "cangen 중지 후 리셋" 프롬프트 → 관측
 - **기대(관측):** 전송 깨지면 transfer_exit 미도달 → **메타 미commit** → 리셋 후 부트로더가 이전 CONFIRMED(v2) 부팅(`version v2 OK`). brick/hang 없음
 - **합격:** 폭주 후 이전 펌웨어(v2) 정상 부팅 + brick 없음
-- **⚠️ 한계(중요):** SRS **FR-CAN-019 "S3 세션 타임아웃(5s 무요청→Default 복귀)"는 현재 코드 미구현** — 폭주로 멈춘 세션이 *자동 abort*되지 않고 DOWNLOADING에 머문다(리셋 전까지 새 OTA 거부). 본 TC는 "부분 이미지 미활성·brick 없음"만 판정하고, **S3 자동복귀는 별도 미구현 항목(§19.1 후속)**으로 분리한다.
+- **S3 세션 타임아웃(FR-CAN-019/NFR-REL-003): 구현됨(2026-06-07)** — `uds_process()`가 5s 무요청 시 세션 abort→Default 복귀(양 ECU, 단위 `test_s3_timeout`). 폭주로 멈춘 세션도 5s 후 자동 회복. 본 TC의 no-brick(메타 미commit→known-good 유지)과 함께 *세션 자동 abort*도 충족.
 - **비고:** 부하 시험(`cangen`=can-utils). 정량 KPI(주입 부하율 vs 복구) 기록 권장
 
 ---
@@ -194,7 +194,7 @@ TC별 합격기준은 §3, 판정은 로그·heartbeat 자동 대조.
 | TC-05 | FR-CAN-012/013 | test_uds_state(누적초과·불완전 2종) | 본 플랜 |
 | TC-06 | TC-ATK-001(ECDSA 변조) | test_bootloader_slot(verify_decision REQUIRED) | 본 플랜 · forge_image --tamper |
 | TC-07 | TC-ATK-002(서명무효) | test_bootloader_slot(REQUIRED) | 본 플랜 · forge_image --unsign |
-| TC-08 | TC-ATK-008(no-brick) · ⚠FR-CAN-019(S3) 미구현 | — | 본 플랜 · cangen 부하(반자동) |
+| TC-08 | TC-ATK-008(no-brick) · FR-CAN-019(S3) 구현 | test_uds_state(S3 2종) | 본 플랜 · cangen 부하(반자동) |
 
 ---
 

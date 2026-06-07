@@ -19,7 +19,7 @@
 
 | 캠페인 | 범위 | 결과 |
 |---|---|---|
-| ① 호스트 단위테스트(Ceedling) | HAL 분리 *순수 코어* 로직 | **80/80 PASS** · 라인 ~91%·분기 ~79% |
+| ① 호스트 단위테스트(Ceedling) | HAL 분리 *순수 코어* 로직 | **82/82 PASS** · 라인 ~91%·분기 ~79% |
 | ② On-target 벤치(SIT-001) | 실 ECU 2대·실 CAN·실 OTA | **8/8 PASS** (기본 4: 보안 3+안전 1 · 공격 4: SIT-TC-05~08) |
 
 **판정: 구현 범위 PASS.** 미구현·미실행(replay·campaign·SIT 음성대조 등)은 **§19.1 잔여 위험으로 명시·수용**한다(과대 PASS 주장 없음).
@@ -38,7 +38,7 @@
 
 ---
 
-## 3. ① 호스트 단위테스트 결과 — 80/80 PASS
+## 3. ① 호스트 단위테스트 결과 — 82/82 PASS
 
 | 테스트 파일 | 케이스 | 결과 | 검증 대상(코어) |
 |---|---:|---|---|
@@ -48,8 +48,8 @@
 | `test_meta` | 7 | PASS | 메타 CRC32·`ota_meta_select`(FR-AB-005) |
 | `test_meta_lifecycle` | 8 | PASS | `plan_boot`(증가-먼저·3-strike)·`plan_confirm`(FR-AB-007) |
 | `test_ota_meta` | 10 | PASS | `write_pending`·`self_confirm`(RAM 하니스, FR-AB-004) |
-| `test_uds_state` | 27 | PASS | SecurityAccess·세션·시퀀스·**거부 분기**(음성)·endless-data 상한/완료(FR-CAN-009~016, 012/013) |
-| **합계** | **80** | **PASS (0 Failures)** | |
+| `test_uds_state` | 29 | PASS | SecurityAccess·세션·시퀀스·**거부 분기**(음성)·endless-data 상한/완료·**S3 타임아웃**(FR-CAN-009~019) |
+| **합계** | **82** | **PASS (0 Failures)** | |
 
 **커버리지(`gcov:all`, strict):** 라인 **~91%** · 분기 **~79%**. 코어별 실측 — `ota_flash` 98.3%L/73.7%B · `sha256` 94.4%L/83.3%B · `uds` 86.3%L/77.5%B · `hmac_sha256` 77.3%L/75.0%B. (HAL/페리페럴·startup 파일은 단위 범위 밖 — gcov "no coverage" 정상)
 
@@ -93,7 +93,7 @@
 | 005 | Replay(이전 Transfer 재전송) | ⬜ | **미구현 — §19.1 L-1**(강한 seed freshness=ATECC608A 후속) |
 | 006 | SecurityAccess 우회 RequestDownload | ✅(단위) | `test_uds_state`(미잠금/세션 거부 분기) |
 | 007 | endless-data(size 초과) | ✅ | **SIT-TC-05 on-target PASS** — 작은 size 선언 후 초과 전송→`NRC SID=0x36 code=0x31`+세션종료 + FR-CAN-012/013 단위 2종(ISS-SEC-001) |
-| 008 | CAN flood 중 업데이트 | ✅(no-brick) | **SIT-TC-08 on-target PASS** — cangen 폭주 중 OTA→`Receive timeout`→메타 미commit→리셋 후 known-good v2(ESR=0, Bus-Off 없음). ⚠ S3 자동복구(FR-CAN-019)는 미구현(§7) — no-brick은 "검증 후 활성화"가 보장 |
+| 008 | CAN flood 중 업데이트 | ✅ | **SIT-TC-08 on-target PASS** — cangen 폭주 중 OTA→`Receive timeout`→메타 미commit→리셋 후 known-good v2(ESR=0, Bus-Off 없음). **S3 세션 타임아웃(FR-CAN-019) 구현**(uds_process, 단위 PASS) → 멈춘 세션 자동 abort |
 | 009 | fake complete | 🔶 | fail-closed verify(**SIT-TC-03**·`verify_decision` 단위)로 commit 거부 경로 확인 |
 | 010 | Campaign partial(한 ECU만) | ⬜ | Uptane-lite 로드맵(README ⬜계획) — §19.1 계열 |
 
@@ -114,6 +114,7 @@
 | FR-AB-005 메타 원자성 | `test_meta`·`test_ota_meta` | PASS |
 | ISO 26262 센서 staleness | gcc(drive_sensor_fresh 6) + SIT-TC-04 | PASS |
 | FR-CAN-012/013 endless-data | `test_uds_state`(누적초과 0x31·불완전 0x24, 2종) + SIT-TC-05 | PASS(단위) |
+| FR-CAN-019 S3 타임아웃 / NFR-REL-003 / FR-BL-012 | `test_uds_state`(S3 abort·미abort 2종) + SIT-TC-08 | PASS(단위) |
 
 ---
 
@@ -125,7 +126,6 @@
 | TC-ATK-010 campaign partial | Uptane-lite 로드맵 | §19.1 계열·README |
 | SIT-TC-00 / -01b / -03b / -04b | 베이스라인·음성 대조 | SIT-001 §6 후속 |
 | FR-CAN-018 RDBID(0x22, Should) | 미구현(Should) | — |
-| **FR-CAN-019 S3 세션 타임아웃(Must)** | ⚠ 문서엔 "구현"이나 **코드 미반영**(uds.c 세션 타임아웃 없음) — 멈춘 OTA 세션 자동 abort 안 됨 | §19.1 후속(부분 OTA는 메타 미commit로 부팅 안전) |
 
 모든 이연 항목은 **SRS §19.1 한계·잔여 위험 레지스터**와 정합하며, 본 결과서는 이를 PASS로 위장하지 않는다.
 
@@ -133,8 +133,8 @@
 
 ## 8. 결론
 
-구현 범위(보안 6종 + 안전 1종)는 **단위 80/80 + on-target 8/8(기본 4 + 공격 4) 전부 PASS**로 검증됐다. 미구현·미실행은 §19.1에 잔여 위험으로 명시·수용했다.
-**회귀(재현):** 단위는 `ceedling test:all`(80개)·`gcov:all`, on-target은 `tools/hil_runner.py --all`로 재현 가능. FAIL 발생 시 8D 트러블슈팅(ISS) 발행(PRC-006).
+구현 범위(보안 6종 + 안전 1종)는 **단위 82/82 + on-target 8/8(기본 4 + 공격 4) 전부 PASS**로 검증됐다. 미구현·미실행은 §19.1에 잔여 위험으로 명시·수용했다.
+**회귀(재현):** 단위는 `ceedling test:all`(82개)·`gcov:all`, on-target은 `tools/hil_runner.py --all`로 재현 가능. FAIL 발생 시 8D 트러블슈팅(ISS) 발행(PRC-006).
 
 ---
 
@@ -147,3 +147,4 @@
 | 1.2 | 2026-06-07 | on-target 하네스 보강 — SIT-TC-05~08을 `hil_runner --tc 05..08`로 자동/반자동화(`ota_client --declared-size`, `forge_image.py`, cangen 반자동). **§5 008(CAN flood) 과대표기 정정** — FR-CAN-019 S3 타임아웃이 문서엔 "구현"이나 코드 미반영 확인 → §7 이연 항목으로 추가(부분 OTA는 메타 미commit로 부팅 안전) |
 | 1.3 | 2026-06-07 | **SIT-TC-01~04 on-target 재검증 4/4 PASS** — ABOM(ISS-CAN-006)·endless-data(FR-CAN-012/013) 펌웨어 변경 후 회귀 없음 확인(§4). 재검증 중 발견·해결: ISS-HW-001(ST-Link 글리치), ISS-SEC-002(PSK/구버전 클라이언트), ISS-OTA-006(고부하 FIFO, cf-delay 완화). 신규 SIT-TC-05~08은 후속 |
 | 1.4 | 2026-06-07 | **신규 공격 시나리오 SIT-TC-05~08 on-target 4종 PASS** — endless-data(05)·변조(06)·미서명(07)·CAN flood no-brick(08). §5 커버리지 ✅7·🔶1·⬜2로 승격(001·002·007·008), §4 결과표 추가·§7 해당 이연 제거. on-target 누계 **8/8** |
+| 1.5 | 2026-06-07 | **S3 세션 타임아웃(FR-CAN-019/NFR-REL-003/FR-BL-012) 구현** — 양 ECU `uds_process()`에 5s 무요청→세션 abort. 단위 2종(총 82). §5 008·§6 S3 행 추가, §7 FR-CAN-019 이연 제거. SRS에 FR-CAN-014(0x31)/015(0x11) 구현현황 주석·TC-FAIL-002 매핑 정정 동반 |

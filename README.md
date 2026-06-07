@@ -15,7 +15,7 @@ STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/
 |---|---|
 | 🔐 **보안 기능 6종** | Secure Boot(ECDSA-P256)·Anti-rollback·Fail-closed 검증게이팅·SecurityAccess(HMAC)·3-strike 롤백·메타 이중화 원자성 |
 | 🛡️ **안전 기능 1종** | 센서 staleness fail-safe (ISO 26262 안전상태 전이) |
-| ✅ **단위 테스트 80개** | 라인 커버리지 **91%** · 분기 커버리지 **79%** (`ceedling gcov:all`, strict) |
+| ✅ **단위 테스트 82개** | 라인 커버리지 **91%** · 분기 커버리지 **79%** (`ceedling gcov:all`, strict) |
 | 🔬 **On-target 검증 8/8 PASS** | 실 OTA·실 CAN·실 RC차 — 기본 4(보안 3+안전 1) + 공격 4종(변조·미서명·endless-data·flood) 실증 ([SIT-001](docs/SIT-001_System_Integration_Test_Plan.md)) |
 | 📄 **표준 산출물** | SRS·HARA·TARA·SDD·SIT·TR + ADR×10 + 트러블슈팅(8D)×14 — ASPICE SWE.1~6 추적 |
 | 📦 **규모** | ~6.2K LOC C(부트로더+2앱) + ~2K Python · 130+ commits |
@@ -114,7 +114,7 @@ Gateway가 CAN heartbeat의 `driving_state`를 모니터링하여 ECU가 IDLE �
 ## 검증 (Verification) — 2단계
 
 **① 호스트 단위 테스트** (순수 로직, `ceedling gcov:all`)
-- **80개** 테스트 · 라인 커버리지 **91%** · 분기 커버리지 **79%**(strict: taken-at-least-once)
+- **82개** 테스트 · 라인 커버리지 **91%** · 분기 커버리지 **79%**(strict: taken-at-least-once)
 - 양성 + **음성 테스트**(잘못된 SID·세션·시퀀스·`size=0`/초과·**타 ECU 이미지** 등 *거부 경로*)로 보안/안전의 분기 검증
 - HAL 의존부와 분리한 *순수 코어*(메타 상태머신·anti-rollback·검증게이팅·crypto)를 호스트에서 검증
 
@@ -179,7 +179,7 @@ Gateway가 CAN heartbeat의 `driving_state`를 모니터링하여 ECU가 IDLE �
 ├── Bootloader/           STM32 Custom Secure Bootloader
 ├── DriveECU/             Drive ECU 펌웨어 (App v1/v2, Slot A/B 링커)
 ├── SensorECU/            Sensor/Body ECU 펌웨어
-├── test/unit/            Ceedling 단위 테스트 80개 (gcov 커버리지)
+├── test/unit/            Ceedling 단위 테스트 82개 (gcov 커버리지)
 ├── tools/
 │   ├── ota_client.py     UDS/ISO-TP OTA 클라이언트 (IDLE 감지 포함)
 │   ├── sign_firmware.py  ECDSA-P256 서명 (앞 이미지 헤더)
@@ -220,7 +220,7 @@ gem install ceedling
 pip install python-can
 
 # 단위 테스트 + 커버리지
-ceedling test:all          # 80개 단위 테스트
+ceedling test:all          # 82개 단위 테스트
 ceedling gcov:all          # 라인/분기 커버리지 측정
 
 # On-target(실보드) 검증 — 실 ECU·CAN 연결 후 (SIT-001)
@@ -266,5 +266,5 @@ git tag v2 && git push origin v2
 - [ADR-009](docs/adr/ADR-009_ECU_Identity_Enforcement.md) — ECU 식별 강제(앱 컴파일타임 ID로 타 ECU 이미지 거부)
 - [ADR-010](docs/adr/ADR-010_HIL_to_SIT_Terminology.md) — 실보드 검증 명칭 HIL 폐기·SIT(시스템 통합 테스트) 채택
 - [TEST_SPEC](docs/TEST_SPEC_OTA_v1.0.md) — 소프트웨어 테스트 명세서
-- [TR-001](docs/TR-001_Test_Report.md) — 소프트웨어 테스트 결과서 (단위 80/80 · on-target 4/4 PASS · 공격 시나리오 커버리지)
+- [TR-001](docs/TR-001_Test_Report.md) — 소프트웨어 테스트 결과서 (단위 82/82 · on-target 8/8 PASS · 공격 시나리오 커버리지)
 - [diagram](docs/diagram.md) — 시스템 다이어그램 (Context / Block / State / Sequence / **보안·안전 흐름**)

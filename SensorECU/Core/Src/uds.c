@@ -18,6 +18,7 @@
 
 #define SEC_MAX_FAIL    3       /* consecutive Key failures before lockout */
 #define SEC_LOCK_MS     10000U  /* SecurityAccess lockout duration (ISO 14229) */
+#define S3_TIMEOUT_MS    5000U  /* ISO 14229 S3server — 무요청 시 세션 abort (FR-CAN-019/NFR-REL-003) */
 #define BUF_SIZE    512U
 #define OTA_ECU_ID  OTA_ECU_ID_SENSOR  /* 이 ECU의 식별자 (FR-CAN-011) */
 
@@ -28,6 +29,7 @@ static uint32_t g_fw_size;
 static uint32_t g_fw_written;
 static uint8_t  g_block_seq;
 static uint8_t  g_target_slot;
+static uint32_t g_last_req_tick;   /* S3 타임아웃: 마지막 UDS 요청 수신 시각 */
 static uint8_t  g_tx_fail_baseline;
 
 static uint8_t          g_pending_buf[BUF_SIZE];
@@ -95,6 +97,7 @@ void uds_init(void)
     g_pending_len   = 0;
     g_sec_fail      = 0;
     g_sec_locked    = 0;
+    g_last_req_tick = HAL_GetTick();
 }
 
 /* Called from CAN interrupt — copy only, no processing */
@@ -313,10 +316,18 @@ int uds_ota_active(void)
 
 void uds_process(void)
 {
+    /* S3 타임아웃(FR-CAN-019/FR-BL-012/NFR-REL-003): 비-Default 세션에서 마지막 요청 후
+       5s 무요청이면 세션 abort → Default 복귀(기존 App 유지). CAN 중단/멈춘 OTA 자동 회복. */
+    if (g_state != STATE_DEFAULT &&
+        (uint32_t)(HAL_GetTick() - g_last_req_tick) > S3_TIMEOUT_MS) {
+        printf("[UDS] S3 timeout — session abort -> default\r\n");
+        g_state = STATE_DEFAULT;
+    }
     if (!g_pending_ready) return;
     uint8_t  buf[BUF_SIZE];
     uint16_t len = g_pending_len;
     memcpy(buf, g_pending_buf, len);
     g_pending_ready = 0;
+    g_last_req_tick = HAL_GetTick();   /* S3: 요청 수신 시각 갱신 */
     handle(buf, len);
 }

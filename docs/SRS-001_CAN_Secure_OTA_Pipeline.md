@@ -318,12 +318,12 @@
 | FR-CAN-011 | Request Download 명령을 지원해야 한다. | Must | image_size·target_slot·**target_ecu_id·hardware_id**를 확인하고 불일치 시 즉시 NRC 0x31/0x33으로 거부(fail-fast)해야 한다. firmware_version이 현 CONFIRMED보다 낮으면 거부(SR-FW-003); 최종 anti-rollback은 부팅 시 서명 헤더(FR-BL-008). **구현 현황:** `target_ecu_id`는 위조불가 서명 헤더 기반으로 RequestTransferExit(0x37)에서 강제(ADR-009); `hardware_id`는 단일 보드종(F446) 구성에서 잉여이므로 후속으로 이연(§19.1 L-2). |
 | FR-CAN-012 | Transfer Data 명령을 지원해야 한다. | Must | Sequence Number와 Chunk 길이를 확인하고, **누적 수신이 RequestDownload의 image_size를 초과하면 NRC 0x31(requestOutOfRange)로 거부 후 세션 종료**해야 한다(endless-data 방어, SR-ATK-007). |
 | FR-CAN-013 | Request Transfer Exit 명령을 지원해야 한다. | Must | **누적 수신 == image_size를 확인**(불일치 시 NRC 0x24/0x72)한 뒤 검증 단계로 진입해야 한다. |
-| FR-CAN-014 | Routine Control - Verify Image 명령을 지원해야 한다. | Must | Hash/Signature/Version/ECU ID 검증 결과를 반환하며, **검증을 통과해야만 슬롯을 UPDATED로 표시**(미통과·미수행 시 부팅 대상 불가, fail-closed, FR-AB-003 연계)해야 한다. |
-| FR-CAN-015 | ECU Reset 명령을 지원해야 한다. | Must | 검증 성공 후 Reset을 통해 새 Slot 부팅을 시도해야 한다. |
+| FR-CAN-014 | Routine Control - Verify Image 명령을 지원해야 한다. | Must | Hash/Signature/Version/ECU ID 검증 결과를 반환하며, **검증을 통과해야만 슬롯을 UPDATED로 표시**(미통과·미수행 시 부팅 대상 불가, fail-closed, FR-AB-003 연계)해야 한다. **구현 현황:** 전용 UDS 0x31(RoutineControl) 서비스는 미구현 — 검증을 *부팅 시점*으로 이동(부트로더 ECDSA, FR-AB-003 fail-closed). 슬롯은 0x37에서 UPDATED로 표시되나 부팅 전 서명검증 실패 시 거부(SIT-TC-06/07 PASS)하므로 *나쁜 이미지 미실행* 의도는 충족; 0x31 명령·"검증→UPDATED" 흐름은 후속(§19.1). |
+| FR-CAN-015 | ECU Reset 명령을 지원해야 한다. | Must | 검증 성공 후 Reset을 통해 새 Slot 부팅을 시도해야 한다. **구현 현황:** 전용 UDS 0x11(ECUReset) 서비스는 미구현 — 0x37 완료 후 ECU가 자동 리셋(`HAL_Delay`→`NVIC_SystemReset`)하여 새 슬롯 시험부팅(FR-DRV-008: IDLE 시 재부팅). 외부 0x11 트리거는 후속. |
 | FR-CAN-016 | Negative Response Code를 정의해야 한다. | Must | 잘못된 세션, 보안 실패, 길이 오류, 순서 오류, 인증 실패 등을 구분해야 한다. |
 | FR-CAN-017 | Replay 방어를 위해 세션 nonce(SecurityAccess Seed 파생 session_id)를 사용해야 한다. | Should | 각 프로그래밍 세션은 session_id를 가지며 TransferData가 이를 참조하여, 이전 세션 메시지의 재전송이 거부되어야 한다(SR-ATK-005). Seed freshness 한계는 ADR-004(개선 ADR-006). |
 | FR-CAN-018 | Read Data By Identifier(0x22) 명령을 지원해야 한다. | Should | DID로 APP_VERSION·active_slot·target_ecu_id·boot 상태를 조회할 수 있어야 한다(ECU Inventory, SR-UP-001 / Uptane version-report). |
-| FR-CAN-019 | UDS 세션은 S3 타임아웃을 적용해야 한다. | Must | 마지막 요청 후 5000ms(ISO 14229 S3server) 동안 무요청이면 Default 세션으로 복귀(세션 abort)하고 기존 App을 유지해야 한다(SR-ATK-008, FR-BL-012·NFR-REL-003 연계). |
+| FR-CAN-019 | UDS 세션은 S3 타임아웃을 적용해야 한다. | Must | 마지막 요청 후 5000ms(ISO 14229 S3server) 동안 무요청이면 Default 세션으로 복귀(세션 abort)하고 기존 App을 유지해야 한다(SR-ATK-008, FR-BL-012·NFR-REL-003 연계). **구현 현황: 구현됨(2026-06-07)** — 양 ECU `uds_process()`가 비-Default 세션에서 마지막 요청 후 5000ms 무요청 시 세션 abort→Default 복귀. 단위 `test_s3_timeout_aborts_session`·`test_s3_no_abort_within_timeout` PASS. NFR-REL-003·FR-BL-012 세션-abort 요건 동시 충족. |
 
 ### 7.5 Drive ECU Application 요구사항
 
@@ -748,7 +748,7 @@ STM32F446RE Linker Script 및 실제 구현 기준으로 확정된 파티션.
 | 테스트 ID | 관련 요구사항 | 테스트 내용 | 기대 결과 |
 |---|---|---|---|
 | TC-FAIL-001 | FR-AB-005 | 업데이트 중 전원 차단 | 기존 Confirmed App 부팅 |
-| TC-FAIL-002 | FR-CAN-006 | Transfer Data Sequence 누락 | Request Sequence Error 응답 |
+| TC-FAIL-002 | FR-CAN-012 | Transfer Data Sequence 누락 | Request Sequence Error(NRC 0x73) 응답 |
 | TC-FAIL-003 | FR-BL-012 | 업데이트 중 통신 중단 | Timeout 후 abort |
 | TC-FAIL-004 | FR-AB-004 | 새 App Self-test 실패 | 이전 Slot rollback |
 | TC-FAIL-005 | FR-FL-004 | Slot 크기 초과 이미지 전송 | Request Out Of Range 또는 Programming Failure |
