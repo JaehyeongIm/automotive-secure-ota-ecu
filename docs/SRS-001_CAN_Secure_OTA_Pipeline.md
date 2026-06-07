@@ -248,8 +248,8 @@
 | ID | 요구사항 | 우선순위 | 수용 기준 |
 |---|---|---:|---|
 | FR-GW-001 | Raspberry Pi 5는 OTA Gateway 역할을 수행해야 한다. | Must | Gateway 프로세스가 ECU 목록, 버전, 상태를 수집할 수 있어야 한다. |
-| FR-GW-002 | Gateway는 Update Package와 Manifest를 읽고 파싱해야 한다. | Must | Manifest 필드를 정상적으로 파싱하고 누락 필드를 오류 처리한다. |
-| FR-GW-003 | Gateway는 Manifest에 포함된 ECU ID, Version, Image Size, Hash, Signature 정보를 관리해야 한다. | Must | Manifest 내용이 로그에 기록되어야 한다. |
+| FR-GW-002 | Gateway는 Update Package와 Manifest를 읽고 파싱해야 한다. | Must | Manifest 필드를 정상적으로 파싱하고 누락 필드를 오류 처리한다. **구현 현황:** 별도 Manifest 미사용(§8.1) — 게이트웨이(`ota_client.py`)는 서명된 이미지(`[헤더][코드][서명]`)를 그대로 전송하고, 헤더 검증은 ECU가 수행. Manifest 파싱 단계 없음. |
+| FR-GW-003 | Gateway는 Manifest에 포함된 ECU ID, Version, Image Size, Hash, Signature 정보를 관리해야 한다. | Must | Manifest 내용이 로그에 기록되어야 한다. **구현 현황:** ECU ID·Version은 **서명 헤더**에, Signature/Hash는 **이미지 ECDSA**에 내장(§8.1). 게이트웨이는 이미지 파일명·크기를 로그로 남김; 별도 Manifest 객체는 미관리. |
 | FR-GW-004 | Gateway는 대상 ECU별 업데이트 순서를 제어해야 한다. | Must | Drive ECU, Sensor ECU를 개별적으로 업데이트할 수 있어야 한다. |
 | FR-GW-005 | Gateway는 CAN을 통해 UDS-style 명령을 송수신해야 한다. | Must | Session Control, Request Download, Transfer Data 등 핵심 명령이 동작해야 한다. |
 | FR-GW-006 | Gateway는 업데이트 성공/실패 결과를 로그로 저장해야 한다. | Must | 각 ECU별 업데이트 결과, 실패 원인, 시간 정보가 기록되어야 한다. |
@@ -265,7 +265,7 @@
 | FR-BL-003 | Bootloader는 유효한 App이 있을 경우 해당 App으로 jump해야 한다. | Must | Vector Table 설정 후 App Reset Handler로 정상 진입해야 한다. |
 | FR-BL-004 | Bootloader는 CAN 기반 업데이트 세션에 진입할 수 있어야 한다. | Must | 특정 조건 또는 명령 수신 시 update mode에 진입해야 한다. |
 | FR-BL-005 | Bootloader는 수신한 펌웨어 조각을 비활성 Slot에 기록해야 한다. | Must | Flash erase/write가 섹터 경계와 주소 범위 내에서 수행되어야 한다. |
-| FR-BL-006 | Bootloader는 펌웨어 전체 Hash를 검증해야 한다. | Must | Manifest의 Hash와 실제 Slot 이미지 Hash가 일치해야 한다. |
+| FR-BL-006 | Bootloader는 펌웨어 전체 Hash를 검증해야 한다. | Must | Manifest의 Hash와 실제 Slot 이미지 Hash가 일치해야 한다. **구현 현황:** 별도 Manifest Hash 없이 부트로더가 `SHA-256(헤더+코드)`를 계산해 ECDSA 서명 검증에 사용(§8.1) — hash 무결성이 서명검증에 내포되어, 1바이트만 변조돼도 ECDSA FAILED(SIT-TC-06 PASS). |
 | FR-BL-007 | Bootloader는 펌웨어 Signature를 검증해야 한다. | Must | 공개키 기반 검증 실패 시 업데이트를 거부해야 한다. |
 | FR-BL-008 | Bootloader는 Firmware Version을 확인하고 다운그레이드를 차단해야 한다. | Must | 현재 Confirmed Version보다 낮은 버전은 거부해야 한다. 구현: **ADR-007**(앞 서명 헤더 fw_version vs 메타 CONFIRMED 슬롯 버전; 기준선 변조방지는 ATECC608A 후속). |
 | FR-BL-009 | Bootloader는 Target ECU ID/HW ID를 확인해야 한다. | Must | 다른 ECU용 이미지 설치를 거부해야 한다. |
@@ -299,7 +299,7 @@
 | FR-AB-005 | 업데이트(특히 메타데이터 갱신) 도중 전원 차단이 발생해도 기존 CONFIRMED App이 유지되어야 하며, 메타데이터는 **원자적으로** 갱신되어야 한다. | Must | 메타데이터를 **2개의 분리된 플래시 섹터에 이중화(redundant)**하고 각 사본에 CRC32와 monotonic `seq_counter`를 둔다. 갱신은 구(舊) 사본에 기록하고 CRC를 **마지막에** 기록하며, 부팅 시 CRC가 유효하고 seq가 최신인 사본을 선택한다(AUTOSAR NvM redundant-block 패턴). 메타 쓰기 중 전원 차단 테스트 후 기존 App으로 정상 부팅해야 한다. |
 | FR-AB-006 | Boot Metadata는 슬롯 5상태(slot_a/b_status), active_slot, slot 버전, boot_attempt_count, slot 크기, metadata_crc, seq_counter를 관리해야 한다. | Should | §13.3의 필드를 모두 포함하고, metadata dump 또는 로그에서 상태 확인이 가능해야 한다. |
 | FR-AB-007 | 부트로더는 UPDATED 슬롯으로 점프하기 **직전** boot_attempt_count를 비휘발성으로 1 증가시키고, Self-test PASS 시 0으로 리셋하며 CONFIRMED로 전이해야 한다. count가 3을 초과하면 해당 슬롯을 INVALID로 마킹하고 이전 CONFIRMED Slot으로 롤백해야 한다. | Should | hang·crash·reset 등 Self-test를 완료하지 못한 **모든** 경우가 카운트되어, 3회 초과 시 자동 롤백이 확인되어야 한다(증가-먼저-점프). 임계값 3과 롤백 총지연(3×부팅시간)은 ISO 26262 FTTI 범위 및 IWDG 윈도우 내여야 한다. |
-| FR-AB-008 | 각 App 이미지는 고정 오프셋(offset 0)에 **서명으로 보호되는 Image Header**를 포함해야 한다. | Must | 헤더는 `{magic, header_version, target_ecu_id, hardware_id, fw_version, image_size, image_hash}`를 포함하고, ECDSA 서명이 (헤더+코드)를 함께 덮어야 한다. 부트로더는 이미지를 **실행하지 않고** 헤더만 읽어 anti-rollback(fw_version, FR-BL-008/SR-FW-003)과 ECU ID 일치(FR-BL-009)를 검증한다. 기대 fw_version의 출처는 서명된 Manifest(§13.1)이며, ECU는 Gateway의 Manifest를 신뢰하지 않고 헤더+서명으로 독립 검증해야 한다(SR-UP-004, Uptane). |
+| FR-AB-008 | 각 App 이미지는 고정 오프셋(offset 0)에 **서명으로 보호되는 Image Header**를 포함해야 한다. | Must | 헤더는 `{magic, header_version, target_ecu_id, hardware_id, fw_version, image_size, image_hash}`를 포함하고, ECDSA 서명이 (헤더+코드)를 함께 덮어야 한다. 부트로더는 이미지를 **실행하지 않고** 헤더만 읽어 anti-rollback(fw_version, FR-BL-008/SR-FW-003)과 ECU ID 일치(FR-BL-009)를 검증한다. 기대 fw_version의 출처는 서명된 Manifest(§13.1)이며, ECU는 Gateway의 Manifest를 신뢰하지 않고 헤더+서명으로 독립 검증해야 한다(SR-UP-004, Uptane). **구현 현황:** 헤더는 subset `{magic, fw_version, target_ecu_id, reserved}`(16B)만 구현(`OTA_ImgHeader_t`) — `header_version·hardware_id·image_size·image_hash`는 헤더에 두지 않음(image_hash는 ECDSA가 흡수, image_size는 Boot Metadata, hardware_id는 §19.1 L-2 이연). 별도 Manifest(§13.1)는 미생성, 서명 헤더가 그 역할 대체(§8.1). |
 
 ### 7.4 CAN / ISO-TP / UDS 프로토콜 요구사항
 
@@ -358,7 +358,7 @@ Jenkins 기반 CI/CD 파이프라인은 Raspberry Pi 5에서 운용되며, Git p
 | FR-CICD-003 | Stage 1에서 arm-none-eabi-gcc를 통해 Drive ECU 및 Sensor ECU 펌웨어를 크로스컴파일해야 한다. | Must | 빌드 오류 발생 시 이후 Stage가 실행되지 않고 파이프라인이 중단되어야 한다. |
 | FR-CICD-004 | Stage 2에서 cppcheck를 통해 펌웨어 소스코드 정적 분석을 수행해야 한다. | Should | error 등급 이상의 결함 검출 시 파이프라인이 중단되고 결함 목록이 로그에 기록되어야 한다. |
 | FR-CICD-005 | Stage 3에서 빌드된 펌웨어 바이너리 크기가 App Slot 크기(128KB)를 초과하는지 검사해야 한다. | Must | 초과 시 파이프라인이 중단되고 실제 크기와 한계 크기가 로그에 기록되어야 한다. |
-| FR-CICD-006 | Stage 4에서 ECDSA 개인키로 펌웨어에 서명하고 Manifest를 생성해야 한다. | Must | 서명된 펌웨어 바이너리와 Manifest 파일이 Jenkins 아티팩트로 저장되어야 한다. |
+| FR-CICD-006 | Stage 4에서 ECDSA 개인키로 펌웨어에 서명하고 Manifest를 생성해야 한다. | Must | 서명된 펌웨어 바이너리와 Manifest 파일이 Jenkins 아티팩트로 저장되어야 한다. **구현 현황:** 별도 Manifest 파일은 미생성(§8.1) — `sign_firmware.py`가 서명 헤더+ECDSA를 이미지에 내장한 *서명 바이너리*만 산출(이게 Manifest의 무결성·인증성 기능을 흡수). campaign_id/expiration 메타는 Uptane-lite 후속. |
 | FR-CICD-007 | Stage 5에서 OTA 배포 스크립트는 주행 중에도 다운로드를 시작할 수 있으나, 실제 펌웨어 활성화(재부팅)는 ECU가 IDLE 상태가 된 후 자동으로 수행된다. | Must | UDS over ISO-TP 절차(0x10→0x27→0x34→0x36→0x37)로 비활성 슬롯에 펌웨어 기록을 완료한다. TransferExit 후 ECU는 g_fw_pending=1을 세트하고 즉시 재부팅하지 않는다. DRIVE_IDLE 상태 진입 시 ECU가 자동 재부팅하며, Jenkins는 heartbeat(CAN 0x100) 슬롯 전환을 확인한다. (Uptane 지연 활성화, FR-DRV-008 연계) |
 | FR-CICD-008 | 각 Stage의 실행 결과와 로그가 Jenkins 빌드 이력에 기록되어야 한다. | Must | 성공/실패 여부, 실패 원인, 각 Stage 소요 시간이 Jenkins UI에서 확인 가능해야 한다. |
 | FR-CICD-009 | ECDSA 개인키는 Jenkins Credentials로 관리되어야 하며 Jenkinsfile에 평문 노출되지 않아야 한다. | Must | Jenkinsfile 소스코드에 키 값이 존재하지 않아야 한다. |
@@ -369,6 +369,23 @@ Jenkins 기반 CI/CD 파이프라인은 Raspberry Pi 5에서 운용되며, Git p
 ## 8. 보안 요구사항
 
 ### 8.1 Manifest 요구사항
+
+> **구현 현황 — 별도 Manifest 대신 임베디드 서명 헤더(ADR-007)로 대체.**
+> 본 구현은 별도 Manifest 파일을 생성·전송·파싱하지 않고, 펌웨어 이미지 맨 앞(offset 0)에
+> **ECDSA로 보호되는 Image Header**(`[헤더][코드][서명 64B]`, FR-AB-008)를 임베드한다. ECDSA가
+> (헤더+코드)를 통째로 덮어 헤더 필드가 위조 불가하며, ECU는 게이트웨이를 신뢰하지 않고 헤더+서명을
+> 독립 검증한다(SR-UP-004, Uptane 핵심 원칙). 이미지↔메타 불일치가 구조적으로 불가능한 MCUboot 정석 포맷.
+> 아래 SR-MF 필드별 충족 현황:
+> - **001** 패키지에 Manifest 포함 → 🔁 **서명 헤더로 대체**(별도 Manifest 파일 없음)
+> - **002** target_ecu_id → ✅ 헤더 `target_ecu_id`(ADR-009, 0x37에서 강제)
+> - **003** firmware_version → ✅ 헤더 `fw_version`(anti-rollback, FR-BL-008/ADR-007)
+> - **004** image_size → ✅ Boot Metadata `slot size` + RequestDownload(0x34) size(FR-CAN-011/012)
+> - **005** image_hash → ✅ 별도 hash 필드 없이 **ECDSA가 SHA-256(헤더+코드)을 흡수**(부트로더 `uECC_verify`)
+> - **006** signature → ✅ 이미지 ECDSA-P256 서명(헤더+코드 64B)
+> - **007** campaign_id → ⬜ 미구현 — 다중 ECU 캠페인은 **Uptane-lite 후속**(§19.1, TC-ATK-010)
+> - **008** expiration/metadata_version → ⬜ 미구현 — freshness(Uptane Timestamp/Snapshot 상당)는 후속(replay 방어 SR-ATK-005 연계)
+>
+> Uptane 상위 메타데이터 계층(Director/Image repo 분리, TUF roles, freshness)은 *Uptane-lite* 범위 제한(§1).
 
 | ID | 요구사항 | 우선순위 | 수용 기준 |
 |---|---|---:|---|
@@ -382,6 +399,8 @@ Jenkins 기반 CI/CD 파이프라인은 Raspberry Pi 5에서 운용되며, Git p
 | SR-MF-008 | Manifest는 expiration 또는 metadata_version을 포함해야 한다. | Should | 오래된 Manifest 재사용을 방지해야 한다. |
 
 ### 8.2 Firmware 검증 요구사항
+
+> 아래 수용 기준의 *"Manifest Hash/Signature"* 는 §8.1 설계결정에 따라 **이미지 ECDSA-P256 서명(헤더+코드)** 검증으로 충족된다(별도 Manifest hash/sig 없음). 부트로더가 부팅 직전 `SHA-256(헤더+코드)` → `uECC_verify`로 무결성+인증성을 함께 검증(SR-FW-001/002, on-target SIT-TC-06/07 PASS).
 
 | ID | 요구사항 | 우선순위 | 수용 기준 |
 |---|---|---:|---|
@@ -443,10 +462,10 @@ Jenkins 기반 CI/CD 파이프라인은 Raspberry Pi 5에서 운용되며, Git p
 | ID | 요구사항 | 우선순위 | 수용 기준 |
 |---|---|---:|---|
 | SR-UP-001 | Gateway는 ECU Inventory를 수집해야 한다. | Must | 각 ECU의 version, slot, state가 기록되어야 한다. |
-| SR-UP-002 | Manifest는 ECU별 대상 이미지를 명확히 구분해야 한다. | Must | Drive ECU와 Sensor ECU 이미지가 구분되어야 한다. |
-| SR-UP-003 | Gateway는 Campaign 단위 업데이트 결과를 관리해야 한다. | Should | 전체 성공, 일부 성공, 전체 실패 상태가 구분되어야 한다. |
-| SR-UP-004 | ECU는 Gateway 검증 결과만 신뢰하지 않고 자체 검증을 수행해야 한다. | Must | Gateway가 변조되었다는 가정에서도 unsigned image가 설치되지 않아야 한다. |
-| SR-UP-005 | Manifest 재사용 공격을 방어해야 한다. | Should | metadata_version 또는 expiration 기반으로 오래된 Manifest를 거부해야 한다. |
+| SR-UP-002 | Manifest는 ECU별 대상 이미지를 명확히 구분해야 한다. | Must | Drive ECU와 Sensor ECU 이미지가 구분되어야 한다. **구현 현황:** Manifest 대신 **서명 헤더 `target_ecu_id`**(1=Drive/2=Sensor)로 구분, 0x37에서 강제(ADR-009, §8.1). |
+| SR-UP-003 | Gateway는 Campaign 단위 업데이트 결과를 관리해야 한다. | Should | 전체 성공, 일부 성공, 전체 실패 상태가 구분되어야 한다. **구현 현황:** ⬜ 미구현 — Uptane-lite 캠페인 후속(§19.1, TC-ATK-010). |
+| SR-UP-004 | ECU는 Gateway 검증 결과만 신뢰하지 않고 자체 검증을 수행해야 한다. | Must | Gateway가 변조되었다는 가정에서도 unsigned image가 설치되지 않아야 한다. **구현 현황:** ✅ 충족 — 부트로더가 게이트웨이 무관 ECDSA(헤더+코드) 독립 검증(SIT-TC-06/07 PASS). Uptane "ECU 자체검증" 핵심 원칙. |
+| SR-UP-005 | Manifest 재사용 공격을 방어해야 한다. | Should | metadata_version 또는 expiration 기반으로 오래된 Manifest를 거부해야 한다. **구현 현황:** ⬜ 미구현 — freshness(expiration/metadata_version)는 서명 헤더에 없음; replay 방어(SR-ATK-005/FR-CAN-017)와 함께 Uptane-lite freshness 후속(§19.1 L-1). |
 
 ---
 
@@ -1057,4 +1076,5 @@ TSR-001  (SUP.9)
 | 2.10 | 2026-06-05 | ECU 식별 강제 구현(FR-CAN-011) — 서명 헤더 `target_ecu_id`가 정의·서명만 되고 *아무도 거부하지 않던* 갭 해소. 앱 컴파일타임 ID(`OTA_ECU_ID` Drive=1/Sensor=2)로 RequestTransferExit(0x37)에서 헤더 ecu_id≠자기ID면 NRC 0x31 거부(메타 commit 전). FR-CAN-011은 0x34 *요청필드* 검사를 상정했으나, 구현은 *서명 헤더*(위조불가)를 0x37에서 검사해 의도를 더 강하게 충족. 순수함수 `ota_meta_ecu_id_allowed`(SSOT 3곳), test_anti_rollback 4 신규(총 10, 누적 78). UDS 우회(직접플래시) 차단=부트로더 defense-in-depth 후속, ADR-009 |
 | 2.11 | 2026-06-05 | **한계·잔여위험 통합 레지스터 신설(§19.1)** — 흩어져 있던 후속 항목을 한 표로 색인(ISO/SAE 21434 잔여위험 수용·ASPICE SWE.6): 보안 6항목(L-1 replay·L-2 hardware_id·L-3 잠금NV·L-4 seed·L-5 anti-rollback 기준선·L-6 ECU-id 앱레벨 — 대부분 ATECC608A 입고로 해소) + 제어 1항목(L-7 직진 안정화 — 엔코더·IMU 입고로 해소)을 *현재완화·후속트리거·근거ADR*과 함께 명시. FR-CAN-011에 `hardware_id` 후속 이연 표기, §19(9) 직진 이슈 근본원인 규명(엔코더·IMU 부재→개루프, 폐루프 제어로 해소). README에 레지스터 포인터 추가 |
 | 2.12 | 2026-06-05 | (1) 보안 공격 테스트 ID 충돌 해소 — SRS의 `TC-SEC-001~010`을 `TC-ATK-001~010`으로 개명(SR-ATK와 1:1 대응, TEST_SPEC의 `TC-SEC` 실행스펙(양성 테스트 포함)과 네임스페이스 분리). (2) §21.2·MS-004의 "공격 10종 통과/PASS" → "구현분 통과"로 calibrate(replay·campaign 등 미구현은 §19.1 후속과 정합). (3) 테스트 결과서 **TR-001** 신규 작성(단위 78/78·on-target 4/4 PASS 기록·공격 시나리오 커버리지 매핑). SDD 참조 v2.12 동기화 |
+| 2.13 | 2026-06-07 | **추적성 정합(구현 현황 주석 일괄)** — 문서-구현 divergence 명문화: (1) **Manifest→임베디드 서명 헤더(ADR-007) 대체**를 §8.1에 설계결정 note + SR-MF-001~008 필드별 충족/이연 매핑, §8.2·FR-GW-002/003·FR-CICD-006·FR-BL-006·FR-AB-008(헤더 4필드 subset)·SR-UP-002/004/005에 구현현황 주석. campaign_id·expiration(freshness)은 Uptane-lite 후속. (2) **FR-CAN-014(0x31)/015(0x11) 미구현→대체설계** 주석, **FR-CAN-019 S3 타임아웃 구현**(uds_process, 단위 2종), TC-FAIL-002 매핑 FR-CAN-006→012 정정 |
 
