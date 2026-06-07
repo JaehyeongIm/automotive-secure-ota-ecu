@@ -250,6 +250,7 @@ git tag v2 && git push origin v2
 - [HARA-001](docs/HARA-001_Hazard_Analysis_Risk_Assessment.md) — 위험원 분석·리스크 평가 (ISO 26262)
 - [TARA-001](docs/TARA-001_Threat_Analysis_Risk_Assessment.md) — 위협 분석·리스크 평가 (ISO/SAE 21434)
 - [SIT-001](docs/SIT-001_System_Integration_Test_Plan.md) — on-target(실보드) 테스트 플랜·실행기록 (보안 3 + 안전 1 PASS)
+- [SIT-001 RUNBOOK](docs/SIT-001_RUNBOOK.md) — on-target 공격 시나리오 TC 실행 절차(명령·복구·트러블슈팅)
 - [ADR-001](docs/adr/ADR-001_OTA_Activation_Architecture.md) — OTA 활성화 아키텍처 의사결정
 - [ADR-002](docs/adr/ADR-002_Boot_Timing_Measurement.md) — 부트 타이밍(Tboot) 측정 방식 결정
 - [ADR-003](docs/adr/ADR-003_SecurityAccess_Lockout_Storage.md) — SecurityAccess 잠금 상태 저장 위치(RAM vs NV)

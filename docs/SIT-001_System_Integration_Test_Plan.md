@@ -67,6 +67,8 @@
 
 ## 2. 실행 자동화 (`tools/hil_runner.py`)
 
+> **실행 절차(사전준비·TC별 명령·복구·트러블슈팅)는 [SIT-001 RUNBOOK](SIT-001_RUNBOOK.md) 참조.**
+
 자극→관측→판정을 자동화한다. 관측은 CAN heartbeat(0x100/0x201) + ECU UART 로그,
 자극은 `ota_client.py`(OTA·`--declared-size`로 endless-data)·`forge_meta.py`+st-flash(메타 위조)·
 `forge_image.py`(이미지 변조/미서명)·`cangen`(CAN flood, 반자동)·운영자 프롬프트(전원·센서·버튼)를 엮는다.
