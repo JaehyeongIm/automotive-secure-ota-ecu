@@ -21,9 +21,10 @@
 |---|---|---|
 | ① 호스트 단위테스트(Ceedling) | HAL 분리 *순수 코어* 로직 | **82/82 PASS** · 라인 ~91%·분기 ~79% |
 | ② On-target 벤치(SIT-001) | 실 ECU 2대·실 CAN·실 OTA | **8/8 PASS** (기본 4: 보안 3+안전 1 · 공격 4: SIT-TC-05~08) |
+| ③ CI/CD 파이프라인 E2E 배포(Jenkins) | git-push 트리거·빌드/ECDSA 서명·승인 게이트·양 ECU 실 OTA 배포 | **PASS** (v4 릴리스 양 ECU 슬롯전환·부팅 확인 — build #86; §4.1) |
 
 **판정: 구현 범위 PASS.** 미구현·미실행(replay·campaign·SIT 음성대조 등)은 **§19.1 잔여 위험으로 명시·수용**한다(과대 PASS 주장 없음).
-실행일 — 단위: 2026-06-05(본 결과서 작성 시 재실행 확인), on-target: 2026-06-04.
+실행일 — 단위: 2026-06-05(본 결과서 작성 시 재실행 확인), on-target: 2026-06-04, CI/CD E2E 배포: 2026-06-07(Jenkins build #86, §4.1).
 
 ---
 
@@ -77,6 +78,19 @@
 | SIT-TC-08 | CAN flood(no-brick) | cangen 폭주 중 OTA → `Receive timeout` → 메타 미commit → known-good v2(ESR=0) | **PASS** |
 
 - **미실행:** SIT-TC-00(베이스라인)·SIT-TC-01b/03b/04b(음성 대조) → 후속(SIT-001 §6 기록과 일치).
+
+### 4.1 ③ CI/CD 파이프라인 E2E 배포 실증 (Jenkins)
+
+> ADR-008(배포 트리거=릴리스 태그 / CI=브랜치 푸시 분리)·ADR-007(anti-rollback 단조 버전) 운영 경로를 Jenkins 파이프라인으로 실제 실행했다. 배포 단계는 운영 OTA 경로(`ota_client.py`·`read_slot.py`)를 그대로 사용한다(SIT-001 §1 동일 벤치).
+
+| 빌드 | 트리거 | 핵심 관측 | 결과 |
+|---|---|---|---|
+| #85 | git push (GitHub webhook `POST /github-webhook/ 200`) | Detect `release=true version=4 drive=true sensor=true` → 단위/정적분석/빌드·서명(ECDSA A·B 4개) → 승인(`raspberrypi`) → Deploy DriveECU PASS → **Deploy SensorECU 실패**(`[OTA] ERROR: Receive timeout`, `OTA_EXIT=1`) → **파이프라인 FAILURE → 이전 펌웨어 유지** | 트리거·실패경로 PASS / 배포 FAIL |
+| #86 | Build Now (수동 재실행, 벤치 SensorECU 재플래시 후) | 동일 단계 + **양 ECU 실 OTA** — Drive `OTA 완료: SlotB 부팅 확인`, Sensor UDS `0x7E9` 정상응답→SecurityAccess Unlock→149블록 100%→RequestTransferExit→`OTA 완료: SlotB 부팅 확인` → `Finished: SUCCESS` | **PASS** |
+
+- **#86(성공):** 빌드 → ECDSA 서명 → **승인 게이트(UN R156 SUMS형)** → 양 ECU UDS/ISO-TP OTA → A→B 슬롯 전환·재부팅 확인까지 CI/CD E2E 전 구간 실증. anti-rollback 단조 버전 v4(계획 TC-CI-003 "v1→v2"와 흐름 동일, 버전만 상이).
+- **#85(실패 경로 = FR-CICD-010 실증):** 배포 대상 SensorECU가 일시적으로 UDS 무응답(0x200/0x201 송신은 살아있으나 메인루프 `uds_process()` 미동작)이어서 OTA 실패 → 파이프라인이 **FAILURE로 처리하고 ECU를 이전 펌웨어로 유지**(부분 flash·브릭 없음). 의도적 CAN 차단 주입(계획 절차)은 아니나 **실패 처리·fail-safe 동작이 직접 실증**됐다. `tools/flash.sh sensor … --build` 재플래시로 복구 후 #86 정상(상세 [ISS-OTA-007](troubleshooting/ISS-OTA-007_sensor-deploy-timeout-bench-hang.md)).
+- **재현:** Jenkins `Build Now`(또는 릴리스 `vN` 태그 푸시) → 승인 → 콘솔/`read_slot.py --wait-reboot`로 슬롯 전환 확인.
 
 ---
 
@@ -147,12 +161,12 @@
 | TC-SLOT-001 메타 없을 때 Slot A 기본 | FR-BL-002/FR-AB-001 | `test_meta`·`test_bootloader_slot`(기본 슬롯, 단위) | ✅ |
 | TC-SLOT-002 A→B 전환 | FR-AB-002/FR-BL-003 | on-target OTA(SIT-TC-01/02 슬롯 전환 관측) | ✅ |
 | TC-SLOT-003 B→A 재전환 | FR-AB-002 | A→B는 실증, 역방향 전용 기록 없음(대칭 로직) | 🔶 |
-| TC-CI-001 git push 자동 트리거 | FR-CICD-002 | Jenkinsfile 구현·운영(최근 커밋), 전용 결과 기록 후속 | 🔶 |
-| TC-CI-002 변경 ECU 선택 빌드 | FR-CICD-003 | Jenkinsfile changed-detection 구현, 전용 기록 후속 | 🔶 |
-| TC-CI-003 E2E OTA(v1→v2) | FR-CICD-007/008 | OTA E2E는 `hil_runner`로 실증. git-push→OTA 완전자동 E2E 전용 기록 후속 | 🔶 |
-| TC-CI-004 OTA 실패 처리(FAILURE) | FR-CICD-010 | 실패 주입(CAN 차단) 전용 케이스 미실행 | ⬜ |
+| TC-CI-001 git push 자동 트리거 | FR-CICD-002 | **Jenkins build #85** — git push(webhook 200)로 파이프라인 자동 시작(§4.1) | ✅ |
+| TC-CI-002 변경 ECU 선택 빌드 | FR-CICD-003 | #85·#86 Detect `git diff v3 HEAD`→`drive=true sensor=true`로 per-ECU 스테이지 게이팅 실증. 단일 ECU만 변경 시 *제외(skip)* 케이스는 양쪽 변경 릴리스라 미격리 | 🔶 |
+| TC-CI-003 E2E OTA(릴리스 배포) | FR-CICD-007/008 | **Jenkins build #86 PASS** — 빌드·ECDSA 서명·승인 게이트·양 ECU UDS OTA·A→B 슬롯전환·재부팅 확인 전 구간(§4.1). 버전 v4(흐름은 계획 v1→v2와 동일) | ✅ |
+| TC-CI-004 OTA 실패 처리(FAILURE) | FR-CICD-010 | **Jenkins build #85** — 실 OTA 실패(SensorECU 무응답)→`OTA_EXIT=1`→파이프라인 FAILURE→이전 펌웨어 유지(fail-safe) 실증(§4.1). 의도적 CAN 차단 주입 방식은 후속 | ✅ |
 
-**집계: ✅ 16 · 🔶 10 · ⬜ 2 (28종).** ✅ 16종은 단위 또는 on-target에서 직접 실증됐고, 🔶 10종은 메커니즘은 확인됐으나 전용 정량기록이 후속(주로 주행 거동 타이밍·CI 파이프라인 전용 기록)이며, ⬜ 2종(TC-DRV-004 v2 후진 거동·TC-CI-004 실패 주입)은 미실행으로 §7·§19.1에 연결한다.
+**집계: ✅ 19 · 🔶 8 · ⬜ 1 (28종).** (2026-06-07 CI/CD on-target 실증으로 TC-CI-001·003·004 ✅ 승격 — §4.1 Jenkins build #85·#86.) ✅ 19종은 단위·on-target·CI/CD에서 직접 실증됐고, 🔶 8종은 메커니즘은 확인됐으나 전용 정량기록이 후속(주행 거동 타이밍·단일 ECU 선택빌드 격리 등)이며, ⬜ 1종(TC-DRV-004 v2 후진 거동)은 미실행으로 §7·§19.1에 연결한다.
 
 ---
 
@@ -165,7 +179,6 @@
 | SIT-TC-00 / -01b / -03b / -04b | 베이스라인·음성 대조 | SIT-001 §6 후속 |
 | FR-CAN-018 RDBID(0x22, Should) | 미구현(Should) | — |
 | TC-DRV-004 v2 후진 거동 | v2 OTA 설치는 확인, 거동 전용 검증 미수행 | §6.1 ⬜ |
-| TC-CI-004 OTA 실패 주입 | Jenkins 실패 경로 전용 케이스 미실행 | §6.1 ⬜ |
 
 모든 이연 항목은 **SRS §19.1 한계·잔여 위험 레지스터**와 정합하며, 본 결과서는 이를 PASS로 위장하지 않는다.
 
@@ -189,3 +202,4 @@
 | 1.4 | 2026-06-07 | **신규 공격 시나리오 SIT-TC-05~08 on-target 4종 PASS** — endless-data(05)·변조(06)·미서명(07)·CAN flood no-brick(08). §5 커버리지 ✅7·🔶1·⬜2로 승격(001·002·007·008), §4 결과표 추가·§7 해당 이연 제거. on-target 누계 **8/8** |
 | 1.5 | 2026-06-07 | **S3 세션 타임아웃(FR-CAN-019/NFR-REL-003/FR-BL-012) 구현** — 양 ECU `uds_process()`에 5s 무요청→세션 abort. 단위 2종(총 82). §5 008·§6 S3 행 추가, §7 FR-CAN-019 이연 제거. SRS에 FR-CAN-014(0x31)/015(0x11) 구현현황 주석·TC-FAIL-002 매핑 정정 동반 |
 | 1.6 | 2026-06-07 | **계획 테스트명세(TS-OTA-001, 28종) ↔ 실행 결과 매핑** 신설(§6.1) — 단위/on-target 두 채널의 실행 증거를 28개 계획 TC에 연결(✅16·🔶10·⬜2). ⬜ 2종(TC-DRV-004·TC-CI-004) §7 이연 추가. TS-OTA-001 §13 집계·포인터 정합 |
+| 1.7 | 2026-06-07 | **CI/CD 파이프라인 E2E 배포 on-target 실증(§4.1 신설)** — Jenkins build #86 v4 릴리스 전 구간 PASS(빌드·ECDSA 서명·승인 게이트·양 ECU UDS OTA·슬롯전환·재부팅 확인), build #85 git-push 자동트리거 + OTA 실패→FAILURE→fail-safe(FR-CICD-010) 실증. §1 캠페인 ③ 추가, §6.1 TC-CI-001·003·004 ✅ 승격(집계 ✅19·🔶8·⬜1), §7 TC-CI-004 이연 제거. TS-OTA-001 §13.1 동반 정합 |

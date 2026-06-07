@@ -111,8 +111,8 @@
 
 | ID | 요구(요약) | 코드 | 검증 | 상태 |
 |---|---|---|---|---|
-| FR-CICD-001 | Jenkins on RPi5 | Jenkinsfile | 운영 | 🔶 |
-| FR-CICD-002 | push 트리거 | Jenkinsfile | 운영 | 🔶 |
+| FR-CICD-001 | Jenkins on RPi5 | Jenkinsfile | on-target(build #85/#86, TR §4.1) | ✅ |
+| FR-CICD-002 | push 트리거 | Jenkinsfile | on-target(build #85, TR §4.1) | ✅ |
 | FR-CICD-003 | arm-gcc 크로스컴파일 | ci/build.sh | CI 로그 | ✅ |
 | FR-CICD-004 | cppcheck 정적분석(Should) | Jenkinsfile | CI 로그 | 🔶 |
 | FR-CICD-005 | 바이너리 크기 검사 | Jenkinsfile | CI 로그 | ✅ |
@@ -120,7 +120,7 @@
 | FR-CICD-007 | 다운로드/IDLE 활성화 분리 | ota_client·main.c | on-target | ✅ |
 | FR-CICD-008 | Stage 로그 기록 | Jenkinsfile | CI 이력 | ✅ |
 | FR-CICD-009 | 개인키 Credentials | Jenkinsfile | 코드리뷰 | ✅ |
-| FR-CICD-010 | 배포 실패 FAILURE 표시 | Jenkinsfile | CI | 🔶 |
+| FR-CICD-010 | 배포 실패 FAILURE 표시 | Jenkinsfile | on-target(build #85, TR §4.1) | ✅ |
 
 ## 7. Flash Partition (FR-FL)
 
