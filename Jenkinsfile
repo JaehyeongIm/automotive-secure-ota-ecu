@@ -57,19 +57,6 @@ pipeline {
                     echo "release=${env.IS_RELEASE} version=${env.RELEASE_VERSION} " +
                          "(base=${firstRelease ? 'first-release→deploy-all' : base})  " +
                          "drive=${env.DRIVE_CHANGED} sensor=${env.SENSOR_CHANGED}"
-
-                    // ╔════════════════════════════════════════════════════════════════╗
-                    // ║ ⚠️  TEST-ONLY OVERRIDE — E2E 파이프라인 수동 검증용. 검증 후 삭제.  ║
-                    // ║ 태그(IS_RELEASE)·diff(*_CHANGED) 게이트를 무시하고 두 ECU 강제 배포.║
-                    // ║ → 빈 커밋(git commit --allow-empty)만으로 전체 OTA가 실행된다.    ║
-                    // ║ 버전: BUILD_NUMBER 사용(단조 증가 → anti-rollback 통과 보장).      ║
-                    // ║ 복구: 아래 override 블록(env 4줄 + echo)만 삭제하면 원래 동작 복귀.  ║
-                    // ╚════════════════════════════════════════════════════════════════╝
-                    env.IS_RELEASE      = 'true'
-                    env.RELEASE_VERSION = env.BUILD_NUMBER
-                    env.DRIVE_CHANGED   = 'true'
-                    env.SENSOR_CHANGED  = 'true'
-                    echo "⚠️ [TEST-OVERRIDE] 태그/diff 무시: release=true version=${env.RELEASE_VERSION} drive=true sensor=true"
                 }
             }
         }
