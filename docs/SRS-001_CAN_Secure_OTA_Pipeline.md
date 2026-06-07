@@ -5,7 +5,7 @@
 | 문서 ID | SRS-001 |
 | 문서명 | CAN 기반 UDS over ISO-TP Secure OTA 파이프라인 요구사항 명세서 |
 | 프로젝트명 | Dual ECU 버튼 트리거 직진 주행 Secure OTA 시스템 |
-| 버전 | 2.12 |
+| 버전 | 2.13 |
 | 작성일 | 2026-05-25 |
 | 작성 목적 | Dual ECU 버튼 트리거 직진 주행 + 장애물 회피 OTA 데모 시스템 소프트웨어 요구사항 정의 |
 | 주요 대상 | Raspberry Pi 5 Gateway, STM32F446RE ECU 2대, CAN Bus, Custom Bootloader, RC 차량 데모 플랫폼 |

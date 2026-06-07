@@ -7,7 +7,7 @@
 | 레벨 | SW 검증 결과 보고(ASPICE SWE.6 — Test Report) |
 | 작성일 | 2026-06-05 |
 | 대상 | Bootloader + DriveECU/SensorECU App + 공유 코어(ota_meta·crypto·uds) |
-| 참조 | SRS-001(v2.12), TEST_SPEC_OTA v1.0(계획), SIT-001(on-target 플랜·기록), SDD-001, project.yml |
+| 참조 | SRS-001(v2.13), TEST_SPEC_OTA v1.0(계획), SIT-001(on-target 플랜·기록), SDD-001, project.yml |
 | 표준 근거 | ISO 26262-6(검증), ISO/SAE 21434(보안검증·잔여위험), ASPICE SWE.5/6 |
 
 > 본 결과서는 *실제로 실행한* 테스트의 **결과**를 기록한다. *계획*(TEST_SPEC·SIT-001 플랜)과 구분되며,

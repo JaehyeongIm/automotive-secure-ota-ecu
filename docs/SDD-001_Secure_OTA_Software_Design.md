@@ -6,7 +6,7 @@
 | 범위 | Bootloader + DriveECU/SensorECU App + 공유 모듈 + 게이트웨이 도구 |
 | 레벨 | SW 아키텍처 설계(ASPICE SWE.2) + SW 상세 설계(SWE.3), IEEE 1016 |
 | 작성일 | 2026-06-04 |
-| 참조 | SRS-001(v2.12), ADR-002~009, SIT-001, HARA-001, TARA-001 |
+| 참조 | SRS-001(v2.13), ADR-002~010, SIT-001, HARA-001, TARA-001 |
 | 표준 근거 | ISO 24089(SW update), AUTOSAR(UCM/NvM/Fee/Csm 패턴), ISO 14229(UDS)·15765(ISO-TP), ISO 26262-6, ISO/SAE 21434 |
 
 > 본 문서는 *무엇을(SRS)* → *어떻게(설계)* → *어디에(코드)* → *증명(테스트)* 의 추적을 기술한다.
@@ -89,7 +89,7 @@ Bootloader = bootloader.c + (ota_meta.c·sha256·uECC·psk) — 앱과 ota_meta 
 | 0x100 / 0x201 | ECU → | heartbeat: data[0]=fw_version, data[1]=active_slot |
 | 0x200 | Sensor → Drive | 장애물: data[0]=flag, data[1:2]=거리(cm) |
 | 0x7E0↔0x7E8 / 0x7E1↔0x7E9 | GW ↔ ECU | UDS over ISO-TP (Drive / Sensor) |
-| UDS SID | GW → ECU | 0x10 세션 · 0x27 SecurityAccess · 0x34 RequestDownload · 0x36 TransferData · 0x37 TransferExit · 0x22 RDBID |
+| UDS SID(구현) | GW → ECU | 0x10 세션 · 0x27 SecurityAccess · 0x34 RequestDownload · 0x36 TransferData · 0x37 TransferExit (5종). **미구현:** 0x22 RDBID(FR-CAN-018)·0x31 Verify(FR-CAN-014, 부팅 fail-closed로 대체)·0x11 Reset(FR-CAN-015, 자동리셋 대체)·0x3E TesterPresent |
 
 ### 2.5 리소스 & 타이밍 예산
 
@@ -124,7 +124,7 @@ Bootloader = bootloader.c + (ota_meta.c·sha256·uECC·psk) — 앱과 ota_meta 
 | `bootloader.c` | 부팅 결정·ECDSA·anti-rollback·메타 커밋·jump | 예(#ifndef UNIT_TEST 분리) | Bootloader/Core/Src | test_bootloader_slot(15) + on-target |
 | **`ota_meta.{c,h}`** | **SSOT**: 메타구조·CRC·select·plan_boot/confirm·img header·version_allowed·ecu_id_allowed | **아니오(순수)** | 3곳 복제(Sensor/Drive/BL) | test_meta·ota_meta·meta_lifecycle·anti_rollback(35) |
 | `ota_flash.c` | 슬롯 erase/write·메타 ping-pong 쓰기·self_confirm | 예 | {Drive,Sensor}/Core/Src | test_ota_meta(RAM 하니스) |
-| `uds.c` | UDS 서버: SecurityAccess·RequestDownload·TransferData/Exit | 일부 | {Drive,Sensor}/Core/Src | test_uds_state(25) |
+| `uds.c` | UDS 서버: SecurityAccess·RequestDownload·TransferData/Exit | 일부 | {Drive,Sensor}/Core/Src | test_uds_state(29) |
 | `isotp.c` | ISO-TP(15765) 세그먼테이션·흐름제어 | 예 | 〃 | mock 기반 |
 | `hmac_sha256`·`sha256` | SecurityAccess·ECDSA 해시 | 아니오 | 〃 | test_hmac(RFC4231) |
 | `uECC` | ECDSA-P256 verify | 아니오 | Bootloader/Core/Lib | on-target(ECDSA OK) |
@@ -245,14 +245,18 @@ select(metaA,metaB) → plan_boot(meta,max=3)
 | FR-AB-003 fail-closed | §6.2 | bootloader_verify_decision | test_bootloader_slot(15) | **SIT TC-03 PASS** |
 | FR-BL-008/AB-008 anti-rollback | §4.3, 6.3 | img_header_read·version_allowed | test_anti_rollback(10) | **SIT TC-01 PASS** |
 | FR-CAN-011 ECU 식별 | §4.3, 6.6 | ecu_id_allowed·uds.c(0x37 NRC 0x31) | test_anti_rollback(10) | (코드리뷰·ADR-009) |
-| FR-CAN-010 SecurityAccess | §6.5 | uds.c·hmac_sha256 | test_uds_state(25)·test_hmac(3) | SIT TC-01/02 unlock |
+| FR-CAN-010 SecurityAccess | §6.5 | uds.c·hmac_sha256 | test_uds_state(29)·test_hmac(3) | SIT TC-01/02 unlock |
 | ISO 26262 센서 staleness | §5.5, 6.7 | drive_sensor_fresh·drive.c | gcc(6 케이스) | **SIT TC-04 PASS** |
+| FR-CAN-012/013 endless-data | §6.6 | uds.c(0x36 누적상한→NRC 0x31·0x37 완료검증→0x24) | test_uds_state(2) | **SIT TC-05 PASS** (ISS-SEC-001) |
+| FR-CAN-019/NFR-REL-003 S3 타임아웃 | §2.5·6.6 | uds.c `uds_process`(5s 무요청→세션 abort) | test_uds_state(2) | SIT TC-08 (ISS-OTA-006) |
+| TC-ATK-001/002 변조·미서명 거부 | §6.2 | bootloader.c `uECC_verify`·`tools/forge_image.py` | test_bootloader_slot(verify_decision) | **SIT TC-06/07 PASS** |
+| CAN Bus-Off 자동복구(ABOM) | §2.5 | MX_CAN1_Init AutoBusOff=ENABLE | — | (ISS-CAN-006) |
 
 ---
 
 ## 9. 검증 요약
 - **호스트 단위테스트 82개**(Ceedling, 라인 91%·분기 79% 커버리지 `ceedling gcov:all`) + gcc 독립검증(drive_sensor_fresh 6) — *순수 로직*.
-- **On-target 벤치 4종(SIT-001)** — 실 ECU·실 CAN·실 OTA로 보안 3(fail-closed·anti-rollback·3-strike) + 안전 1(staleness) 실증, 전부 PASS(2026-06-04).
+- **On-target 벤치 8종(SIT-001)** — 기본 4(fail-closed·anti-rollback·3-strike·staleness, 2026-06-04) + 공격 4(endless-data·변조·미서명·CAN flood no-brick, 2026-06-07), 전부 PASS.
 - 추적: §8로 *요구사항↔설계↔코드↔테스트* 양방향 연결.
 
 ## 10. 개정 이력
@@ -260,3 +264,4 @@ select(metaA,metaB) → plan_boot(meta,max=3)
 |---|---|---|
 | 1.0 | 2026-06-04 | 최초 — 구현·단위테스트·on-target 검증 완료 시점 기준 아키텍처(SWE.2)+상세설계(SWE.3) 기술, 추적성 매트릭스 포함 |
 | 1.1 | 2026-06-05 | ECU 식별 강제(FR-CAN-011) 구현 반영 — §6.6에 0x37 target_ecu_id 검사(NRC 0x31) 추가, 순수함수 `ota_meta_ecu_id_allowed`(§8 추적 행 신설), ADR-009 채택. 단위테스트 78개(라인 91%·분기 79%) |
+| 1.2 | 2026-06-07 | 세션 구현 반영 — endless-data(FR-CAN-012/013)·S3(FR-CAN-019)·ABOM(ISS-CAN-006)·공격 4종 on-target(SIT-TC-05~08). §8 추적행 4개 추가, §2.4 SID표에 미구현(0x22/0x31/0x11/0x3E) 표기, §9 on-target 8종, 단위 82(test_uds_state 29). 참조 SRS v2.13·ADR-010 동기화 |
