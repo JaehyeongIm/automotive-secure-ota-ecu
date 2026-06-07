@@ -144,11 +144,11 @@ python3 tools/ota_client.py --ecu drive --channel can0 --interface socketcan --c
 python3 tools/hil_runner.py --ecu drive --tc 08 --uart /dev/tty.usbmodem21203 --ota-remote
 # Pi 터미널1 (프롬프트①에서 시작, 계속 실행)
 cangen can0 -g 1 -L 8 -D r
-# Pi 터미널2 (프롬프트② push)
-python3 tools/ota_client.py --ecu drive --channel can0 --interface socketcan --cf-delay 0.02 fixtures/drive_v3_B.bin
+# Pi 터미널2 (프롬프트② push) — 옛 버전(v1)이라 완주해도 anti-rollback으로 v2 귀결
+python3 tools/ota_client.py --ecu drive --channel can0 --interface socketcan --cf-delay 0.02 fixtures/drive_v1_B.bin
 # 프롬프트③: cangen 중지(Ctrl-C) + 리셋
 ```
-기대: brick 없이 부팅. ⚠ `drive_v3_B`는 *유효 상위버전*이라 flood가 약하면 v3가 정상 설치될 수 있음(그래도 no-brick). 자동 판정은 "v2 유지"를 보므로, v3 설치 시엔 로그로 직접 no-brick 확인.
+기대: brick 없이 **known-good(v2)로 귀결** — flood로 깨지면 미커밋→v2, 끝까지 가도 anti-rollback→v2. `version v2 OK` 확인.
 
 ---
 

@@ -308,18 +308,19 @@ def tc07_unsigned(cfg, drv, can):
 
 
 def tc08_can_flood(cfg, drv, can):
-    """CAN flood 중 OTA: brick 없이 이전 CONFIRMED 유지(반자동). S3 자동복귀는 FR-CAN-019(별도)."""
+    """CAN flood 중 OTA: brick 없이 known-good(v2)로 귀결(반자동). S3 자동복귀는 FR-CAN-019(별도).
+    옛 버전(v1) 푸시 → flood로 깨지면 미커밋→v2, 끝까지 가도 anti-rollback→v2. 어느 쪽이든 v2."""
     e = cfg.ecu
     manual(f"Pi에서 버스 폭주 시작(별도 터미널, 계속 실행): cangen {cfg.can or '<can>'} -g 1 -L 8 -D r")
     since = time.time()
-    ota_push(cfg, e, f"{cfg.img}/{e}_v3_B.bin")        # 폭주 중 OTA 시도(지연/실패 가능)
+    ota_push(cfg, e, f"{cfg.img}/{e}_v1_B.bin")        # 옛 버전 — 완주해도 anti-rollback으로 v2 귀결
     manual("Pi에서 cangen 중지(Ctrl-C) 후 ECU 리셋(전원 재인가)")
     st_reset(cfg)
     alive = drv.wait_for("version v2 OK", 30, since)
     if not alive and can:
         alive = can.wait_version(e, 2, timeout=20)
     return Result("TC-08 CAN flood (no-brick)", bool(alive),
-                  f"이전CONFIRMED(v2)유지={bool(alive)} · S3 graceful-abort=FR-CAN-019(미구현 별도확인)")
+                  f"known-good(v2) 귀결={bool(alive)} · brick 없음 · S3 자동복귀=FR-CAN-019(미구현)")
 
 
 ALL_TCS = {
