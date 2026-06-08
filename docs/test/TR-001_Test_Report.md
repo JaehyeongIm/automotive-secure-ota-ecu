@@ -89,7 +89,7 @@
 | #86 | Build Now (수동 재실행, 벤치 SensorECU 재플래시 후) | 동일 단계 + **양 ECU 실 OTA** — Drive `OTA 완료: SlotB 부팅 확인`, Sensor UDS `0x7E9` 정상응답→SecurityAccess Unlock→149블록 100%→RequestTransferExit→`OTA 완료: SlotB 부팅 확인` → `Finished: SUCCESS` | **PASS** |
 
 - **#86(성공):** 빌드 → ECDSA 서명 → **승인 게이트(UN R156 SUMS형)** → 양 ECU UDS/ISO-TP OTA → A→B 슬롯 전환·재부팅 확인까지 CI/CD E2E 전 구간 실증. anti-rollback 단조 버전 v4(계획 TC-CI-003 "v1→v2"와 흐름 동일, 버전만 상이).
-- **#85(실패 경로 = FR-CICD-010 실증):** 배포 대상 SensorECU가 일시적으로 UDS 무응답(0x200/0x201 송신은 살아있으나 메인루프 `uds_process()` 미동작)이어서 OTA 실패 → 파이프라인이 **FAILURE로 처리하고 ECU를 이전 펌웨어로 유지**(부분 flash·브릭 없음). 의도적 CAN 차단 주입(계획 절차)은 아니나 **실패 처리·fail-safe 동작이 직접 실증**됐다. `tools/flash.sh sensor … --build` 재플래시로 복구 후 #86 정상(상세 [ISS-OTA-007](troubleshooting/ISS-OTA-007_sensor-deploy-timeout-bench-hang.md)).
+- **#85(실패 경로 = FR-CICD-010 실증):** 배포 대상 SensorECU가 일시적으로 UDS 무응답(0x200/0x201 송신은 살아있으나 메인루프 `uds_process()` 미동작)이어서 OTA 실패 → 파이프라인이 **FAILURE로 처리하고 ECU를 이전 펌웨어로 유지**(부분 flash·브릭 없음). 의도적 CAN 차단 주입(계획 절차)은 아니나 **실패 처리·fail-safe 동작이 직접 실증**됐다. `tools/flash.sh sensor … --build` 재플래시로 복구 후 #86 정상(상세 [ISS-OTA-007](../troubleshooting/ISS-OTA-007_sensor-deploy-timeout-bench-hang.md)).
 - **재현:** Jenkins `Build Now`(또는 릴리스 `vN` 태그 푸시) → 승인 → 콘솔/`read_slot.py --wait-reboot`로 슬롯 전환 확인.
 
 ---

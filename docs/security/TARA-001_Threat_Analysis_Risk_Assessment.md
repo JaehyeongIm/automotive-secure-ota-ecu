@@ -9,7 +9,7 @@
 | 관련 산출물 | SRS-001(SR-MF-*, SR-FW-*, SR-ATK-*, SR-KEY-*, SR-UP-*, FR-BL-006~009), HARA-001, ADR-004/006/009, SIT-001, TR-001, RTM-001 |
 
 > **목적.** *의도적 공격자*가 침해할 수 있는 **자산**을 식별하고, 피해·위협·공격 실현가능성으로 **리스크**를 산정해 **Cybersecurity Goal과 보안 요구**를 도출한다. SRS의 SR-ATK-*/SR-FW-*는 *여기서 유도된 결과*로 추적된다(§3·§4).
-> **v1.0:** T-1~T-10을 SR-ATK-001~010·on-target SIT-TC 결과와 연결해 분석을 닫았다. 저감(Reduce)된 위협은 SIT-TC PASS로 검증, 미저감 잔여(T-4 replay·T-10 campaign)는 [SRS §19.1] 잔여위험으로 *수용(Retain)*하고 트리거(ATECC608A·Uptane-lite)를 명시한다. 전체 요구 추적은 [RTM-001](RTM-001_Requirements_Traceability_Matrix.md).
+> **v1.0:** T-1~T-10을 SR-ATK-001~010·on-target SIT-TC 결과와 연결해 분석을 닫았다. 저감(Reduce)된 위협은 SIT-TC PASS로 검증, 미저감 잔여(T-4 replay·T-10 campaign)는 [SRS §19.1] 잔여위험으로 *수용(Retain)*하고 트리거(ATECC608A·Uptane-lite)를 명시한다. 전체 요구 추적은 [RTM-001](../requirements/RTM-001_Requirements_Traceability_Matrix.md).
 
 ---
 
@@ -101,7 +101,7 @@ T-1을 끝까지 내려본 예시. **기존 SR-* 요구에 톱다운 뿌리를 �
 
 ### 4.1 Cybersecurity Goal 요약 (CG → 요구 → 검증 → 상태)
 
-T-1~T-10이 도출한 보안 목표를 기존 SR/FR 요구·검증과 연결(전체 추적은 [RTM-001](RTM-001_Requirements_Traceability_Matrix.md)).
+T-1~T-10이 도출한 보안 목표를 기존 SR/FR 요구·검증과 연결(전체 추적은 [RTM-001](../requirements/RTM-001_Requirements_Traceability_Matrix.md)).
 
 | CG | 목표 | 주요 요구 | 검증 | 상태 |
 |---|---|---|---|:--:|
@@ -122,7 +122,7 @@ T-1~T-10이 도출한 보안 목표를 기존 SR/FR 요구·검증과 연결(전
 
 ## 5. 안전↔보안 브리지
 
-T-1의 **Safety 영향(Severe)** 은 [HARA-001](HARA-001_Hazard_Analysis_Risk_Assessment.md)의 H-1/H-2 위험 사건에서 가져온 값이다. 즉 보안 리스크 산정이 안전 분석을 *입력으로 참조*한다. **공격(TARA) → 해(HARA)** 사슬이 닫혀야 "Secure OTA"의 존재 이유가 증명된다.
+T-1의 **Safety 영향(Severe)** 은 [HARA-001](../safety/HARA-001_Hazard_Analysis_Risk_Assessment.md)의 H-1/H-2 위험 사건에서 가져온 값이다. 즉 보안 리스크 산정이 안전 분석을 *입력으로 참조*한다. **공격(TARA) → 해(HARA)** 사슬이 닫혀야 "Secure OTA"의 존재 이유가 증명된다.
 
 ---
 

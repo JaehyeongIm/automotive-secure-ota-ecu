@@ -8,7 +8,7 @@
 | 상태 | ✅ 해결됨 (재플래시로 복구, 재실행 PASS) |
 | 심각도 | Medium (벤치 상태 이슈 · 무브릭 · fail-safe 동작) |
 | 영향 | SensorECU OTA 배포(1대) · CI/CD 배포 단계 · 제품 펌웨어/부트로더 영향 없음 |
-| 관련 | FR-CICD-010 · TC-CI-004 · [TR-001 §4.1](../TR-001_Test_Report.md) (Jenkins build #85) · [SIT-001 RUNBOOK](../SIT-001_RUNBOOK.md) |
+| 관련 | FR-CICD-010 · TC-CI-004 · [TR-001 §4.1](../test/TR-001_Test_Report.md) (Jenkins build #85) · [SIT-001 RUNBOOK](../test/SIT-001_RUNBOOK.md) |
 
 ---
 
@@ -36,7 +36,7 @@
 ## D5–D6. 영구 시정 조치 & 검증
 
 - **시정:** 벤치 SensorECU를 현재 소스(정상 빌드, `HIL_SELFTEST_FAIL` 미정의)로 재플래시 —
-  `tools/flash.sh sensor 066EFF485775495067194557 --build` ([SIT-001 RUNBOOK](../SIT-001_RUNBOOK.md)) → 메인 루프 정상 기동 → UDS `0x7E9` 응답 복구.
+  `tools/flash.sh sensor 066EFF485775495067194557 --build` ([SIT-001 RUNBOOK](../test/SIT-001_RUNBOOK.md)) → 메인 루프 정상 기동 → UDS `0x7E9` 응답 복구.
 - **검증:** 재실행 **Jenkins build #86 PASS** — SensorECU UDS `02 50 02`(세션)·`06 67 01 …`(seed)→SecurityAccess Unlock→RequestDownload→149블록 100%→RequestTransferExit→`[SensorECU] OTA 완료: SlotB 부팅 확인`. 양 ECU v4 갱신(TR-001 §4.1).
 
 ## D7. 재발 방지 (Lessons Learned)

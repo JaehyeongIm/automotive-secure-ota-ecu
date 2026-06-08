@@ -9,7 +9,7 @@
 | 관련 산출물 | SRS-001(NFR-SAFE-001~004, FR-DRV-003, FR-SEN-002, FR-AB-001~008), TARA-001, SIT-001, TR-001, RTM-001 |
 | 적용 한계 | 본 플랫폼은 2WD RC 데모. 아래 등급은 **표현(represented) 차량 기능 기준**으로 부여하고, 실제 RC 실물의 물리 심각도는 별도 주석(§3 비고)으로 구분한다. |
 
-> **목적.** "기능이 고장·오작동했을 때 사람에게 가는 해(harm)"를 차량 레벨에서 식별하고, S/E/C로 등급화해 **ASIL과 Safety Goal**을 도출한다. SRS의 안전 요구(NFR-SAFE-*, FR-AB-*)는 *여기서 유도된 결과*여야 한다. (적이 있는 의도적 공격은 [TARA-001](TARA-001_Threat_Analysis_Risk_Assessment.md)에서 다룬다.)
+> **목적.** "기능이 고장·오작동했을 때 사람에게 가는 해(harm)"를 차량 레벨에서 식별하고, S/E/C로 등급화해 **ASIL과 Safety Goal**을 도출한다. SRS의 안전 요구(NFR-SAFE-*, FR-AB-*)는 *여기서 유도된 결과*여야 한다. (적이 있는 의도적 공격은 [TARA-001](../security/TARA-001_Threat_Analysis_Risk_Assessment.md)에서 다룬다.)
 
 ---
 
@@ -106,7 +106,7 @@ HARA의 *입력*. 위험을 분석하려면 대상의 경계·기능·동작조�
 - **S2** — 손상·변조 펌웨어로 제어 로직이 오동작하면 H-1과 동일한 충돌 경로로 전이 가능.
 - **E2** — 업데이트/전원차단 직후 첫 부팅에 한정된 상황이라 노출은 낮음.
 - **C3** — 이미 부팅된 손상 로직은 운전자가 사후에 제어하기 어려움.
-- → **S2·E2·C3 = ASIL A**. fail-closed 검증(SG-4)이 이 위험을 차단하는 1차 방벽이며, 변조가 *공격*에 의한 경우는 [TARA-001](TARA-001_Threat_Analysis_Risk_Assessment.md) T-1/T-2로 연결된다(§5).
+- → **S2·E2·C3 = ASIL A**. fail-closed 검증(SG-4)이 이 위험을 차단하는 1차 방벽이며, 변조가 *공격*에 의한 경우는 [TARA-001](../security/TARA-001_Threat_Analysis_Risk_Assessment.md) T-1/T-2로 연결된다(§5).
 
 > ⚠️ Tstop(FTTI)·10cm·3-strike·8s IWDG 같은 **숫자는 여기 Safety Goal에서 유도**돼 SRS로 내려가야 한다. 지금 SRS는 이 숫자를 *선언*만 하고 있음 — 그 뿌리를 이 표가 채운다.
 
@@ -125,7 +125,7 @@ H-1을 끝까지 한 줄로 내려본 예시. **고도가 낮아지며 구체화
 | **SW 안전요구(TSR)** | TSR-1.1 | `drive_update()` 주기 ≤ 10ms | NFR-PERF-003 |
 | TSR | TSR-1.2 | 0x200 신호에 Alive Counter+CRC(E2E)를 적용해 stale/손상 프레임을 검출하고 검출 시 Safe State 진입 | 🔶 **갭 — SRS 미반영, 후속 보강 대상** (아래 갭 주석) |
 | 설계/구현 | — | `motor_stop()`, 상태머신 | (구현 완료) |
-| **검증(V 오른쪽)** | SIT-TC-04 | 통합: 0x200(장애물)→ DriveECU 모터 정지 확인. drive_sensor_fresh 픽스처로 실측 | [SIT-001](SIT-001_System_Integration_Test.md) · [TR-001](TR-001_Test_Report.md) |
+| **검증(V 오른쪽)** | SIT-TC-04 | 통합: 0x200(장애물)→ DriveECU 모터 정지 확인. drive_sensor_fresh 픽스처로 실측 | [SIT-001](../test/SIT-001_System_Integration_Test_Plan.md) · [TR-001](../test/TR-001_Test_Report.md) |
 
 > **드러난 갭:** TSR-1.2(E2E 보호)는 HARA를 돌려야 비로소 나온다 — 안전 관련 신호인 장애물 프레임에 freshness/CRC가 없으면 "센서가 죽어 마지막 '장애물 없음'을 붙들고 있을 때" 차가 못 선다. 이게 "톱다운 유도가 새 요구를 만든다"의 구체적 증거.
 
@@ -141,13 +141,13 @@ H-1을 끝까지 한 줄로 내려본 예시. **고도가 낮아지며 구체화
 | SG-4 | H-4 | A | 검증 통과 이미지만 Boot Target (fail-closed) | FR-AB-003/005/007, NFR-SAFE-004 | SIT-TC-07/08 (변조·미서명 거부) · TR-001 | ✅ |
 | TSR-1.2 | H-1 | C | 0x200 안전신호 E2E(Alive+CRC) 보호 | *(SRS 미반영)* | — | 🔶 갭 |
 
-> **상태 범례:** ✅ 검증 완료 · 🔶 부분 구현/검토 단계 또는 보강 대상. SG-1/SG-4는 [TR-001](TR-001_Test_Report.md)의 SIT 실행으로, SG-2는 상태머신 단위테스트로 확인. SG-3은 부트로더가 모터 PWM을 초기화하지 않는다는 코드 사실에 근거하나 별도 on-target 테스트는 미수행(🔶). TSR-1.2(E2E)는 본 HARA가 새로 드러낸 갭으로 SRS 후속 보강 대상.
+> **상태 범례:** ✅ 검증 완료 · 🔶 부분 구현/검토 단계 또는 보강 대상. SG-1/SG-4는 [TR-001](../test/TR-001_Test_Report.md)의 SIT 실행으로, SG-2는 상태머신 단위테스트로 확인. SG-3은 부트로더가 모터 PWM을 초기화하지 않는다는 코드 사실에 근거하나 별도 on-target 테스트는 미수행(🔶). TSR-1.2(E2E)는 본 HARA가 새로 드러낸 갭으로 SRS 후속 보강 대상.
 
 ---
 
 ## 5. 안전↔보안 브리지
 
-H-1/H-2의 일부 원인은 *고장*이 아니라 *공격*일 수 있다 (예: 변조 펌웨어로 모터 폭주). 그 경로는 [TARA-001](TARA-001_Threat_Analysis_Risk_Assessment.md)의 피해 시나리오로 연결되며, **TARA의 Safety 영향 등급은 본 HARA의 위험 사건을 참조**한다. 보안 침해 → 안전 위험의 전이가 이 프로젝트의 핵심 논지다.
+H-1/H-2의 일부 원인은 *고장*이 아니라 *공격*일 수 있다 (예: 변조 펌웨어로 모터 폭주). 그 경로는 [TARA-001](../security/TARA-001_Threat_Analysis_Risk_Assessment.md)의 피해 시나리오로 연결되며, **TARA의 Safety 영향 등급은 본 HARA의 위험 사건을 참조**한다. 보안 침해 → 안전 위험의 전이가 이 프로젝트의 핵심 논지다.
 
 ---
 

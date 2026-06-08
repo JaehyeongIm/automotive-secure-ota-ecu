@@ -237,7 +237,7 @@ select(metaA,metaB) → plan_boot(meta,max=3)
 
 ## 8. 추적성 매트릭스 (요구사항 → 설계 → 코드 → 검증)
 
-> 본 §8은 **보안·안전 핵심**의 추적이며, 전체 113개 요구의 양방향 추적은 [RTM-001](RTM-001_Requirements_Traceability_Matrix.md) 참조.
+> 본 §8은 **보안·안전 핵심**의 추적이며, 전체 113개 요구의 양방향 추적은 [RTM-001](../requirements/RTM-001_Requirements_Traceability_Matrix.md) 참조.
 
 | SRS 요구 | 설계 요소(§) | 코드 | 단위테스트 | On-target |
 |---|---|---|---|---|

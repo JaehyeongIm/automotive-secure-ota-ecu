@@ -16,7 +16,7 @@ STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/
 | 🔐 **보안 기능 6종** | Secure Boot(ECDSA-P256)·Anti-rollback·Fail-closed 검증게이팅·SecurityAccess(HMAC)·3-strike 롤백·메타 이중화 원자성 |
 | 🛡️ **안전 기능 1종** | 센서 staleness fail-safe (ISO 26262 안전상태 전이) |
 | ✅ **단위 테스트 82개** | 라인 커버리지 **91%** · 분기 커버리지 **79%** (`ceedling gcov:all`, strict) |
-| 🔬 **On-target 검증 8/8 PASS** | 실 OTA·실 CAN·실 RC차 — 기본 4(보안 3+안전 1) + 공격 4종(변조·미서명·endless-data·flood) 실증 ([SIT-001](docs/SIT-001_System_Integration_Test_Plan.md)) |
+| 🔬 **On-target 검증 8/8 PASS** | 실 OTA·실 CAN·실 RC차 — 기본 4(보안 3+안전 1) + 공격 4종(변조·미서명·endless-data·flood) 실증 ([SIT-001](docs/test/SIT-001_System_Integration_Test_Plan.md)) |
 | 📄 **표준 산출물** | SRS·HARA·TARA·SDD·SIT·TR·**RTM** + ADR×10 + 트러블슈팅(8D)×14 — ASPICE SWE.1~6 추적 |
 | 📦 **규모** | ~6.2K LOC C(부트로더+2앱) + ~2K Python · 130+ commits |
 
@@ -73,13 +73,13 @@ STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/
 | 3-strike 롤백 | ✅ on-target | 시험부팅 3회 초과 시 INVALID + 이전 CONFIRMED 자동 롤백 |
 | SecurityAccess | ✅ on-target | Key = **HMAC-SHA256(PSK, Seed)[:4]**, 3회 실패 → 10초 잠금 |
 | 메타 이중화 원자성 | ✅ 단위 | 섹터 2·3 redundant + CRC32 + seq, ping-pong 원자적 갱신(전원차단 안전) |
-| ECU 식별 | ✅ 단위 | 서명 헤더 `target_ecu_id` ≠ 자기 ID면 OTA 거부(NRC 0x31, FR-CAN-011) — 직접 플래시(UDS 우회) 차단은 부트로더 후속([ADR-009](docs/adr/ADR-009_ECU_Identity_Enforcement.md)) |
+| ECU 식별 | ✅ 단위 | 서명 헤더 `target_ecu_id` ≠ 자기 ID면 OTA 거부(NRC 0x31, FR-CAN-011) — 직접 플래시(UDS 우회) 차단은 부트로더 후속([ADR-009](docs/design/adr/ADR-009_ECU_Identity_Enforcement.md)) |
 | Replay 방어 | ⬜ 계획 | Session/Sequence/Freshness (FR-CAN-017) |
 | Uptane-lite | ⬜ 계획 | Manifest 검증·ECU Inventory·Campaign (로드맵) |
 
-> ⚠️ SecurityAccess의 seed는 F446 TRNG 부재로 SW nonce(엔트로피 약함, [ADR-004](docs/adr/ADR-004_SecurityAccess_Seed_RNG.md)), 잠금은 RAM([ADR-003](docs/adr/ADR-003_SecurityAccess_Lockout_Storage.md)), anti-rollback 기준선은 CRC 메타라 물리공격엔 한계 — 정석은 Secure Element([ADR-006](docs/adr/ADR-006_Secure_Element_Adoption.md))로 해소(HW 도입 중).
+> ⚠️ SecurityAccess의 seed는 F446 TRNG 부재로 SW nonce(엔트로피 약함, [ADR-004](docs/design/adr/ADR-004_SecurityAccess_Seed_RNG.md)), 잠금은 RAM([ADR-003](docs/design/adr/ADR-003_SecurityAccess_Lockout_Storage.md)), anti-rollback 기준선은 CRC 메타라 물리공격엔 한계 — 정석은 Secure Element([ADR-006](docs/design/adr/ADR-006_Secure_Element_Adoption.md))로 해소(HW 도입 중).
 >
-> 📋 보안·제어 전 항목의 한계·잔여위험과 *후속 해소 트리거*(ATECC608A / 엔코더·IMU 입고)는 **[SRS §19.1 한계 및 잔여 위험 레지스터](docs/SRS-001_CAN_Secure_OTA_Pipeline.md)** 에 통합 정리.
+> 📋 보안·제어 전 항목의 한계·잔여위험과 *후속 해소 트리거*(ATECC608A / 엔코더·IMU 입고)는 **[SRS §19.1 한계 및 잔여 위험 레지스터](docs/requirements/SRS-001_CAN_Secure_OTA_Pipeline.md)** 에 통합 정리.
 
 ### UDS over ISO-TP (CAN Classic 500 Kbps)
 
@@ -97,7 +97,7 @@ Gateway가 CAN heartbeat의 `driving_state`를 모니터링하여 ECU가 IDLE �
 
 ### Jenkins CI/CD 파이프라인 — CI와 배포 분리 + 승인 게이트
 
-**`git push`는 CI(검증)만** 수행하고 **차량 배포는 분리**합니다 — 태그 릴리스(`vN`) + **명시적 배포 승인 게이트**(승인자 기록) 후에만 OTA가 나갑니다. ([ADR-008](docs/adr/ADR-008_OTA_Trigger_CI_Deploy_Separation.md) — UN R156 SUMS 승인 / Uptane *Image·Director* 분리로 blast-radius 최소화)
+**`git push`는 CI(검증)만** 수행하고 **차량 배포는 분리**합니다 — 태그 릴리스(`vN`) + **명시적 배포 승인 게이트**(승인자 기록) 후에만 OTA가 나갑니다. ([ADR-008](docs/design/adr/ADR-008_OTA_Trigger_CI_Deploy_Separation.md) — UN R156 SUMS 승인 / Uptane *Image·Director* 분리로 blast-radius 최소화)
 
 **CI — 모든 `git push`**
 1. **단위 테스트** — `ceedling test:all`, 실패 시 이후 차단
@@ -118,7 +118,7 @@ Gateway가 CAN heartbeat의 `driving_state`를 모니터링하여 ECU가 IDLE �
 - 양성 + **음성 테스트**(잘못된 SID·세션·시퀀스·`size=0`/초과·**타 ECU 이미지** 등 *거부 경로*)로 보안/안전의 분기 검증
 - HAL 의존부와 분리한 *순수 코어*(메타 상태머신·anti-rollback·검증게이팅·crypto)를 호스트에서 검증
 
-**② On-target(실보드) 검증** — [SIT-001](docs/SIT-001_System_Integration_Test_Plan.md) · 실 ECU 2대·실 CAN·실 OTA
+**② On-target(실보드) 검증** — [SIT-001](docs/test/SIT-001_System_Integration_Test_Plan.md) · 실 ECU 2대·실 CAN·실 OTA
 
 | TC | 검증 | 결과 |
 |---|---|---|
@@ -248,24 +248,24 @@ git tag v2 && git push origin v2
 
 ## 문서
 
-- [📋 1-Page 요약](docs/PORTFOLIO_ONEPAGER.md) — 프로젝트 한눈에 (KPI · 기능 · 검증 · 설계결정 · 스토리)
-- [SRS-001](docs/SRS-001_CAN_Secure_OTA_Pipeline.md) — 소프트웨어 요구사항 명세서
-- [SDD-001](docs/SDD-001_Secure_OTA_Software_Design.md) — 소프트웨어 설계서 (SWE.2 아키텍처 + SWE.3 상세설계, 추적성)
-- [HARA-001](docs/HARA-001_Hazard_Analysis_Risk_Assessment.md) — 위험원 분석·리스크 평가 (ISO 26262)
-- [TARA-001](docs/TARA-001_Threat_Analysis_Risk_Assessment.md) — 위협 분석·리스크 평가 (ISO/SAE 21434)
-- [SIT-001](docs/SIT-001_System_Integration_Test_Plan.md) — on-target(실보드) 테스트 플랜·실행기록 (보안 3 + 안전 1 PASS)
-- [SIT-001 RUNBOOK](docs/SIT-001_RUNBOOK.md) — on-target 공격 시나리오 TC 실행 절차(명령·복구·트러블슈팅)
-- [ADR-001](docs/adr/ADR-001_OTA_Activation_Architecture.md) — OTA 활성화 아키텍처 의사결정
-- [ADR-002](docs/adr/ADR-002_Boot_Timing_Measurement.md) — 부트 타이밍(Tboot) 측정 방식 결정
-- [ADR-003](docs/adr/ADR-003_SecurityAccess_Lockout_Storage.md) — SecurityAccess 잠금 상태 저장 위치(RAM vs NV)
-- [ADR-004](docs/adr/ADR-004_SecurityAccess_Seed_RNG.md) — SecurityAccess Seed 난수 생성(TRNG 부재·SP 800-90 미준수)
-- [ADR-005](docs/adr/ADR-005_Troubleshooting_Doc_Naming.md) — 트러블슈팅 문서 파일명·ID 규칙
-- [ADR-006](docs/adr/ADR-006_Secure_Element_Adoption.md) — Secure Element(ATECC608A) 도입 — TRNG·NV 한계 하드웨어 해소
-- [ADR-007](docs/adr/ADR-007_Anti_Rollback_Design.md) — Anti-rollback 설계(서명 이미지 헤더 + 메타 버전 기준선)
-- [ADR-008](docs/adr/ADR-008_OTA_Trigger_CI_Deploy_Separation.md) — OTA 트리거: CI 빌드와 차량 배포 분리(태그 릴리스 + 승인 게이트)
-- [ADR-009](docs/adr/ADR-009_ECU_Identity_Enforcement.md) — ECU 식별 강제(앱 컴파일타임 ID로 타 ECU 이미지 거부)
-- [ADR-010](docs/adr/ADR-010_HIL_to_SIT_Terminology.md) — 실보드 검증 명칭 HIL 폐기·SIT(시스템 통합 테스트) 채택
-- [TEST_SPEC](docs/TEST_SPEC_OTA_v1.0.md) — 소프트웨어 테스트 명세서
-- [TR-001](docs/TR-001_Test_Report.md) — 소프트웨어 테스트 결과서 (단위 82/82 · on-target 8/8 PASS · 공격 시나리오 커버리지)
-- [RTM-001](docs/RTM-001_Requirements_Traceability_Matrix.md) — 요구사항 추적성 매트릭스 (113개 요구 ↔ 설계·코드·테스트·상태)
-- [diagram](docs/diagram.md) — 시스템 다이어그램 (Context / Block / State / Sequence / **보안·안전 흐름**)
+- [📋 1-Page 요약](docs/portfolio/PORTFOLIO_ONEPAGER.md) — 프로젝트 한눈에 (KPI · 기능 · 검증 · 설계결정 · 스토리)
+- [SRS-001](docs/requirements/SRS-001_CAN_Secure_OTA_Pipeline.md) — 소프트웨어 요구사항 명세서
+- [SDD-001](docs/design/SDD-001_Secure_OTA_Software_Design.md) — 소프트웨어 설계서 (SWE.2 아키텍처 + SWE.3 상세설계, 추적성)
+- [HARA-001](docs/safety/HARA-001_Hazard_Analysis_Risk_Assessment.md) — 위험원 분석·리스크 평가 (ISO 26262)
+- [TARA-001](docs/security/TARA-001_Threat_Analysis_Risk_Assessment.md) — 위협 분석·리스크 평가 (ISO/SAE 21434)
+- [SIT-001](docs/test/SIT-001_System_Integration_Test_Plan.md) — on-target(실보드) 테스트 플랜·실행기록 (보안 3 + 안전 1 PASS)
+- [SIT-001 RUNBOOK](docs/test/SIT-001_RUNBOOK.md) — on-target 공격 시나리오 TC 실행 절차(명령·복구·트러블슈팅)
+- [ADR-001](docs/design/adr/ADR-001_OTA_Activation_Architecture.md) — OTA 활성화 아키텍처 의사결정
+- [ADR-002](docs/design/adr/ADR-002_Boot_Timing_Measurement.md) — 부트 타이밍(Tboot) 측정 방식 결정
+- [ADR-003](docs/design/adr/ADR-003_SecurityAccess_Lockout_Storage.md) — SecurityAccess 잠금 상태 저장 위치(RAM vs NV)
+- [ADR-004](docs/design/adr/ADR-004_SecurityAccess_Seed_RNG.md) — SecurityAccess Seed 난수 생성(TRNG 부재·SP 800-90 미준수)
+- [ADR-005](docs/design/adr/ADR-005_Troubleshooting_Doc_Naming.md) — 트러블슈팅 문서 파일명·ID 규칙
+- [ADR-006](docs/design/adr/ADR-006_Secure_Element_Adoption.md) — Secure Element(ATECC608A) 도입 — TRNG·NV 한계 하드웨어 해소
+- [ADR-007](docs/design/adr/ADR-007_Anti_Rollback_Design.md) — Anti-rollback 설계(서명 이미지 헤더 + 메타 버전 기준선)
+- [ADR-008](docs/design/adr/ADR-008_OTA_Trigger_CI_Deploy_Separation.md) — OTA 트리거: CI 빌드와 차량 배포 분리(태그 릴리스 + 승인 게이트)
+- [ADR-009](docs/design/adr/ADR-009_ECU_Identity_Enforcement.md) — ECU 식별 강제(앱 컴파일타임 ID로 타 ECU 이미지 거부)
+- [ADR-010](docs/design/adr/ADR-010_HIL_to_SIT_Terminology.md) — 실보드 검증 명칭 HIL 폐기·SIT(시스템 통합 테스트) 채택
+- [TEST_SPEC](docs/test/TEST_SPEC_OTA_v1.0.md) — 소프트웨어 테스트 명세서
+- [TR-001](docs/test/TR-001_Test_Report.md) — 소프트웨어 테스트 결과서 (단위 82/82 · on-target 8/8 PASS · 공격 시나리오 커버리지)
+- [RTM-001](docs/requirements/RTM-001_Requirements_Traceability_Matrix.md) — 요구사항 추적성 매트릭스 (113개 요구 ↔ 설계·코드·테스트·상태)
+- [diagram](docs/design/diagram.md) — 시스템 다이어그램 (Context / Block / State / Sequence / **보안·안전 흐름**)

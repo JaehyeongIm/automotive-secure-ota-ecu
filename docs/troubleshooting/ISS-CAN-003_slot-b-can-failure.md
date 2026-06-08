@@ -179,5 +179,5 @@ if (now - s_last_tick >= 3000) {
 
 ### 관련 문서
 
-- [구현절차.md](../구현절차.md) — Phase 5B 상태
+- [구현절차.md](../assets/구현계획.md) — Phase 5B 상태
 - [ISS-BL-002_fallback-pending-invalid.md](ISS-BL-002_fallback-pending-invalid.md) — 직전 트러블슈팅 (Bootloader 폴백 버그)
