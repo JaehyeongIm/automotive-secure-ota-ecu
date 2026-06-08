@@ -49,7 +49,7 @@
 
 | 우선 | 하니스 | 진입점 | 입력 모델 | Oracle | 매핑 요구·위협 | 상태 |
 |:--:|---|---|---|---|---|:--:|
-| **P1 (최상)** | **FH-3** `harness_uds` | `uds_on_isotp_rx`→`uds_process` | 상태 프라이밍 후 0x36/0x37 스트림 | ASAN/UBSAN + 플래시모델 경계 + `g_fw_written≤g_fw_size` 불변식 | FR-CAN-012/013·SR-ATK-007 / **T-8**(Risk 3) | ✅ **F-003 발견·수정** |
+| **P1 (최상)** | **FH-3** `harness_uds` | `uds_on_isotp_rx`→`uds_process` | 상태 프라이밍 후 0x36/0x37 스트림 | ASAN/UBSAN + 플래시모델 경계 + `g_fw_written≤g_fw_size` 불변식 | FR-CAN-012/013·SR-ATK-007 / **T-8**(Risk 3) | ✅ **F-003 수정 · v2/SC3 입증** |
 | P2 (중하) | **FH-2** `harness_meta` | `ota_meta_select`/`ota_meta_valid` | 메타 2섹터(struct×2) | ASAN/UBSAN + CRC/seq 선택 불변식 | FR-AB-005 (전원차단 견고성) | ⬜ 후속 |
 | P3 (낮음) | **FH-1** `harness_imghdr` | `ota_img_header_read` | 이미지 선두 헤더 바이트(≥16B) | ASAN/UBSAN + magic 분기 | SR-FW-002·FR-AB-008·FR-CAN-011 / T-1·T-3·T-6 | ✅ 완료 |
 
@@ -59,6 +59,7 @@
 **공통 oracle:** ① 새니타이저 abort(OOB·overflow) ② libFuzzer 행/타임아웃(무한루프) ③ 하니스 불변식 assert.
 **커버리지 목표:** 대상 파서의 도달 가능한 분기를 시드+퍼징으로 모두 실행(`-print_coverage` 확인).
 **중단(완료) 기준:** 하니스별 무신규커버리지 지속 또는 크래시 발견 시(크래시는 §4로). — FH-1은 이 기준 충족으로 완료(§6).
+**축소 모델 주(FH-3 v2):** endless-data 누적 퍼징은 퍼저가 슬롯 경계에 도달하도록 플래시 슬롯을 **16KB로 축소 모델링**(실 256KB의 1/16 — 메커니즘 동일, 크기만 스케일). 입력을 *길이바이트 증폭*으로 다중블록화해 누적·seq 진행·누적가드를 자극한다.
 
 ## 4. 트리아지 · 분류 절차
 
@@ -84,6 +85,8 @@
 | 2026-06-08 | FH-3 `harness_uds` sanity | 프라이밍 1회 | — | 1(UBSAN) | 1(A) | 프라이밍(HMAC) 검증 중 **UBSAN이 sha256.c UB 검출 → F-002**. 프라이밍 자체는 0x76까지 정상 |
 | 2026-06-08 | FH-3 `harness_uds` v1(단일블록) | <1초 | cov 241+ | 1 | 1(A) | **F-003 발견** — 261B 블록 → `padded[260]` 스택오버플로(uds.c:252, CWE-787) |
 | 2026-06-08 | FH-3 `harness_uds` (수정 후 재퍼징) | 1.4M / 21s (67k/s) | — | 0 | 0 | per-block 가드(chunk_len>256→NRC 0x31) 후 **무크래시** → 방어 입증. 회귀 test_uds_state 30/30 |
+| 2026-06-08 | FH-3 v2(다중블록, 16KB 슬롯모델) | 1.23M / 26s (47k/s) | cov 253 | 0 | 0 | endless-data 누적 경로 — 가드 있음 → **무크래시**(누적·per-block 가드가 슬롯 내 유지). 방어 성립 |
+| 2026-06-08 | FH-3 v2 **SC3 리그 입증** | <초 | — | 1(의도) | — | 누적가드 일시 제거 → **플래시모델이 endless-data OOB 검출**(ASAN heap-overflow @ 16384B 경계, `ota_flash_write`). 가드 복원 후 재퍼징 무크래시 → 리그·FR-CAN-012 가드 유효 입증 |
 
 ## 7. 발견 사항 (Findings)
 
@@ -117,7 +120,7 @@
 |---|---|---|---|
 | FH-1 헤더 파서 | SR-FW-002·FR-AB-008·FR-CAN-011 | T-1·T-3·T-6 | F-001(B) — 실로직 분기 커버, 운영결함 0 |
 | FH-2 메타 파서 | FR-AB-005 | — | ⬜ 계획 |
-| FH-3 UDS 다운로드 | FR-CAN-012/013·SR-ATK-007 | T-8 | ✅ **F-003**(per-block 스택오버플로 CWE-787) 발견·수정·재퍼징 클린. endless-data 누적은 단위 기검증 |
+| FH-3 UDS 다운로드 | FR-CAN-012/013·SR-ATK-007 | T-8 | ✅ **F-003**(per-block 스택오버플로 CWE-787) 발견·수정·재퍼징 클린 + **v2 다중블록·SC3로 endless-data 누적가드+플래시모델 입증** |
 
 전체 추적은 [RTM-001](../requirements/RTM-001_Requirements_Traceability_Matrix.md)에 통합 예정.
 
@@ -129,3 +132,4 @@
 | 0.2 | 2026-06-07 | **FH-1 완료** — 가드 적용 후 2,988만 회 무크래시·커버리지 정체로 중단기준 충족(§6). **§3 타깃을 리스크 기반 재정렬**(노출×복잡도×결과) — 다음 우선 **FH-3**(T-8 endless-data, P1), FH-2 후순위(P2), FH-1 완료(P3). 우선순위 근거 명시 |
 | 0.3 | 2026-06-08 | **FH-3 sanity 통과**(프라이밍→DOWNLOADING→0x76) + **F-002 발견·수정** — sha256.c 부호 있는 시프트 UB를 UBSAN이 검출(§7), 3개 사본 `(WORD)` 캐스트, 회귀(test_hmac·test_uds_state) 통과, ISS-SEC-003 발행. 퍼즈 본실행은 다음 |
 | 0.4 | 2026-06-08 | **FH-3 본실행 — F-003 발견·수정·검증** — 261B 블록이 `padded[260]` 스택오버플로(CWE-787, uds.c:252)를 <1초에 유발. 양 ECU `chunk_len>256→NRC 0x31` 가드 + 회귀 테스트. 원 PoC 재생 클린·재퍼징 1.4M회 무크래시·test_uds_state 30/30. ISS-SEC-004 발행. FH-3 ✅ |
+| 0.5 | 2026-06-08 | **FH-3 v2(다중블록) + SC3 리그 입증** — endless-data 누적 경로 퍼징(1.23M회·cov 253) 가드 있음 무크래시(방어 성립). SC3: 누적가드 일시 제거 시 **플래시모델이 OOB 검출**(16384B 경계), 복원 후 무크래시 → 리그·FR-CAN-012 가드 유효 입증. 슬롯 16KB 축소 모델 주(§3) |

@@ -1,11 +1,11 @@
 /* FH-3 하니스 — UDS TransferData(0x36) 쓰기 경로 퍼징.
  *
- * 구조:  ① 손 스텁 + 플래시 모델   ② 상태 프라이밍   ③ 입력 주입
- * 빌드:  harness_uds.c + uds.c(대상) + ota_meta.c + sha256/hmac_sha256 + hal_stubs.c
- *        -DUNIT_TEST → uds.c가 결정적 seed + 로컬 s_psk 사용 (프라이밍이 키 계산 가능)
+ * v1(단일블록 → padded[260] 스택오버플로 F-003)은 수정·회귀테스트로 봉인됨.
+ * v2(현재): 다중블록으로 endless-data 누적 경로를 퍼징 + 플래시 모델 실가동.
  *
- * 노리는 것: (v1) 단일 큰 블록 → padded[260] 스택 오버플로 가설
- *           (v2) 다중 블록     → endless-data 누적 → 플래시 모델 경계초과
+ * 구조:  ① 손 스텁 + 플래시 모델   ② 상태 프라이밍   ③ 다중블록 주입
+ * 빌드:  harness_uds.c + uds.c(대상) + ota_meta.c + sha256/hmac_sha256 + hal_stubs.c
+ *        -DUNIT_TEST → uds.c가 결정적 seed + 로컬 s_psk 사용
  */
 #include "uds.h"
 #include "isotp.h"
@@ -22,7 +22,7 @@
 /* ─────────────────────── ① 손 스텁 + 플래시 모델 ───────────────────────
    uds.c가 호출하는 HAL-backed 함수들(원래 ota_flash.c / isotp.c)을 호스트용으로 대체. */
 
-/* isotp_send: ECU가 보내는 UDS 응답을 캡처 → 프라이밍이 seed를 읽고, sanity가 응답을 본다. */
+/* isotp_send: ECU 응답 캡처 → 프라이밍의 seed 추출 + 블록 수락(0x76) 판별. */
 static uint8_t  s_tx[64];
 static uint16_t s_tx_len;
 void isotp_send(const uint8_t *d, uint16_t len) {
@@ -31,12 +31,14 @@ void isotp_send(const uint8_t *d, uint16_t len) {
     s_tx_len = len;
 }
 
-/* 플래시 모델: 대상 슬롯(Slot B)을 ASAN이 지키는 힙 버퍼로 흉내낸다.
-   경계초과 쓰기(endless-data)면 memcpy가 버퍼를 넘겨 ASAN이 즉시 크래시. */
-#define SLOT_BASE  SLOT_B_START_ADDR
-#define SLOT_SIZE  (size_t)(SLOT_B_END_ADDR - SLOT_B_START_ADDR)   /* 256KB */
+/* 플래시 모델 — 대상 슬롯을 ASAN이 지키는 힙 버퍼로 흉내.
+   경계초과 쓰기(endless-data)면 memcpy가 버퍼를 넘겨 ASAN이 즉시 크래시.
+   퍼저가 슬롯 경계에 도달 가능하도록 16KB로 *축소* 모델링(실 256KB의 1/16, 메커니즘 동일). */
+#define SLOT_BASE   SLOT_B_START_ADDR
+#define SLOT_MODEL  16384u                 /* 축소 슬롯(16KB) */
+#define DECL_SIZE   15360u                 /* 선언 image_size(15KB) < 슬롯 → 정상시 항상 안전 */
 static uint8_t *g_slot;
-static void flash_reset(void) { free(g_slot); g_slot = (uint8_t *)malloc(SLOT_SIZE); }
+static void flash_reset(void) { free(g_slot); g_slot = (uint8_t *)malloc(SLOT_MODEL); }
 
 uint8_t           ota_get_active_slot(void)    { return 0; }       /* A 활성 → 대상 = B */
 HAL_StatusTypeDef ota_flash_erase_slot_a(void) { return HAL_OK; }
@@ -46,7 +48,7 @@ HAL_StatusTypeDef ota_meta_write_pending(uint8_t s, uint32_t sz, uint32_t v) {
 }
 HAL_StatusTypeDef ota_flash_write(uint32_t addr, const uint8_t *d, uint16_t len) {
     size_t off = (size_t)(addr - SLOT_BASE);
-    memcpy(g_slot + off, d, len);     /* ★ off+len > SLOT_SIZE 이면 ASAN heap-overflow ★ */
+    memcpy(g_slot + off, d, len);     /* ★ off+len > SLOT_MODEL 이면 ASAN heap-overflow ★ */
     return HAL_OK;
 }
 
@@ -57,62 +59,68 @@ static const uint8_t s_psk[OTA_PSK_LEN] = {
     0x4F,0x54,0x2D,0x55,0x53,0x45,0x2D,0x49,0x4E,0x2D,0x50,0x52,0x4F,0x44,0x21,0x21
 };
 
-/* CAN 인터럽트(uds_on_isotp_rx) + 메인루프(uds_process) 한 사이클 */
 static void send(const uint8_t *req, uint16_t len) {
     uds_on_isotp_rx(req, len);
     uds_process();
 }
 
-/* DEFAULT → … → DOWNLOADING 까지 정상 시퀀스로 진입 (test_uds_state.c do_unlock+do_request_download). */
+/* DEFAULT → … → DOWNLOADING 까지 정상 시퀀스로 진입 (declared image_size = DECL_SIZE). */
 static void prime_to_downloading(void) {
     uint8_t ext[]  = {0x10, 0x02};                 send(ext,  sizeof(ext));   /* ExtendedSession */
     uint8_t sreq[] = {0x27, 0x01};                 send(sreq, sizeof(sreq));  /* requestSeed */
-    /* s_tx = [0x67,0x01, seed_b3..seed_b0] (Seed는 HMAC 메시지, big-endian) */
     uint8_t seed_be[4] = { s_tx[2], s_tx[3], s_tx[4], s_tx[5] };
     uint8_t mac[32];
     hmac_sha256(s_psk, OTA_PSK_LEN, seed_be, 4, mac);
     uint8_t key[] = {0x27, 0x02, mac[0], mac[1], mac[2], mac[3]};
     send(key, sizeof(key));                                                    /* sendKey → UNLOCKED */
-    uint8_t dl[]  = {0x34, 0x00, 0x44, 0,0,0,0, 0,0,0x80,0};                    /* size=0x8000 */
-    send(dl, sizeof(dl));                                                       /* RequestDownload → DOWNLOADING */
+    /* RequestDownload: size = DECL_SIZE(15360 = 0x3C00) → DOWNLOADING */
+    uint8_t dl[] = {0x34, 0x00, 0x44, 0,0,0,0,
+                    (uint8_t)(DECL_SIZE>>24),(uint8_t)(DECL_SIZE>>16),
+                    (uint8_t)(DECL_SIZE>>8), (uint8_t)(DECL_SIZE)};
+    send(dl, sizeof(dl));
 }
 
-/* 매 입력마다: 상태 리셋 → 프라이밍 → 0x36 한 블록(seq=1) 주입. 첫 응답 바이트 반환. */
-static uint8_t run_block(const uint8_t *payload, uint16_t plen) {
+/* ─────────────────────── ③ 다중블록 주입 ───────────────────────
+   입력을 [길이바이트]+[길이바이트]+… 로 해석:
+   각 바이트 L(1~255)을 한 블록의 데이터 길이로 보고 filler L바이트를 0x36 블록으로 전송(증폭).
+   수락(0x76)되면 seq 진행하며 누적, 거부(누적가드 등)되면 중단. → endless-data 누적 경로 퍼징. */
+static uint8_t run_blocks(const uint8_t *data, size_t size) {
     g_hal_tick = 0;
     uds_init();
     flash_reset();
     prime_to_downloading();
 
-    if (plen > 510) plen = 510;            /* uds_on_isotp_rx 상한(BUF_SIZE 512) 안에서 */
-    uint8_t req[512];
-    req[0] = 0x36; req[1] = 0x01;          /* TransferData, blockSeq=1 (첫 블록) */
-    memcpy(req + 2, payload, plen);
-    send(req, (uint16_t)(2 + plen));
-    return s_tx[0];
+    uint8_t  seq  = 1;
+    uint8_t  last = 0;
+    uint8_t  block[2 + 256];
+    for (size_t i = 0; i < size; ) {
+        uint16_t L = data[i++];
+        if (L == 0) L = 1;                        /* 0-len 블록은 1로 (무한루프 방지) */
+        block[0] = 0x36; block[1] = seq;
+        memset(block + 2, 0xAB, L);               /* filler — 내용보다 '길이·개수'를 퍼징 */
+        send(block, (uint16_t)(2 + L));
+        last = s_tx[0];
+        if (last == 0x76) seq = (seq == 0xFF) ? 0 : (uint8_t)(seq + 1);  /* 수락 → seq 진행 */
+        else break;                               /* 거부/세션종료 → 중단 */
+    }
+    return last;
 }
 
-/* ─────────────────────── ③ 입력 주입 ─────────────────────── */
+/* ─────────────────────── 입력 진입점 ─────────────────────── */
 #ifdef HARNESS_SANITY
-/* 1단계 검증: 퍼징 전에, 정상 블록이 0x76 응답까지 가는지 확인 (프라이밍 동작 확인). */
 int main(void) {
-    uint8_t normal[] = {0xAA, 0xBB};
-    uint8_t resp = run_block(normal, sizeof(normal));
-    if (resp == 0x76) {
-        fprintf(stderr, "[sanity] prime+0x36 -> 0x76  OK (DOWNLOADING 도달·정상 쓰기)\n");
-        return 0;
-    }
-    fprintf(stderr, "[sanity] FAIL: resp=0x%02X (expected 0x76)\n", resp);
+    uint8_t in[] = {4};                           /* 정상 블록 1개(데이터 4B) */
+    uint8_t r = run_blocks(in, sizeof(in));
+    if (r == 0x76) { fprintf(stderr, "[sanity v2] 다중블록 경로 OK — prime+0x36 -> 0x76\n"); return 0; }
+    fprintf(stderr, "[sanity v2] FAIL: r=0x%02X\n", r);
     return 1;
 }
 #else
-/* 2단계: 퍼징 중 uds.c 진단 로그 폭주 방지(stdout→/dev/null). ASAN/libFuzzer는 stderr라 유지. */
 __attribute__((constructor)) static void silence_stdout(void) {
     if (!freopen("/dev/null", "w", stdout)) { /* 무시 */ }
 }
-/* libFuzzer가 만든 바이트를 0x36 payload로 주입 (v1: 단일 블록). */
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-    run_block(data, (uint16_t)(size > 510 ? 510 : size));
+    run_blocks(data, size);
     return 0;
 }
 #endif
