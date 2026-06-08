@@ -8,7 +8,7 @@
 | 상태 | ✅ 해결됨 (코드 수정 + 단위 2종) · on-target(SIT-TC-05) 이연 |
 | 심각도 | High |
 | 영향 | DriveECU·SensorECU `uds.c` OTA 다운로드 경로(0x36/0x37) — 슬롯 경계 초과 기록 시 인접 슬롯/메타 손상 가능 |
-| 관련 | FR-CAN-012, FR-CAN-013, SR-ATK-007, TC-ATK-007 ↔ SIT-TC-05, [TR-001 §5](../TR-001_Test_Report.md), ADR-010 |
+| 관련 | FR-CAN-012, FR-CAN-013, SR-ATK-007, TC-ATK-007 ↔ SIT-TC-05, [TR-001 §5](../test/TR-001_Test_Report.md), ADR-010 |
 
 ---
 

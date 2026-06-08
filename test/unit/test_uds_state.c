@@ -421,6 +421,20 @@ void test_transfer_data_too_short_returns_nrc_length(void)
     TEST_ASSERT_EQUAL_UINT8(0x13, s_tx_buf[2]);
 }
 
+/* F-003 회귀: 한 블록 데이터가 광고 maxBlockLen(256) 초과 → NRC 0x31 (padded[260] 스택오버플로 방지).
+   퍼징(FH-3)이 261B 블록으로 발견한 CWE-787을 차단. */
+void test_transfer_data_oversized_block_returns_nrc(void)
+{
+    do_request_download();
+    uint8_t req[2 + 300];                            /* chunk_len = 300 > 256 */
+    req[0] = 0x36; req[1] = 0x01;
+    memset(req + 2, 0xAB, 300);
+    uds_send(req, sizeof(req));
+    TEST_ASSERT_EQUAL_UINT8(0x7F, s_tx_buf[0]);
+    TEST_ASSERT_EQUAL_UINT8(0x36, s_tx_buf[1]);
+    TEST_ASSERT_EQUAL_UINT8(0x31, s_tx_buf[2]);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    TC-UT-UDS-005: endless-data 방어 — 누적 수신 상한·완료 검증
    ═══════════════════════════════════════════════════════════════════════════

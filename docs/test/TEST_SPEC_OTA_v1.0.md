@@ -72,7 +72,7 @@ ASPICE SWE.4(소프트웨어 단위 검증), SWE.5(소프트웨어 통합 테스
 | 문서 번호 | 제목 |
 |----------|------|
 | SRS-001 | CAN Secure OTA Pipeline 소프트웨어 요구사항 명세서 |
-| DIAG-001 | 시스템 다이어그램 (docs/diagram.md) |
+| DIAG-001 | 시스템 다이어그램 (docs/design/diagram.md) |
 | ISS-CAN-004 | CAN 핀 배선 오류 해결 기록 |
 | ISO 14229-1 | Unified Diagnostic Services (UDS) |
 | ISO 26262-6 | Functional Safety — Software Level |

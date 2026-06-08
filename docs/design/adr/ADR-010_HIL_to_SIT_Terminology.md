@@ -29,7 +29,7 @@
 
 **옵션 B 채택.** 문서 전반을 다음과 같이 표준화한다:
 
-- 문서 ID `HIL-001` → **`SIT-001`**, 파일 `docs/SIT-001_System_Integration_Test_Plan.md`.
+- 문서 ID `HIL-001` → **`SIT-001`**, 파일 `docs/test/SIT-001_System_Integration_Test_Plan.md`.
 - 테스트케이스 `HIL-TC-NN` → **`SIT-TC-NN`**.
 - 본문 용어 `HIL` → 문맥에 따라 **`on-target`**(검증 위치) 또는 **`SIT`**(시험 레벨). 단 "plant 시뮬레이터 기반 HIL이 *아니다*" 같은 **의도적 대조**에서는 HIL을 정확한 의미로 그대로 쓴다.
 - 적용 범위: README, SDD-001, TR-001, SRS-001, diagram, ADR-002/007/009, ISS-CAN-005, PORTFOLIO_ONEPAGER, SIT-001 본체.

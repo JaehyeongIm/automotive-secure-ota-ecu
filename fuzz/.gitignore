@@ -1,0 +1,6 @@
+bin/
+crash-*
+leak-*
+timeout-*
+oom-*
+*.profraw

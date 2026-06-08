@@ -149,7 +149,7 @@ TC별 합격기준은 §3, 판정은 로그·heartbeat 자동 대조.
 - **음성 대조 SIT-TC-04b(시동 stale):** Sensor OFF 상태로 Drive 전원 인가 → B1 눌러도 **출발 안 함**(첫 0x200 전 = stale). Sensor ON 후 B1 → 정상 출발
 
 ### SIT-TC-05 — endless-data: 누적 수신 상한·완료 검증 (FR-CAN-012/013, SR-ATK-007)
-- **목적/추적:** 작은 image_size 선언 후 초과 전송 시 거부 + 세션 종료(FR-CAN-012), 불완전 전송 거부(FR-CAN-013). TC-ATK-007 ↔ [ISS-SEC-001](troubleshooting/ISS-SEC-001_endless-data-no-cumulative-cap.md)
+- **목적/추적:** 작은 image_size 선언 후 초과 전송 시 거부 + 세션 종료(FR-CAN-012), 불완전 전송 거부(FR-CAN-013). TC-ATK-007 ↔ [ISS-SEC-001](../troubleshooting/ISS-SEC-001_endless-data-no-cumulative-cap.md)
 - **전제:** Unlock 후 DOWNLOADING 진입(0x34 size=N, 예 256B)
 - **절차:** ① RequestDownload size=N → ② TransferData(0x36)로 누적이 N을 **초과**하도록 전송
 - **기대(관측):** 초과 블록에서 `[UDS] NRC SID=0x36 code=0x31` → **세션 종료**(이후 0x36은 `code=0x22`). 슬롯 경계 밖 미기록
