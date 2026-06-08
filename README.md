@@ -15,9 +15,10 @@ STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/
 |---|---|
 | 🔐 **보안 기능 6종** | Secure Boot(ECDSA-P256)·Anti-rollback·Fail-closed 검증게이팅·SecurityAccess(HMAC)·3-strike 롤백·메타 이중화 원자성 |
 | 🛡️ **안전 기능 1종** | 센서 staleness fail-safe (ISO 26262 안전상태 전이) |
-| ✅ **단위 테스트 82개** | 라인 커버리지 **91%** · 분기 커버리지 **79%** (`ceedling gcov:all`, strict) |
+| ✅ **단위 테스트 83개** | 라인 커버리지 **~91%** · 분기 커버리지 **~79%** (`ceedling gcov:all`, strict) |
 | 🔬 **On-target 검증 8/8 PASS** | 실 OTA·실 CAN·실 RC차 — 기본 4(보안 3+안전 1) + 공격 4종(변조·미서명·endless-data·flood) 실증 ([SIT-001](docs/test/SIT-001_System_Integration_Test_Plan.md)) |
-| 📄 **표준 산출물** | SRS·HARA·TARA·SDD·SIT·TR·**RTM** + ADR×10 + 트러블슈팅(8D)×14 — ASPICE SWE.1~6 추적 |
+| 🐛 **퍼징(호스트)** | libFuzzer+ASAN/UBSAN 하니스(FH-1·FH-3) — 신규 결함 **2건 발굴·차단**(sha256 UB·UDS 스택오버플로 CWE-787) ([FT-001](docs/test/FT-001_Fuzz_Test_Plan_Report.md)) |
+| 📄 **표준 산출물** | SRS·HARA·TARA·SDD·SIT·TR·RTM·**FT** + ADR×10 + 트러블슈팅(8D)×17 — ASPICE SWE.1~6·**SEC.3** 추적 |
 | 📦 **규모** | ~6.2K LOC C(부트로더+2앱) + ~2K Python · 130+ commits |
 
 > **프로젝트 서사.** README/SRS가 *구현됐다고 명세한* 보안기능 다수가 실제 코드엔 없던 **문서–코드 갭을 발견** →
