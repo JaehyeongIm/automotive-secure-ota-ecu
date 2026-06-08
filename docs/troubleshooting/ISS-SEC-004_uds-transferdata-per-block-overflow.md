@@ -1,4 +1,4 @@
-# ISS-SEC-004: UDS TransferData per-block 스택 버퍼 오버플로 (CWE-787) — 퍼징 발견
+# ISS-SEC-004: UDS TransferData per-block 스택 버퍼 오버플로 (CWE-121) — 퍼징 발견
 
 > 8D 경량판. FH-3 커버리지 가이드 퍼징이 endless-data 수정이 놓친 신규 메모리 손상을 발견.
 
@@ -8,7 +8,7 @@
 | 상태 | ✅ 해결됨 |
 | 심각도 | Medium (post-auth 필요 / 단 공격자 제어 스택 침범 → 잠재 DoS·코드실행) |
 | 영향 | SensorECU·DriveECU `uds.c` 0x36 핸들러 |
-| 관련 | SR-ATK-007 · [FT-001 F-003](../test/FT-001_Fuzz_Test_Plan_Report.md) · CWE-787 · oracle=ASAN(ISO/SAE 21434 §10.4) · TARA 위협 등재 검토 |
+| 관련 | SR-ATK-007 · [FT-001 F-003](../test/FT-001_Fuzz_Test_Plan_Report.md) · CWE-121 · oracle=ASAN(ISO/SAE 21434 §10.4) · TARA 위협 등재 검토 |
 
 ---
 

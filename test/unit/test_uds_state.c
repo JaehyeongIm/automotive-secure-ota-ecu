@@ -422,7 +422,7 @@ void test_transfer_data_too_short_returns_nrc_length(void)
 }
 
 /* F-003 회귀: 한 블록 데이터가 광고 maxBlockLen(256) 초과 → NRC 0x31 (padded[260] 스택오버플로 방지).
-   퍼징(FH-3)이 261B 블록으로 발견한 CWE-787을 차단. */
+   퍼징(FH-3)이 261B 블록으로 발견한 CWE-121을 차단. */
 void test_transfer_data_oversized_block_returns_nrc(void)
 {
     do_request_download();

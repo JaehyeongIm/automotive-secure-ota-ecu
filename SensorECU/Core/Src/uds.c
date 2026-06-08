@@ -239,7 +239,7 @@ static void handle(const uint8_t *req, uint16_t len)
         const uint8_t *chunk = &req[2];
         uint16_t chunk_len   = len - 2;
         /* 한 블록 데이터가 광고한 maxBlockLen(256B)을 넘으면 거부 → padded[260] 보호.
-           (F-003: per-block 미검증 시 257B↑ 단일 블록이 스택 오버플로(CWE-787). endless-data 누적가드와 별개.) */
+           (F-003: per-block 미검증 시 257B↑ 단일 블록이 스택 오버플로(CWE-121). endless-data 누적가드와 별개.) */
         if (chunk_len > 256) { nrc(sid, 0x31); break; }
         uint16_t write_len   = (uint16_t)((chunk_len + 3u) & ~3u);  /* 4-byte align */
 
