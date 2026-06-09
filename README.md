@@ -15,7 +15,7 @@ STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/
 - **안전 기능 1종** — 센서 staleness fail-safe (ISO 26262 안전상태 전이)
 - **단위 테스트 83개** — 라인 ~91% · 분기 ~79% 커버리지 (`ceedling gcov:all`, strict)
 - **On-target 8/8 PASS** — 실 OTA·실 CAN·실 RC차에서 정상 4 + 공격 4종(변조·미서명·endless-data·flood) 실증 → [SIT-001](docs/test/SIT-001_System_Integration_Test_Plan.md)
-- **호스트 퍼징** — libFuzzer + ASAN/UBSAN으로 신규 결함 2건 발굴·차단(sha256 UB · UDS 스택 오버플로 CWE-787) → [FT-001](docs/test/FT-001_Fuzz_Test_Plan_Report.md)
+- **호스트 퍼징** — libFuzzer + ASAN/UBSAN으로 신규 결함 2건 발굴·차단(sha256 UB · UDS 스택 오버플로 CWE-121) → [FT-001](docs/test/FT-001_Fuzz_Test_Plan_Report.md)
 - **규모** — ~6.2K LOC C(부트로더 + 2앱) + ~2K Python · 130+ commits
 
 > 요구사항(SRS·HARA·TARA) → 설계(SDD·ADR) → TDD 구현 → 단위·on-target 검증까지 V-모델 추적성을 산출물로 닫았습니다.

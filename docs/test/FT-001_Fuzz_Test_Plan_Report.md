@@ -83,7 +83,7 @@
 | 2026-06-07 | FH-1 `harness_imghdr` (가드 전) | (1차) | magic 분기 | 1 | 0(A) / 1(B) | F-001 발견 → (B) 분류 후 하니스 가드 |
 | 2026-06-07 | FH-1 `harness_imghdr` (가드 후) | 29.8M / 11s (2.7M/s) | cov 6 정체 | 0 | 0 | **완료** — 운영결함 0. libFuzzer CMP가 magic("HATO")을 자동발견해 valid 분기까지 커버, 이후 무신규 → 중단기준 충족 |
 | 2026-06-08 | FH-3 `harness_uds` sanity | 프라이밍 1회 | — | 1(UBSAN) | 1(A) | 프라이밍(HMAC) 검증 중 **UBSAN이 sha256.c UB 검출 → F-002**. 프라이밍 자체는 0x76까지 정상 |
-| 2026-06-08 | FH-3 `harness_uds` v1(단일블록) | <1초 | cov 241+ | 1 | 1(A) | **F-003 발견** — 261B 블록 → `padded[260]` 스택오버플로(uds.c:252, CWE-787) |
+| 2026-06-08 | FH-3 `harness_uds` v1(단일블록) | <1초 | cov 241+ | 1 | 1(A) | **F-003 발견** — 261B 블록 → `padded[260]` 스택오버플로(uds.c:252, CWE-121) |
 | 2026-06-08 | FH-3 `harness_uds` (수정 후 재퍼징) | 1.4M / 21s (67k/s) | — | 0 | 0 | per-block 가드(chunk_len>256→NRC 0x31) 후 **무크래시** → 방어 입증. 회귀 test_uds_state 30/30 |
 | 2026-06-08 | FH-3 v2(다중블록, 16KB 슬롯모델) | 1.23M / 26s (47k/s) | cov 253 | 0 | 0 | endless-data 누적 경로 — 가드 있음 → **무크래시**(누적·per-block 가드가 슬롯 내 유지). 방어 성립 |
 | 2026-06-08 | FH-3 v2 **SC3 리그 입증** | <초 | — | 1(의도) | — | 누적가드 일시 제거 → **플래시모델이 endless-data OOB 검출**(ASAN heap-overflow @ 16384B 경계, `ota_flash_write`). 가드 복원 후 재퍼징 무크래시 → 리그·FR-CAN-012 가드 유효 입증 |
@@ -105,14 +105,14 @@
 - **회귀:** UBSAN 클린(sanity 재실행) · `test_hmac`(RFC 4231) **3/3** · `test_uds_state` **29/29** PASS → 값 불변·UB 제거 입증. → [ISS-SEC-003](../troubleshooting/ISS-SEC-003_sha256-signed-shift-ub.md) 8D.
 - **의의:** 정상 단위테스트가 통과하던 코드에서 **sanitizer(UBSAN)가 잠복 UB를 표면화** — FT-001 oracle이 실제로 작동함을 입증.
 
-### F-003 — UDS TransferData(0x36) per-block 스택 버퍼 오버플로 (CWE-787)
+### F-003 — UDS TransferData(0x36) per-block 스택 버퍼 오버플로 (CWE-121)
 - **하니스/입력:** FH-3 `harness_uds` v1(단일 블록), **261바이트** 입력으로 **<1초** 발견.
 - **관측:** `AddressSanitizer: stack-buffer-overflow` @ `uds.c:252` (`memset(padded,0xFF,write_len)`). chunk_len=261 → write_len=264 > `padded[260]` → 인접 스택 침범(이어지는 `memcpy`는 공격자 바이트로 침범).
 - **분류: (A) 실제 취약점.** post-auth(unlock 필요)지만 **공격자 제어 스택 오버플로** → 베어메탈 Cortex-M(카나리·ASLR 기본 없음)에서 DoS~코드실행 잠재. **심각도 Medium.** 범위: Sensor·Drive uds.c.
 - **근본 원인:** ECU가 0x34에서 maxBlockLen=258(데이터 256)을 *광고*하나 0x36에서 **블록 크기를 집행 안 함**. endless-data 누적가드(FR-CAN-012)는 *누적 vs 선언*만 봐 *블록 vs 버퍼* 사각지대를 못 막음.
 - **조치:** `chunk_len > 256` → NRC 0x31 가드(양 ECU). 회귀 `test_transfer_data_oversized_block`(test_uds_state) 추가.
 - **검증:** 원 PoC(261B) 재생 **클린** · **재퍼징 1.4M회 무크래시**(동일 퍼저가 더는 미발견) · `test_uds_state` **30/30** PASS. → [ISS-SEC-004](../troubleshooting/ISS-SEC-004_uds-transferdata-per-block-overflow.md) 8D.
-- **의의:** **커버리지 가이드 퍼징이 endless-data 수정이 놓친 신규 메모리 손상(CWE-787)을 1초 미만에 발굴·차단** — FH-3의 핵심 성과.
+- **의의:** **커버리지 가이드 퍼징이 endless-data 수정이 놓친 신규 메모리 손상(CWE-121)을 1초 미만에 발굴·차단** — FH-3의 핵심 성과.
 
 ## 8. 추적성
 
@@ -120,7 +120,7 @@
 |---|---|---|---|
 | FH-1 헤더 파서 | SR-FW-002·FR-AB-008·FR-CAN-011 | T-1·T-3·T-6 | F-001(B) — 실로직 분기 커버, 운영결함 0 |
 | FH-2 메타 파서 | FR-AB-005 | — | ⬜ 계획 |
-| FH-3 UDS 다운로드 | FR-CAN-012/013·SR-ATK-007 | T-8 | ✅ **F-003**(per-block 스택오버플로 CWE-787) 발견·수정·재퍼징 클린 + **v2 다중블록·SC3로 endless-data 누적가드+플래시모델 입증** |
+| FH-3 UDS 다운로드 | FR-CAN-012/013·SR-ATK-007 | T-8 | ✅ **F-003**(per-block 스택오버플로 CWE-121) 발견·수정·재퍼징 클린 + **v2 다중블록·SC3로 endless-data 누적가드+플래시모델 입증** |
 
 전체 추적은 [RTM-001](../requirements/RTM-001_Requirements_Traceability_Matrix.md)에 통합 예정.
 
@@ -131,5 +131,5 @@
 | 0.1 | 2026-06-07 | 최초 — SEC.3/21434 §10.4/29119-3 골격 수립. 전략(§2)·타깃 명세 FH-1~3(§3)·트리아지 절차(§4)·처리 루프(§5) 정의. **FH-1 `harness_imghdr` 1차 실행**, F-001(헤더 over-read) 발견·(B) 분류·하니스 가드 조치 기록 |
 | 0.2 | 2026-06-07 | **FH-1 완료** — 가드 적용 후 2,988만 회 무크래시·커버리지 정체로 중단기준 충족(§6). **§3 타깃을 리스크 기반 재정렬**(노출×복잡도×결과) — 다음 우선 **FH-3**(T-8 endless-data, P1), FH-2 후순위(P2), FH-1 완료(P3). 우선순위 근거 명시 |
 | 0.3 | 2026-06-08 | **FH-3 sanity 통과**(프라이밍→DOWNLOADING→0x76) + **F-002 발견·수정** — sha256.c 부호 있는 시프트 UB를 UBSAN이 검출(§7), 3개 사본 `(WORD)` 캐스트, 회귀(test_hmac·test_uds_state) 통과, ISS-SEC-003 발행. 퍼즈 본실행은 다음 |
-| 0.4 | 2026-06-08 | **FH-3 본실행 — F-003 발견·수정·검증** — 261B 블록이 `padded[260]` 스택오버플로(CWE-787, uds.c:252)를 <1초에 유발. 양 ECU `chunk_len>256→NRC 0x31` 가드 + 회귀 테스트. 원 PoC 재생 클린·재퍼징 1.4M회 무크래시·test_uds_state 30/30. ISS-SEC-004 발행. FH-3 ✅ |
+| 0.4 | 2026-06-08 | **FH-3 본실행 — F-003 발견·수정·검증** — 261B 블록이 `padded[260]` 스택오버플로(CWE-121, uds.c:252)를 <1초에 유발. 양 ECU `chunk_len>256→NRC 0x31` 가드 + 회귀 테스트. 원 PoC 재생 클린·재퍼징 1.4M회 무크래시·test_uds_state 30/30. ISS-SEC-004 발행. FH-3 ✅ |
 | 0.5 | 2026-06-08 | **FH-3 v2(다중블록) + SC3 리그 입증** — endless-data 누적 경로 퍼징(1.23M회·cov 253) 가드 있음 무크래시(방어 성립). SC3: 누적가드 일시 제거 시 **플래시모델이 OOB 검출**(16384B 경계), 복원 후 무크래시 → 리그·FR-CAN-012 가드 유효 입증. 슬롯 16KB 축소 모델 주(§3) |
