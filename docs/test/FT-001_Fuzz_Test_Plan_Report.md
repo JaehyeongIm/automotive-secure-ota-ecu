@@ -38,7 +38,7 @@
 **도구 선정 근거.**
 - **커버리지 가이드 퍼징**(libFuzzer/AFL++): 코드 커버리지를 신호로 입력을 진화 → ISO/SAE 21434가 높은 CAL에 권고하는 *adaptive* 퍼징에 해당. OSS-Fuzz·Chromium·Linux 커널이 쓰는 사실상 표준.
 - **ASAN/UBSAN**: 평시 조용한 경계 위반(OOB)·정의되지 않은 동작(정수 오버플로)을 *그 순간* 크래시로 드러내는 산업 표준 새니타이저.
-- **하니스 인터페이스 `LLVMFuzzerTestOneInput`**: libFuzzer·AFL++·Honggfuzz·OSS-Fuzz가 공통으로 받는 ABI → 엔진 lock-in 없음(컴파일러만 교체하면 AFL++ 전환).
+- **하니스 인터페이스 `LLVMFuzzerTestOneInput`**: libFuzzer·AFL++·Honggfuzz·OSS-Fuzz가 공통으로 받는 ABI → 엔진 lock-in 없음. **실증:** 동일 하니스를 `afl-clang-fast`(Docker/Linux)로 재컴파일해 AFL++로도 실행·교차검증함(§6, `fuzz/afl/run_afl.sh`).
 - **빌드**: Homebrew LLVM(`fuzz/build.sh`). Apple clang은 libFuzzer 미포함 → Homebrew `llvm` 사용. `-fsanitize=fuzzer,address,undefined -DUNIT_TEST`.
 - **자산 분리 근거**: 기능 단위테스트(Ceedling)가 이미 HAL과 순수 코어를 분리(`project.yml :source`)해 둠 → 동일 코어를 그대로 퍼징 하니스에 재사용.
 
@@ -87,6 +87,8 @@
 | 2026-06-08 | FH-3 `harness_uds` (수정 후 재퍼징) | 1.4M / 21s (67k/s) | — | 0 | 0 | per-block 가드(chunk_len>256→NRC 0x31) 후 **무크래시** → 방어 입증. 회귀 test_uds_state 30/30 |
 | 2026-06-08 | FH-3 v2(다중블록, 16KB 슬롯모델) | 1.23M / 26s (47k/s) | cov 253 | 0 | 0 | endless-data 누적 경로 — 가드 있음 → **무크래시**(누적·per-block 가드가 슬롯 내 유지). 방어 성립 |
 | 2026-06-08 | FH-3 v2 **SC3 리그 입증** | <초 | — | 1(의도) | — | 누적가드 일시 제거 → **플래시모델이 endless-data OOB 검출**(ASAN heap-overflow @ 16384B 경계, `ota_flash_write`). 가드 복원 후 재퍼징 무크래시 → 리그·FR-CAN-012 가드 유효 입증 |
+| 2026-06-10 | **AFL++** FH-3 `harness_uds`(수정본) | 60s | cov 13.94% | 0 | 0 | **AFL++ 도입** — 동일 하니스를 `afl-clang-fast`로 빌드(Docker/Linux, arm64 네이티브) → 무크래시. 방어가 2번째 엔진에서도 성립 |
+| 2026-06-10 | **AFL++** FH-3 교차검증 `harness_uds_block`(가드해제 복사본) | havoc <2s | — | 1(의도) | — | **CWE-121 독립 재발견** — 250B 시드를 havoc로 키워 >260B(예: 266B) 입력 → `padded[260]` `stack-buffer-overflow`(ASAN `WRITE of size 268`). libFuzzer와 다른 엔진·변이로 교차 확인. 가드 복원 시 무크래시 |
 
 ## 7. 발견 사항 (Findings)
 
@@ -112,6 +114,7 @@
 - **근본 원인:** ECU가 0x34에서 maxBlockLen=258(데이터 256)을 *광고*하나 0x36에서 **블록 크기를 집행 안 함**. endless-data 누적가드(FR-CAN-012)는 *누적 vs 선언*만 봐 *블록 vs 버퍼* 사각지대를 못 막음.
 - **조치:** `chunk_len > 256` → NRC 0x31 가드(양 ECU). 회귀 `test_transfer_data_oversized_block`(test_uds_state) 추가.
 - **검증:** 원 PoC(261B) 재생 **클린** · **재퍼징 1.4M회 무크래시**(동일 퍼저가 더는 미발견) · `test_uds_state` **30/30** PASS. → [ISS-SEC-004](../troubleshooting/ISS-SEC-004_uds-transferdata-per-block-overflow.md) 8D.
+- **엔진 교차검증(2026-06-10):** 동일 결함을 **AFL++**도 독립 재발견(가드 임시해제 시 havoc로 2초 내 · >260B 입력), 가드 복원 후 **libFuzzer·AFL++ 양 엔진 무크래시**(§6). 단일 엔진 산물이 아님을 확인.
 - **의의:** **커버리지 가이드 퍼징이 endless-data 수정이 놓친 신규 메모리 손상(CWE-121)을 1초 미만에 발굴·차단** — FH-3의 핵심 성과.
 
 ## 8. 추적성
@@ -120,7 +123,7 @@
 |---|---|---|---|
 | FH-1 헤더 파서 | SR-FW-002·FR-AB-008·FR-CAN-011 | T-1·T-3·T-6 | F-001(B) — 실로직 분기 커버, 운영결함 0 |
 | FH-2 메타 파서 | FR-AB-005 | — | ⬜ 계획 |
-| FH-3 UDS 다운로드 | FR-CAN-012/013·SR-ATK-007 | T-8 | ✅ **F-003**(per-block 스택오버플로 CWE-121) 발견·수정·재퍼징 클린 + **v2 다중블록·SC3로 endless-data 누적가드+플래시모델 입증** |
+| FH-3 UDS 다운로드 | FR-CAN-012/013·SR-ATK-007 | T-8 | ✅ **F-003**(per-block 스택오버플로 CWE-121) 발견·수정·재퍼징 클린 + **v2 다중블록·SC3로 endless-data 누적가드+플래시모델 입증** + **AFL++ 교차검증**(엔진 lock-in 없음 실증) |
 
 전체 추적은 [RTM-001](../requirements/RTM-001_Requirements_Traceability_Matrix.md)에 통합 예정.
 
@@ -133,3 +136,4 @@
 | 0.3 | 2026-06-08 | **FH-3 sanity 통과**(프라이밍→DOWNLOADING→0x76) + **F-002 발견·수정** — sha256.c 부호 있는 시프트 UB를 UBSAN이 검출(§7), 3개 사본 `(WORD)` 캐스트, 회귀(test_hmac·test_uds_state) 통과, ISS-SEC-003 발행. 퍼즈 본실행은 다음 |
 | 0.4 | 2026-06-08 | **FH-3 본실행 — F-003 발견·수정·검증** — 261B 블록이 `padded[260]` 스택오버플로(CWE-121, uds.c:252)를 <1초에 유발. 양 ECU `chunk_len>256→NRC 0x31` 가드 + 회귀 테스트. 원 PoC 재생 클린·재퍼징 1.4M회 무크래시·test_uds_state 30/30. ISS-SEC-004 발행. FH-3 ✅ |
 | 0.5 | 2026-06-08 | **FH-3 v2(다중블록) + SC3 리그 입증** — endless-data 누적 경로 퍼징(1.23M회·cov 253) 가드 있음 무크래시(방어 성립). SC3: 누적가드 일시 제거 시 **플래시모델이 OOB 검출**(16384B 경계), 복원 후 무크래시 → 리그·FR-CAN-012 가드 유효 입증. 슬롯 16KB 축소 모델 주(§3) |
+| 0.6 | 2026-06-10 | **AFL++ 도입·교차검증** — 동일 하니스(`LLVMFuzzerTestOneInput`)를 `afl-clang-fast`(Docker/Linux, arm64 네이티브)로 재컴파일. 수정본 **무크래시**(방어 성립), 가드해제 복사본+단일블록(`harness_uds_block.c`)에서 **AFL++가 CWE-121을 havoc로 2초 내 독립 재발견** → libFuzzer(<1s)와 교차 확인. 재현 러너 `fuzz/afl/run_afl.sh`·`fuzz/README.md` 추가. **엔진 lock-in 없음 실증** |
