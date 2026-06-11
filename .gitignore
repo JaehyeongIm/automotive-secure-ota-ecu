@@ -71,3 +71,7 @@ fixtures/
 
 # 포트폴리오 pptx (개인 산출물, 로컬 보관·저장소 제외)
 docs/portfolio/*.pptx
+
+# SIT-TC-08 CAN flood 측정 기록 (개인 캡처 포함, 로컬 보관·저장소 제외)
+docs/test/SIT-TC-08_CAN_flood_measurement.md
+docs/test/SIT-TC-08_CAN_flood_*.png
