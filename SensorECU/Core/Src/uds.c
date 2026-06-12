@@ -53,19 +53,14 @@ static const uint8_t s_psk[OTA_PSK_LEN] = {
 #define SEC_PSK_PTR ((const uint8_t *)OTA_PSK_ADDR)
 #endif
 
-static uint32_t sec_make_seed(void)
+/* 순수 seed 유도(호스트 테스트 가능): SHA-256(UID ‖ mid ‖ ctr)[0:4].
+ * mid·ctr이 재부팅 시 리셋되면 seed가 재현되어 replay가 가능함을 단위테스트로
+ * 실증하고, mid를 영속 카운터로 바꾸면 닫힘을 같은 함수로 검증한다(SR-ATK-005). */
+uint32_t sec_derive_seed(const uint8_t uid[12], uint32_t mid, uint32_t ctr)
 {
-#ifdef UNIT_TEST
-    return HAL_GetTick() ^ 0xA5A5A5A5UL;   /* deterministic seed for host tests */
-#else
-    /* STM32F446 has no hardware RNG: derive a fresh, hard-to-predict seed from the
-       96-bit device UID + SysTick + a rolling counter, hashed with SHA-256. */
-    static uint32_t ctr = 0;
     uint8_t buf[20];
-    memcpy(buf, (const void *)0x1FFF7A10UL, 12);   /* device UID */
-    uint32_t t = HAL_GetTick();
-    memcpy(buf + 12, &t, 4);
-    ctr++;
+    memcpy(buf,      uid, 12);
+    memcpy(buf + 12, &mid, 4);
     memcpy(buf + 16, &ctr, 4);
     uint8_t h[32];
     SHA256_CTX c;
@@ -73,6 +68,41 @@ static uint32_t sec_make_seed(void)
     sha256_update(&c, buf, sizeof buf);
     sha256_final(&c, h);
     return ((uint32_t)h[0] << 24) | ((uint32_t)h[1] << 16) | ((uint32_t)h[2] << 8) | h[3];
+}
+
+/* Boot-epoch freshness 상태(SR-ATK-005). boot_epoch = 영속 seq_counter에서 부팅당
+ * 1회 lazy bump(재부팅에도 유지). session_ctr = 부팅 내 요청별 증가. seed=SHA-256(
+ * UID‖boot_epoch‖session_ctr) → 재부팅 가로질러 비반복 → 구 SysTick(재부팅 리셋)의
+ * reboot-replay 창을 닫음(ADR-004→영속 카운터). */
+static uint8_t  s_epoch_ready;
+#ifndef UNIT_TEST
+static uint32_t s_boot_epoch;     /* 영속 seq_counter(부팅당 bump) — 호스트 미사용 */
+static uint32_t s_session_ctr;
+#endif
+
+/* 첫 호출에 boot-epoch을 영속 seq_counter에서 bump+seal. 성공 시 1.
+ * handle()는 메인루프(uds_process)에서 실행되므로 1회 flash bump가 안전(ISR 아님). */
+static int sec_freshness_ensure(void)
+{
+#ifdef UNIT_TEST
+    s_epoch_ready = 1;                 /* 호스트: 결정론적 seed라 epoch 미사용 */
+    return 1;
+#else
+    if (s_epoch_ready) return 1;
+    if (ota_meta_bump_seq(&s_boot_epoch) != HAL_OK) return 0;   /* NV 불가 → 호출측 거부 */
+    s_epoch_ready = 1;
+    return 1;
+#endif
+}
+
+static uint32_t sec_make_seed(void)
+{
+#ifdef UNIT_TEST
+    return HAL_GetTick() ^ 0xA5A5A5A5UL;   /* deterministic seed for host tests */
+#else
+    /* 영속 boot_epoch + per-session ctr → seed 재부팅 비반복(replay 차단). */
+    s_session_ctr++;
+    return sec_derive_seed((const uint8_t *)0x1FFF7A10UL, s_boot_epoch, s_session_ctr);
 #endif
 }
 
@@ -141,6 +171,7 @@ static void handle(const uint8_t *req, uint16_t len)
         if (sec_is_locked()) { nrc(sid, 0x37); break; }  /* requiredTimeDelayNotExpired */
 
         if (req[1] == 0x01) {                   /* requestSeed */
+            if (!sec_freshness_ensure()) { nrc(sid, 0x22); break; }  /* freshness NV 불가 → conditionsNotCorrect */
             g_seed = sec_make_seed();
             uint8_t r[6] = {0x67, 0x01,
                 (uint8_t)(g_seed >> 24), (uint8_t)(g_seed >> 16),

@@ -19,4 +19,9 @@ HAL_StatusTypeDef ota_meta_write_pending(uint8_t slot, uint32_t fw_size, uint32_
 HAL_StatusTypeDef ota_meta_self_confirm(uint8_t my_slot);
 uint8_t           ota_get_active_slot(void);
 
+/* 영속 단조 seq_counter를 +1 하고 새 값을 *new_seq에 반환(부팅당 1회). SecurityAccess
+ * seed freshness용 boot-epoch — 재부팅에도 유지되어 seed 비반복 보장(SR-ATK-005).
+ * 유효 메타 없으면 HAL_ERROR. ping-pong 원자커밋(전원단절 안전). */
+HAL_StatusTypeDef ota_meta_bump_seq(uint32_t *new_seq);
+
 #endif

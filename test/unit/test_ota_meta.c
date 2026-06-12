@@ -172,3 +172,54 @@ void test_self_confirm_trial_to_confirmed(void)
     TEST_ASSERT_EQUAL_UINT32(SLOT_CONFIRMED, result.slot_b_status);
     TEST_ASSERT_EQUAL_UINT32(0,              result.boot_count);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TC-UT-META-011~013: ota_meta_bump_seq() — boot-epoch freshness (SR-ATK-005)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* TC-UT-META-011: bump → seq_counter +1, 슬롯/버전/상태/부트카운트 보존, 새 seq 반환 */
+void test_bump_seq_increments_and_preserves_state(void)
+{
+    OTA_Metadata_t cur = make_meta(1, SLOT_CONFIRMED, SLOT_CONFIRMED, 3, 7, 4);
+    cur.seq_counter = 10;
+    ota_test_init_meta(&cur);
+
+    uint32_t new_seq = 0;
+    TEST_ASSERT_EQUAL_INT(HAL_OK, ota_meta_bump_seq(&new_seq));
+    TEST_ASSERT_EQUAL_UINT32(11, new_seq);            /* 10 → 11 */
+
+    OTA_Metadata_t result;
+    ota_test_get_meta(&result);
+    TEST_ASSERT_EQUAL_UINT32(11,             result.seq_counter);
+    /* seq만 바뀌고 슬롯/버전/상태/부트카운트는 보존 */
+    TEST_ASSERT_EQUAL_UINT32(1,              result.active_slot);
+    TEST_ASSERT_EQUAL_UINT32(SLOT_CONFIRMED, result.slot_a_status);
+    TEST_ASSERT_EQUAL_UINT32(SLOT_CONFIRMED, result.slot_b_status);
+    TEST_ASSERT_EQUAL_UINT32(3,              result.slot_a_version);
+    TEST_ASSERT_EQUAL_UINT32(7,              result.slot_b_version);
+    TEST_ASSERT_EQUAL_UINT32(4,              result.boot_count);
+}
+
+/* TC-UT-META-012: 연속 두 번 bump(= 두 번 재부팅) → epoch 단조증가·비반복 */
+void test_bump_seq_monotonic_across_two_boots(void)
+{
+    OTA_Metadata_t cur = make_meta(0, SLOT_CONFIRMED, SLOT_CONFIRMED, 1, 1, 0);
+    cur.seq_counter = 1;
+    ota_test_init_meta(&cur);
+
+    uint32_t e1 = 0, e2 = 0;
+    ota_meta_bump_seq(&e1);   /* 1차 부팅 epoch */
+    ota_meta_bump_seq(&e2);   /* 2차 부팅 epoch */
+
+    TEST_ASSERT_EQUAL_UINT32(2, e1);
+    TEST_ASSERT_EQUAL_UINT32(3, e2);
+    TEST_ASSERT_NOT_EQUAL(e1, e2);   /* 재부팅 가로질러 epoch 다름 → seed 비반복 */
+}
+
+/* TC-UT-META-013: 유효 메타 없음(공장 첫 부팅) → HAL_ERROR (호출측 SecurityAccess 거부) */
+void test_bump_seq_no_metadata_returns_error(void)
+{
+    /* setUp에서 magic=0 (유효 메타 없음) */
+    uint32_t s = 0xDEAD;
+    TEST_ASSERT_EQUAL_INT(HAL_ERROR, ota_meta_bump_seq(&s));
+}

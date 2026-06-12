@@ -219,3 +219,27 @@ HAL_StatusTypeDef ota_meta_self_confirm(uint8_t my_slot)
     out.crc32 = ota_meta_crc(&out);
     return meta_write_copy(to_b, &out);
 }
+
+/* SecurityAccess seed freshness (SR-ATK-005): 영속 단조 seq_counter를 +1 하고 비활성
+ * 사본에 ping-pong 원자커밋(전원단절 안전). 부팅당 1회 호출되어 boot-epoch 역할 → seed가
+ * 재부팅을 가로질러 비반복 → reboot-replay 차단. 유효 메타 없으면 HAL_ERROR.
+ * 한계: seq_counter는 CRC-only 메타라 물리(SWD) 변조로 되돌릴 수 있음 → 네트워크 replay만
+ * 차단; 물리 변조 방지는 ATECC608A 단조 카운터가 정석(ADR-006). */
+HAL_StatusTypeDef ota_meta_bump_seq(uint32_t *new_seq)
+{
+    OTA_Metadata_t cur;
+    if (!ota_meta_select(COPY_A, COPY_B, &cur)) return HAL_ERROR;
+    cur.seq_counter += 1u;
+
+    int va = ota_meta_valid(COPY_A);
+    int vb = ota_meta_valid(COPY_B);
+    int to_b;
+    if (va && vb) to_b = (COPY_A->seq_counter >= COPY_B->seq_counter) ? 1 : 0;
+    else if (va)  to_b = 1;
+    else          to_b = 0;
+
+    cur.crc32 = ota_meta_crc(&cur);
+    HAL_StatusTypeDef ret = meta_write_copy(to_b, &cur);
+    if (ret == HAL_OK && new_seq) *new_seq = cur.seq_counter;
+    return ret;
+}
