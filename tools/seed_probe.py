@@ -41,36 +41,39 @@ def main() -> None:
     args = ap.parse_args()
 
     bus = can.interface.Bus(interface=args.interface, channel=args.channel)
-    c = OTAClient(bus, ecu=args.ecu)
-    c.wait_for_idle(timeout=30)
-
-    if not args.replay:
-        print(f"SEED = {request_seed(c).hex()}")
-        return
-
-    # 1차 부팅 — (Seed, Key) 캡처 + Unlock 확인
-    seed1 = request_seed(c)
-    key1  = hmac.new(PSK, seed1, hashlib.sha256).digest()[:4]
-    print(f"[1차] Seed1 = {seed1.hex()}   Key1 = {key1.hex()}")
-    r = c.request(bytes([0x27, 0x02]) + key1)
-    print(f"[1차] Unlock 응답 = {r.hex()}  (0x6702 기대)")
-
-    input("\n>>> ECU를 리셋(전원 재인가)하고, 부팅되면 Enter <<<\n")
-
-    # 2차 부팅 — 새 Seed 확인 + 옛 Key1 재전송(replay)
-    seed2 = request_seed(c)
-    print(f"[2차] Seed2 = {seed2.hex()}")
-    if seed2 == seed1:
-        print("✗ FAIL: Seed2 == Seed1 (재현됨 → freshness 미작동, replay 가능)")
-        sys.exit(1)
-    print("✓ Seed2 ≠ Seed1 (재부팅 후 seed 비반복 — freshness 작동)")
-
     try:
-        r = c.request(bytes([0x27, 0x02]) + key1)   # 캡처한 옛 Key 재전송
-        print(f"✗ FAIL: 옛 Key 통과 resp={r.hex()} (replay 성공 = 취약)")
-        sys.exit(1)
-    except UDSError as e:
-        print(f"✓ PASS: 옛 Key 거부 ({e}) — replay 차단됨")
+        c = OTAClient(bus, ecu=args.ecu)
+        c.wait_for_idle(timeout=30)
+
+        if not args.replay:
+            print(f"SEED = {request_seed(c).hex()}")
+            return
+
+        # 1차 부팅 — (Seed, Key) 캡처 + Unlock 확인
+        seed1 = request_seed(c)
+        key1  = hmac.new(PSK, seed1, hashlib.sha256).digest()[:4]
+        print(f"[1차] Seed1 = {seed1.hex()}   Key1 = {key1.hex()}")
+        r = c.request(bytes([0x27, 0x02]) + key1)
+        print(f"[1차] Unlock 응답 = {r.hex()}  (0x6702 기대)")
+
+        input("\n>>> ECU를 리셋(전원 재인가)하고, 부팅되면 Enter <<<\n")
+
+        # 2차 부팅 — 새 Seed 확인 + 옛 Key1 재전송(replay)
+        seed2 = request_seed(c)
+        print(f"[2차] Seed2 = {seed2.hex()}")
+        if seed2 == seed1:
+            print("✗ FAIL: Seed2 == Seed1 (재현됨 → freshness 미작동, replay 가능)")
+            sys.exit(1)
+        print("✓ Seed2 ≠ Seed1 (재부팅 후 seed 비반복 — freshness 작동)")
+
+        try:
+            r = c.request(bytes([0x27, 0x02]) + key1)   # 캡처한 옛 Key 재전송
+            print(f"✗ FAIL: 옛 Key 통과 resp={r.hex()} (replay 성공 = 취약)")
+            sys.exit(1)
+        except UDSError as e:
+            print(f"✓ PASS: 옛 Key 거부 ({e}) — replay 차단됨")
+    finally:
+        bus.shutdown()
 
 
 if __name__ == "__main__":

@@ -181,6 +181,15 @@ TC별 합격기준은 §3, 판정은 로그·heartbeat 자동 대조.
 - **S3 세션 타임아웃(FR-CAN-019/NFR-REL-003): 구현됨(2026-06-07)** — `uds_process()`가 5s 무요청 시 세션 abort→Default 복귀(양 ECU, 단위 `test_s3_timeout`). 폭주로 멈춘 세션도 5s 후 자동 회복. 본 TC의 no-brick(메타 미commit→known-good 유지)과 함께 *세션 자동 abort*도 충족.
 - **비고:** 부하 시험(`cangen`=can-utils). 정량 KPI(주입 부하율 vs 복구) 기록 권장
 
+### SIT-TC-09 — SecurityAccess replay: 재부팅 후 seed 비반복·캡처 Key 거부 (TC-ATK-005)
+- **목적/추적:** 재부팅 후 같은 seed가 재생성되지 않아(영속 boot-epoch) 캡처한 Key의 재전송이 거부되는지. TC-ATK-005, SR-ATK-005, ADR-004 §6
+- **전제:** ECU IDLE(주행 중 아님), 양 ECU 정상
+- **절차(반자동):** Pi에서 `tools/seed_probe.py --ecu <drive|sensor> --channel can0 --replay` → ① RequestSeed로 Seed1·Key1 캡처 + Unlock 확인 → ② "리셋" 프롬프트에서 Mac `st-flash reset`(전원 재인가) → ③ Enter → RequestSeed로 Seed2 + 캡처 Key1 재전송
+- **기대(관측):** `Seed2 ≠ Seed1` + 옛 Key1 전송 시 `NRC SID=0x27 code=0x35(invalidKey)` → replay 차단. Unlock 정상(회귀 없음)
+- **합격:** 재부팅 후 seed 비반복 + 옛 Key NRC 0x35(양 ECU)
+- **음성 대조:** 수정 전이면 같은 타이밍에 `Seed2==Seed1` + 옛 Key 통과(unlock) = replay 성공이었음(단위 `test_sec_freshness`로 현행 재현성 실증)
+- **잔여:** epoch가 CRC-only 메타라 물리(SWD) 카운터 변조는 미차단 → ATECC608A(ADR-004 §6·ADR-006)
+
 ---
 
 ## 4. 추적 매트릭스
@@ -195,6 +204,7 @@ TC별 합격기준은 §3, 판정은 로그·heartbeat 자동 대조.
 | TC-06 | TC-ATK-001(ECDSA 변조) | test_bootloader_slot(verify_decision REQUIRED) | 본 플랜 · forge_image --tamper |
 | TC-07 | TC-ATK-002(서명무효) | test_bootloader_slot(REQUIRED) | 본 플랜 · forge_image --unsign |
 | TC-08 | TC-ATK-008(no-brick) · FR-CAN-019(S3) 구현 | test_uds_state(S3 2종) | 본 플랜 · cangen 부하(반자동) |
+| TC-09 | TC-ATK-005(replay)·SR-ATK-005·ADR-004 §6 | test_sec_freshness(재현+수정 5종)·test_ota_meta(bump 3종) | 본 플랜 · seed_probe.py --replay(반자동) |
 
 ---
 
@@ -216,6 +226,7 @@ OTA = scp+ssh로 `ota_client.py`(운영 경로 재사용), 오케스트레이션
 | TC-02 3-strike | 2026-06-04 | drive B(고장 v3) | `trial start` → `trial retry`×2 → `3-strike … INVALID, rollback` → `version v2 OK` | **PASS** | IWDG 3사이클(~30s). RX printf 제거(커밋 f605919) 후 |
 | TC-03 fail-closed | 2026-06-04 | drive A | `metadata size invalid (0x00000000) — fail-closed, refusing` | **PASS** | `forge_meta --preset size0-attack` 주입 |
 | TC-04 staleness | 2026-06-04 | drive A | `[DRIVE] 센서 stale → fail-safe 정지` | **PASS** | 주행 중 센서 0x200 분리 → ~150ms 내 정지 |
+| TC-09 replay | 2026-06-13 | drive·sensor | `Seed2 ≠ Seed1` + 옛 Key `NRC 0x27 0x35`(양 ECU) | **PASS** | 영속 boot-epoch. `seed_probe.py --replay`. Unlock 정상(회귀 없음) |
 | TC-00 / TC-01b / TC-03b / TC-04b | — | | | (미실행) | 음성 대조·베이스라인은 후속 |
 
-**판정:** 핵심 4종 **실보드 PASS(2026-06-04)** — 보안 3(fail-closed·anti-rollback·3-strike) + 안전 1(센서 staleness) 실증 완료. 음성 대조(b)는 후속. FAIL 시 8D 트러블슈팅(ISS) 발행.
+**판정:** 핵심 4종 **실보드 PASS(2026-06-04)** — 보안 3(fail-closed·anti-rollback·3-strike) + 안전 1(센서 staleness). **+ TC-09 replay 차단 PASS(2026-06-13, 양 ECU)** — 영속 epoch로 reboot-replay 해소(ADR-004 §6). 음성 대조(b)는 후속. FAIL 시 8D 트러블슈팅(ISS) 발행.
