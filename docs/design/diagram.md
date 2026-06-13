@@ -113,7 +113,6 @@ stateDiagram-v2
         DRIVE_RUNNING --> DRIVE_STOPPED : 10cm 장애물 (v3)
         DRIVE_STOPPED --> DRIVE_REVERSING : 300ms 대기 후 후진 (v3)
         DRIVE_REVERSING --> DRIVE_IDLE : 600ms 후진 완료 (v3)
-        DRIVE_IDLE --> DRIVE_IDLE : g_fw_pending 감지\n→ NVIC_SystemReset()
     }
 
     state OTASession {
@@ -123,12 +122,11 @@ stateDiagram-v2
         Erasing --> Transferring : Erase 완료\ng_ota_active=0
         Transferring --> Transferring : TransferData (0x36) 청크 반복
         Transferring --> TransferDone : RequestTransferExit (0x37)
-        TransferDone --> [*] : g_fw_pending=1 세트\n즉시 재부팅 없음
+        TransferDone --> [*] : NVIC_SystemReset()\n→ 즉시 재부팅
     }
 
-    NormalOperation --> OTASession : UDS 0x10 수신 (주행 중 가능)
-    OTASession --> NormalOperation : TransferExit 완료\n(g_fw_pending=1, 주행 재개)
-    NormalOperation --> Bootloader : DRIVE_IDLE에서 g_fw_pending 감지\n→ 재부팅 → 슬롯 전환
+    NormalOperation --> OTASession : UDS 0x10 수신\n(Gateway가 heartbeat로 IDLE 확인 후 개시)
+    OTASession --> Bootloader : TransferExit(0x37) 완료\n→ NVIC_SystemReset() → 슬롯 전환
     Waiting --> [*] : 수동 개입 필요
 ```
 
@@ -158,6 +156,8 @@ sequenceDiagram
     JEN->>JEN: ci/build.sh drive B\n(SlotB 링커로 빌드)
     JEN->>JEN: sign_firmware.py\n(ECDSA-P256 서명)
 
+    Note over JEN,ECU: ota_client.wait_for_idle — heartbeat 0x100 driving_state==0 확인 (최대 120초)
+
     JEN->>CAN: UDS 0x10 0x02 (ExtendedSession)
     CAN->>ECU: DiagnosticSessionControl
     ECU->>CAN: 0x50 0x02 (OK)
@@ -184,15 +184,9 @@ sequenceDiagram
 
     JEN->>CAN: UDS 0x37 (TransferExit)
     ECU->>ECU: ota_meta_write_pending()\n(메타데이터 갱신, active_slot 미변경)
-    ECU->>ECU: g_fw_pending = 1
     ECU->>CAN: 0x77 (OK)
-    Note over ECU: 즉시 재부팅 없음 — 주행 재개 가능
     CAN->>JEN: 0x77 수신
-
-    Note over ECU: DRIVE_RUNNING / DRIVE_IDLE 상태 정상 유지
-    ECU->>CAN: heartbeat [ver, slot=A, driving=0, ...]
-    Note over ECU: DRIVE_IDLE 진입 시 g_fw_pending 감지
-    ECU->>ECU: NVIC_SystemReset()
+    ECU->>ECU: NVIC_SystemReset() (즉시 재부팅)
 
     ECU->>ECU: Bootloader: ECDSA 검증
     ECU->>ECU: Slot B App 실행

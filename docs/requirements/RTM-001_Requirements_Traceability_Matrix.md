@@ -57,7 +57,7 @@
 | FR-BL-010 | 첫 부팅 Self-test 확인 | §5.3,5.4 | plan_boot·self_confirm | test_meta_lifecycle·SIT-TC-02 | ✅ |
 | FR-BL-011 | 메타 손상 안전정책(Should) | §6.2 | verify_decision·CRC | test_bootloader_slot·test_meta | ✅ |
 | FR-BL-012 | IWDG + 5s 세션 abort | §2.5 | IWDG·uds_process(S3) | test_uds_state(S3 2)·SIT-TC-02/08 | ✅ |
-| FR-BL-013 | Bootloader WRP 보호(Should) | §14.2 | 링커·WRP 설정 | on-target(코드리뷰) | 🔶 |
+| FR-BL-013 | Bootloader WRP 보호(Should) | §14.2 | 링커·옵션바이트 nWRP0/1 | on-target: 양 보드 nWRP0/1=active + 섹터0 erase 거부([WRP-PROV-001](../test/WRP-PROV-001_Bootloader_WRP_Provisioning.md)) | ✅ |
 
 ## 3. A/B Slot & Rollback (FR-AB) — `ota_meta`, `ota_flash`, `bootloader.c`
 
@@ -99,7 +99,7 @@
 | FR-DRV-004 | v2 자동 후진(Should) | drive.c | on-target | 🔶 |
 | FR-DRV-006 | App version/slot CAN 보고 | drive.c(0x100) | on-target heartbeat | ✅ |
 | FR-DRV-007 | OTA 중 주행 유지 | main.c 루프 | on-target | 🔶 |
-| FR-DRV-008 | IDLE 시 g_fw_pending 재부팅 | main.c | on-target(SIT-TC-01~) | ✅ |
+| FR-DRV-008 | TransferExit(0x37) 시 즉시 재부팅 활성화 | DriveECU/uds.c(0x37 NVIC_SystemReset) | on-target(SIT-TC-01~) | ✅ |
 | FR-SEN-001 | HC-SR04 거리 읽기 | SensorECU/main.c | on-target | 🔶 |
 | FR-SEN-002 | 임계 10cm | SensorECU/main.c | on-target | 🔶 |
 | FR-SEN-003 | 100ms heartbeat(Should) | SensorECU/main.c(0x201) | on-target | 🔶 |
@@ -117,7 +117,7 @@
 | FR-CICD-004 | cppcheck 정적분석(Should) | Jenkinsfile | CI 로그 | 🔶 |
 | FR-CICD-005 | 바이너리 크기 검사 | Jenkinsfile | CI 로그 | ✅ |
 | FR-CICD-006 | ECDSA 서명 + Manifest 생성 | sign_firmware.py | 서명 검증 | 🔁 **Manifest 미생성**, 서명 이미지만(§8.1) |
-| FR-CICD-007 | 다운로드/IDLE 활성화 분리 | ota_client·main.c | on-target | ✅ |
+| FR-CICD-007 | IDLE 확인 후 다운로드·TransferExit 즉시 활성화 | ota_client.py(wait_for_idle)·uds.c(0x37) | on-target | ✅ |
 | FR-CICD-008 | Stage 로그 기록 | Jenkinsfile | CI 이력 | ✅ |
 | FR-CICD-009 | 개인키 Credentials | Jenkinsfile | 코드리뷰 | ✅ |
 | FR-CICD-010 | 배포 실패 FAILURE 표시 | Jenkinsfile | on-target(build #85, TR §4.1) | ✅ |

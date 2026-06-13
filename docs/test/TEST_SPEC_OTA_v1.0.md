@@ -456,7 +456,7 @@ DriveECU (PA11/PA12)
 
 ---
 
-### TC-OTA-007 TransferExit — 메타데이터 기록 및 g_fw_pending 세트
+### TC-OTA-007 TransferExit — 메타데이터 기록 및 즉시 재부팅
 
 | 항목 | 내용 |
 |------|------|
@@ -464,31 +464,31 @@ DriveECU (PA11/PA12)
 | **테스트 레벨** | SWE.4 |
 | **우선순위** | H |
 | **참조 요구사항** | FR-CAN-013, FR-DRV-008 |
-| **목적** | TransferExit 수신 시 즉시 재부팅 없이 g_fw_pending=1 세트 및 UART 로그 출력 검증 |
-| **사전 조건** | TransferData 전체 청크 전송 완료 |
-| **테스트 절차** | 1. 0x37 (RequestTransferExit) 전송<br>2. 0x77 응답 확인<br>3. UART 로그: `FW ready Slot X — IDLE 시 재부팅` 확인<br>4. 이 시점에서 차량이 재부팅되지 않음 확인 |
-| **기대 결과** | 0x77 응답 수신, 즉시 재부팅 없음, UART 로그 출력 |
-| **합격 기준** | 응답 확인, 재부팅 미발생 확인 |
+| **목적** | TransferExit 수신 시 메타데이터(pending) 기록·0x77 응답·UART 로그 출력 후 즉시 NVIC_SystemReset() 재부팅 검증 |
+| **사전 조건** | TransferData 전체 청크 전송 완료(누적 수신 == image_size) |
+| **테스트 절차** | 1. 0x37 (RequestTransferExit) 전송<br>2. 0x77 응답 확인<br>3. UART 로그: `[UDS] FW Slot X 완료 → 재부팅` 확인<br>4. 응답 후 약 100ms 내 재부팅 및 부트로더 로그 진입 확인 |
+| **기대 결과** | 0x77 응답 수신 후 즉시(~100ms) NVIC_SystemReset() 재부팅, Bootloader 진입 |
+| **합격 기준** | 응답 확인, 재부팅 발생 및 Bootloader 진입 확인 |
 | **결과** | N/T |
-| **비고** | Uptane 표준: 활성화 분리 원칙 |
+| **비고** | ADR-001 옵션 C — 활성화는 TransferExit 시 즉시(IDLE 전제는 Gateway가 보장) |
 
 ---
 
-### TC-OTA-008 IDLE 상태 진입 시 자동 재부팅 및 슬롯 전환
+### TC-OTA-008 Gateway IDLE 감지 후 OTA 시작 (wait_for_idle)
 
 | 항목 | 내용 |
 |------|------|
 | **TC ID** | TC-OTA-008 |
 | **테스트 레벨** | SWE.5 |
 | **우선순위** | H |
-| **참조 요구사항** | FR-DRV-008, FR-CICD-007 |
-| **목적** | g_fw_pending=1 상태에서 DRIVE_IDLE 진입 시 자동 재부팅 및 새 슬롯 부팅 검증 |
-| **사전 조건** | TC-OTA-007 PASS (g_fw_pending=1), DRIVE_RUNNING 또는 DRIVE_STOPPED 상태 |
-| **테스트 절차** | 1. 전진 완료 대기(FORWARD_MS 경과) 또는 장애물로 정지 유도<br>2. DRIVE_IDLE 진입 시 UART 로그: `[DRIVE] 새 펌웨어 대기 중 → 재부팅` 확인<br>3. 재부팅 후 부트로더 로그: `[BL] Jump to 0x0804XXXX` 확인<br>4. candump로 CAN 0x100 byte[1] 슬롯 전환 확인 |
-| **기대 결과** | IDLE 진입 후 200ms 내 재부팅, 새 슬롯으로 부팅 |
-| **합격 기준** | 슬롯 전환 확인, 새 APP_VERSION 하트비트 확인 |
+| **참조 요구사항** | FR-CICD-007, FR-DRV-006 |
+| **목적** | OTA 배포 스크립트가 heartbeat(CAN 0x100) driving_state로 IDLE을 확인한 뒤에만 OTA(RequestDownload)를 시작하는지 검증 |
+| **사전 조건** | ECU DRIVE_RUNNING 상태, `tools/ota_client.py` 실행(`--idle-timeout` 기본 120초) |
+| **테스트 절차** | 1. B1 버튼으로 ECU를 DRIVE_RUNNING 유지<br>2. ota_client OTA 트리거 → `[OTA] ECU IDLE 대기 중` 로그 확인<br>3. 주행 중(heartbeat byte[2]==1)에는 0x34가 전송되지 않음을 candump로 확인<br>4. 주행 완료로 DRIVE_IDLE(byte[2]==0) 진입 후 `[OTA] ECU IDLE 확인 → OTA 시작` 로그 및 0x34 전송 시작 확인 |
+| **기대 결과** | driving_state==1 동안 OTA 미개시, IDLE 확인 후 OTA 시퀀스 시작 |
+| **합격 기준** | IDLE 전 0x34 부재, IDLE 후 OTA 진행 확인 |
 | **결과** | N/T |
-| **비고** | — |
+| **비고** | ADR-001 옵션 C — IDLE 게이트는 Gateway(RPi5) `wait_for_idle`; 타임아웃 시 OTA 중단 |
 
 ---
 

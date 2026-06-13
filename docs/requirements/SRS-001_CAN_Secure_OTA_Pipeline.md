@@ -335,7 +335,7 @@
 | FR-DRV-004 | Drive ECU App v2는 v1 정지 후 자동 후진 복귀를 구현해야 한다. | Should | 10cm 이하 정지 후 300ms 대기, 600ms 후진(SLOW_SPEED), DRIVE_IDLE 복귀 순서로 동작해야 한다. |
 | FR-DRV-006 | Drive ECU는 현재 App Version과 Slot 정보를 CAN으로 보고해야 한다. | Must | CAN ID 0x100 heartbeat에 APP_VERSION, 활성 슬롯, 주행 상태, 장애물 상태가 포함되어야 한다. |
 | FR-DRV-007 | Drive ECU는 OTA 다운로드(TransferData) 진행 중에도 주행 기능을 유지해야 한다. | Must | RequestDownload(0x34) 수신 후 g_ota_active=1 구간(Flash Erase ~4초)에만 모터가 정지되며, 그 외 TransferData 구간에서는 drive_update()가 정상 실행되어야 한다. |
-| FR-DRV-008 | Drive ECU는 DRIVE_IDLE 상태 진입 시 g_fw_pending 플래그를 확인하여 재부팅으로 펌웨어를 활성화해야 한다. | Must | TransferExit(0x37) 완료 후 g_fw_pending=1이 설정되고, 다음 DRIVE_IDLE 진입 시 NVIC_SystemReset()이 호출되어 Bootloader가 새 슬롯으로 부팅해야 한다. (Uptane 지연 활성화) |
+| FR-DRV-008 | Drive ECU는 TransferExit(0x37) 완료 시 재부팅으로 펌웨어를 활성화해야 한다. | Must | TransferExit(0x37) 수신·전송 완료 검증(누적 수신 == image_size) 후 NVIC_SystemReset()이 호출되어 Bootloader가 새 슬롯으로 부팅해야 한다. OTA를 정차(IDLE) 구간으로 한정하는 안전 전제는 Gateway(RPi5)가 RequestDownload 이전 heartbeat(CAN 0x100)로 보장한다(ADR-001 옵션 C, FR-CICD-007 연계). |
 
 ### 7.6 Sensor/Body ECU Application 요구사항
 
@@ -359,7 +359,7 @@ Jenkins 기반 CI/CD 파이프라인은 Raspberry Pi 5에서 운용되며, Git p
 | FR-CICD-004 | Stage 2에서 cppcheck를 통해 펌웨어 소스코드 정적 분석을 수행해야 한다. | Should | error 등급 이상의 결함 검출 시 파이프라인이 중단되고 결함 목록이 로그에 기록되어야 한다. |
 | FR-CICD-005 | Stage 3에서 빌드된 펌웨어 바이너리 크기가 App Slot 크기(128KB)를 초과하는지 검사해야 한다. | Must | 초과 시 파이프라인이 중단되고 실제 크기와 한계 크기가 로그에 기록되어야 한다. |
 | FR-CICD-006 | Stage 4에서 ECDSA 개인키로 펌웨어에 서명하고 Manifest를 생성해야 한다. | Must | 서명된 펌웨어 바이너리와 Manifest 파일이 Jenkins 아티팩트로 저장되어야 한다. **구현 현황:** 별도 Manifest 파일은 미생성(§8.1) — `sign_firmware.py`가 서명 헤더+ECDSA를 이미지에 내장한 *서명 바이너리*만 산출(이게 Manifest의 무결성·인증성 기능을 흡수). campaign_id/expiration 메타는 Uptane-lite 후속. |
-| FR-CICD-007 | Stage 5에서 OTA 배포 스크립트는 주행 중에도 다운로드를 시작할 수 있으나, 실제 펌웨어 활성화(재부팅)는 ECU가 IDLE 상태가 된 후 자동으로 수행된다. | Must | UDS over ISO-TP 절차(0x10→0x27→0x34→0x36→0x37)로 비활성 슬롯에 펌웨어 기록을 완료한다. TransferExit 후 ECU는 g_fw_pending=1을 세트하고 즉시 재부팅하지 않는다. DRIVE_IDLE 상태 진입 시 ECU가 자동 재부팅하며, Jenkins는 heartbeat(CAN 0x100) 슬롯 전환을 확인한다. (Uptane 지연 활성화, FR-DRV-008 연계) |
+| FR-CICD-007 | Stage 5에서 OTA 배포 스크립트는 ECU가 IDLE(정차) 상태임을 heartbeat로 확인한 뒤 다운로드를 시작하고, TransferExit 완료 시 ECU가 즉시 재부팅하여 펌웨어를 활성화한다. | Must | OTA 배포 스크립트(`tools/ota_client.py`)는 UDS over ISO-TP 절차(0x10→0x27→0x34→0x36→0x37) 시작 전에 heartbeat(CAN 0x100) driving_state==0(IDLE)을 확인한다(`wait_for_idle`, `--idle-timeout` 기본 120초·미충족 시 OTA 중단). IDLE 확인 후 비활성 슬롯에 펌웨어 기록을 완료하므로 Flash Erase가 정차 구간에서 수행된다. TransferExit(0x37) 완료 시 ECU는 즉시 NVIC_SystemReset()으로 재부팅하고, Jenkins는 heartbeat(CAN 0x100) byte[1] 슬롯 전환을 확인한다. (ADR-001 옵션 C, FR-DRV-008 연계) |
 | FR-CICD-008 | 각 Stage의 실행 결과와 로그가 Jenkins 빌드 이력에 기록되어야 한다. | Must | 성공/실패 여부, 실패 원인, 각 Stage 소요 시간이 Jenkins UI에서 확인 가능해야 한다. |
 | FR-CICD-009 | ECDSA 개인키는 Jenkins Credentials로 관리되어야 하며 Jenkinsfile에 평문 노출되지 않아야 한다. | Must | Jenkinsfile 소스코드에 키 값이 존재하지 않아야 한다. |
 | FR-CICD-010 | Stage 5 OTA 배포 실패 시 Jenkins 빌드를 FAILURE로 표시하고 실패 원인을 로그에 기록해야 한다. | Must | ECU 플래시 실패, Self-test 실패, Rollback 발생 중 어느 경우에도 Jenkins 빌드 상태가 FAILURE로 기록되어야 한다. 재시도는 수동으로만 수행한다. |

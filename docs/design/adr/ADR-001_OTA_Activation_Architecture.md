@@ -161,7 +161,7 @@ Erase 중 CPU가 멈추는 이유는 BUSY 상태의 플래시에서 명령어를
 - **deferred activation(옵션 B, `g_fw_pending`) 개념 자체는 틀리지 않았다.** ADR-001이 B를 기각한 진짜 이유는 "single-bank에서 *Erase*를 안전하게 못 만든다"였지 "활성화를 미루는 것이 나쁘다"가 아니다. 옵션 D/E로 Erase가 안전해지면 deferred activation은 다시 올바른 설계가 된다.
 - **보강(별개 과제)**: ECU가 주행 중 `RequestDownload(0x34)`를 **NRC 0x22(conditionsNotCorrect)** 로 거부하는 ECU 측 전제조건 강제 — 게이트웨이 신뢰 의존을 줄인다(ISO 24089 installation preconditions, Uptane SR-UP-004 "게이트웨이를 신뢰하지 말라").
 
-> **문서 정합성 메모**: 본 ADR(옵션 C)이 정본이다. SRS FR-DRV-008·FR-CICD-007, TEST_SPEC TC-OTA-007/008, diagram.md의 상태/시퀀스 다이어그램은 아직 옛 옵션 B(`g_fw_pending`, IDLE 진입 시 재부팅)를 서술하므로 baseline 정합화가 필요하다(별도 과제).
+> **문서 정합성 메모**: 본 ADR(옵션 C)이 정본이다. SRS FR-DRV-008·FR-CICD-007, TEST_SPEC TC-OTA-007/008, RTM-001, diagram.md의 상태/시퀀스 다이어그램을 옵션 C(IDLE 확인은 Gateway `wait_for_idle`, TransferExit 시 ECU 즉시 재부팅)로 **정합화 완료(2026-06-13)**. 옛 옵션 B(`g_fw_pending`) 서술은 본 ADR §2-B의 기각 기록으로만 보존한다.
 
 ---
 
@@ -171,3 +171,4 @@ Erase 중 CPU가 멈추는 이유는 BUSY 상태의 플래시에서 명령어를
 |---|---|---|
 | 1.0 | 2026-05-25 | 최초 작성 — 옵션 A/B/C 검토 및 옵션 C 채택 결정 기록 |
 | 1.1 | 2026-06-04 | §6 추가 — 근본 원인 해결책(RAMFUNC/dual-bank) 검토, 옵션 C 유지 재확인, deferred activation 부활 조건·ECU 전제조건 강제·문서 정합성 메모 |
+| 1.2 | 2026-06-13 | §6 정합성 메모 갱신 — SRS/TEST_SPEC/RTM/diagram을 옵션 C(Gateway `wait_for_idle` + TransferExit 즉시 재부팅)로 정합화 완료 반영 |
