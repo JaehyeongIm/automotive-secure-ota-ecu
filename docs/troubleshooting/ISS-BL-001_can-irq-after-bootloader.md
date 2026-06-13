@@ -70,28 +70,36 @@ TIM2 인터럽트가 발생했는데 DriveECU의 `TIM2_IRQHandler` 대신 부트
 
 ### D4. 근본 원인 (총 3개, 순서대로 발견)
 
-#### 원인 1 — VTOR 오설정 (VECT_TAB_OFFSET = 0x00000000 기본값)
+#### 원인 1 — VTOR 미설정 (디버거 경로에서 부트로더 우회)
 
-CubeIDE Debug Configuration의 "Default start address"는 앱의 `Reset_Handler`부터 실행한다 (부트로더를 건너뜀). 따라서 `Reset_Handler → SystemInit()`은 정상 실행된다.
+> **정정(2026-06-13):** 초기 기록은 "`SystemInit()`이 `VECT_TAB_OFFSET=0`으로 VTOR을 `0x08000000`에 설정"한다고 봤으나 이는 사실이 아니다. `SystemInit()`의 VTOR 설정은 `#if defined(USER_VECT_TAB_ADDRESS)` 안에 있고 이 매크로가 줄곧 주석 처리되어 **컴파일된 적이 없다.** 실제 원인은 *아무도 VTOR을 설정하지 않아* 리셋 기본값에 머문 것이다. 상세는 문서 끝 **재분석(2026-06-13)** 절 참조.
 
-문제는 STM32CubeMX가 생성한 `system_stm32f4xx.c`의 `VECT_TAB_OFFSET` 기본값이 `0x00000000U`이었다는 것이다. `SystemInit()`이 이 값으로 VTOR을 설정하면:
+CubeIDE "Debug" 버튼은 앱 ELF를 다운로드한 뒤 PC를 그 ELF 진입점(`ENTRY(Reset_Handler)`)으로 강제한다. 그래서 리셋 벡터(`0x08000000`=부트로더)가 아니라 **앱 `Reset_Handler`부터 실행되고 부트로더를 건너뛴다.**
 
-```
-SystemInit():
-  SCB->VTOR = FLASH_BASE | VECT_TAB_OFFSET
-            = 0x08000000 | 0x00000000
-            = 0x08000000   ← 부트로더 벡터 테이블!
-```
+이 경로에서는 VTOR을 설정하는 주체가 아무도 없다:
 
 ```
-CubeIDE 디버거 실행 경로:
-  앱 Reset_Handler → SystemInit() → VTOR = 0x08000000 → main()
-                      ↑ 실행됨, 그러나 VECT_TAB_OFFSET=0 이라 VTOR이 틀림
-  → 모든 인터럽트 → 부트로더 핸들러 실행 (TIM2 → 0x8000D18)
+부트로더 SCB->VTOR = addr   → 부트로더를 건너뛰어 실행 안 됨
+앱 main()의 VTOR 설정       → 이 시점엔 아직 없음(60a14f5에서 추가)
+앱 SystemInit()의 VTOR 설정 → USER_VECT_TAB_ADDRESS 주석 → 컴파일 안 됨
+─────────────────────────────────────────────
+∴ VTOR = 리셋 기본값 0x00000000
 ```
 
-확인: git 히스토리에서 최초 커밋의 `VECT_TAB_OFFSET = 0x00000000U` 확인 (`1a9b846` 커밋).
-물리적 리셋 경로에서는 부트로더가 `SCB->VTOR = addr`로 올바르게 설정하고 점프하므로 이 문제는 나타나지 않는다.
+**왜 VTOR=0이면 인터럽트가 부트로더(0x08000000) 핸들러로 가나** — Cortex-M은 인터럽트 핸들러 주소를 `VTOR + (벡터번호 × 4)`에서 읽는다. VTOR=0이면 `0x000000xx`에서 읽는데, STM32F4에서 **`0x00000000`은 메인 플래시 시작(`0x08000000`)의 alias**(BOOT0=0 부팅 시)다. 즉 0번지에 비치는 건 `0x08000000`에 깔린 **부트로더 벡터테이블**이다.
+
+```
+TIM2 인터럽트 (TIM2_IRQn=28):
+  벡터 오프셋 = (시스템예외 16 + 28) × 4 = 0xB0
+  코어가 읽는 주소   0x000000B0
+        │ (alias)
+        ▼
+  실제 읽힌 곳      0x080000B0  = 부트로더 벡터테이블의 TIM2 칸
+        ▼
+  분기             부트로더 TIM2_IRQHandler (≈ 0x08000D18)
+```
+
+따라서 VTOR=`0x00000000`과 `0x08000000`은 이 칩에서 기능적으로 동일하다(같은 플래시 바이트를 가리킴). 물리적 리셋 경로에서는 부트로더가 `SCB->VTOR = addr`로 올바르게 설정하고 점프하므로 이 문제는 나타나지 않는다. 그 경로의 진짜 원인은 아래 **원인 3(PRIMASK)**이다.
 
 이 시점에 CubeIDE는 **Slot B 링커 스크립트**(`STM32F446RETX_FLASH_SlotB.ld`, ORIGIN=0x8040000)로 빌드된 바이너리를 Slot B에 플래시하고 있었다. (콜스택의 `main() at 0x80408fc`가 Slot B 주소 범위임으로 확인)
 
@@ -363,3 +371,37 @@ Slot A 개발: `STM32F446RETX_FLASH.ld` / Slot B OTA 빌드: `STM32F446RETX_FLAS
 [BL] Jump to 0x08040000 ...
 [DriveECU v2] Start
 ```
+
+---
+
+## 재분석 (2026-06-13) — VTOR·PRIMASK는 서로 다른 경로의 단일 원인
+
+Phase 4 D4는 VTOR·PRIMASK를 한 증상(CAN 불통)의 공존 원인으로 묶었으나, 코드와 git 이력을 다시 분석한 결과 **두 원인은 서로 다른 실행 경로에 속하며 실제 부팅에서 공존한 적이 없다.** 8D D4(근본원인)의 재규명에 해당한다.
+
+### 검증된 사실 (코드·git 근거)
+
+| 사실 | 근거 |
+|------|------|
+| `SystemInit()`은 VTOR을 설정한 적이 없다 | `system_stm32f4xx.c`의 `SCB->VTOR=...`이 `#if defined(USER_VECT_TAB_ADDRESS)` 안에 있고, 이 매크로가 `/* #define ... */`로 Phase 4 직전(`60a14f5^`)부터 현재까지 주석 → 미컴파일 |
+| 부트로더 `SCB->VTOR = addr`는 Phase 3부터 존재 | `2a3211f` |
+| 앱 `main()`의 VTOR 설정은 Phase 4 수정에서 처음 추가 | `60a14f5` (그 전엔 앱이 VTOR을 어디서도 설정 안 함) |
+| 앱 `__enable_irq()`도 같은 수정에서 추가 | `926ea68` |
+| CubeIDE Debug는 ELF 진입점(`ENTRY(Reset_Handler)`)으로 PC를 강제 → 부트로더 우회 | 링커 `ENTRY(Reset_Handler)` |
+
+→ 초기 D4 "원인 1"의 메커니즘(`SystemInit`이 `VECT_TAB_OFFSET=0`으로 VTOR을 설정)은 성립하지 않는다. 빌드에서 VTOR을 설정하는 주체는 **부트로더의 `SCB->VTOR = addr` 하나뿐**이었다.
+
+### 경로별 단일 원인
+
+| 경로 | VTOR | PRIMASK | 실제 원인 |
+|------|------|---------|-----------|
+| **CubeIDE Debug** (부트로더 우회) | 아무도 설정 안 함 → 리셋 기본값 `0x00000000` (= `0x08000000` alias) ❌ | `0` (정상) | **VTOR** — 인터럽트가 부트로더 핸들러로 점프(TIM2→0x8000D18) |
+| **물리 리셋 → 부트로더 → 앱** | 부트로더가 `0x08010000`로 설정 → 정상 ✅ | 부트로더 `__disable_irq()` → `1` ❌ | **PRIMASK** — 인터럽트 전역 차단, CAN/TIM2 콜백 미실행 |
+
+- 디버거 경로에서 PRIMASK=0인 이유: 부트로더를 우회해 `__disable_irq()`가 실행되지 않음 → 인터럽트가 *발생은 하되* 틀린 벡터(부트로더 영역)로 점프 = VTOR 증상. (`VTOR=0`이 `0x08000000`을 가리키는 메커니즘은 위 원인 1 참조)
+- 실제 부팅 경로에서 VTOR이 정상인 이유: 부트로더가 점프 직전 VTOR을 설정하고, 이후 `Reset_Handler`·`SystemInit()`이 VTOR을 건드리지 않아 유지됨 → 남는 원인은 PRIMASK.
+
+### 결론
+
+VTOR과 PRIMASK는 **동시에 존재한 적이 없다.** 디버거 경로의 단일 원인은 VTOR, 실제 부팅 경로의 단일 원인은 PRIMASK다. 현재 코드는 앱이 `SCB->VTOR = (uint32_t)&g_pfnVectors`와 `__enable_irq()`를 모두 수행하므로 두 경로 모두에서 정상 동작한다(최종 시정 조치는 유효).
+
+검증 방법: 부트로더 프로젝트를 디버그(`Bootloader-driveECU.launch`)하고 앱 심볼을 함께 로드해 리셋→부트로더→앱을 한 흐름으로 추적하면서 `*(uint32_t*)0xE000ED08`(SCB->VTOR)을 관찰하면 위 표가 실증된다.
