@@ -49,7 +49,7 @@ docs/
 | [TEST_SPEC_OTA](test/TEST_SPEC_OTA_v1.0.md) | 시험 계획·테스트 명세(TS-OTA-001) |
 | [SIT-001 Plan](test/SIT-001_System_Integration_Test_Plan.md) | on-target 시스템 통합시험 계획 |
 | [SIT-001 RUNBOOK](test/SIT-001_RUNBOOK.md) | 실차 벤치 실행 절차서 |
-| [TR-001](test/TR-001_Test_Report.md) | 시험 결과서 (단위 82 + on-target 8/8) |
+| [TR-001](test/TR-001_Test_Report.md) | 시험 결과서 (단위 91 + on-target 8/8) |
 | [FT-001](test/FT-001_Fuzz_Test_Plan_Report.md) | **퍼즈 테스트 계획·결과** (ASPICE-CS SEC.3) |
 
 ### 🧰 트러블슈팅 (8D) — [troubleshooting/](troubleshooting/)

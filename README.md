@@ -13,7 +13,7 @@ STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/
 
 - **보안 기능 6종** — Secure Boot(ECDSA-P256) · Anti-rollback · Fail-closed 검증 게이팅 · SecurityAccess(HMAC) · 3-strike 롤백 · 메타 이중화 원자성
 - **안전 기능 1종** — 센서 staleness fail-safe (ISO 26262 안전상태 전이)
-- **단위 테스트 83개** — 라인 ~91% · 분기 ~79% 커버리지 (`ceedling gcov:all`, strict)
+- **단위 테스트 91개** — 라인 ~91% · 분기 ~79% 커버리지 (`ceedling gcov:all`, strict)
 - **On-target 8/8 PASS** — 실 OTA·실 CAN·실 RC차에서 정상 4 + 공격 4종(변조·미서명·endless-data·flood) 실증 → [SIT-001](docs/test/SIT-001_System_Integration_Test_Plan.md)
 - **호스트 퍼징** — libFuzzer + ASAN/UBSAN으로 신규 결함 2건 발굴·차단(sha256 UB · UDS 스택 오버플로 CWE-121) → [FT-001](docs/test/FT-001_Fuzz_Test_Plan_Report.md)
 - **규모** — ~6.2K LOC C(부트로더 + 2앱) + ~2K Python · 130+ commits
@@ -50,10 +50,10 @@ STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/
 
 ### Secure Bootloader
 
-- ECDSA-P256 서명 검증 후 App jump (uECC 라이브러리 직접 포팅)
+- ECDSA-P256 서명 검증 후 App jump (오픈소스 uECC(P-256) 라이브러리 통합)
 - A/B 슬롯 — 비활성 슬롯에만 기록, 검증 실패 시 반대 슬롯 자동 Fallback
 - 부팅 시도 3회 초과 시 Rollback, Boot Metadata CRC 검증, IWDG Watchdog
-- Bootloader 영역 STM32 WRP(Write Protection) 하드웨어 잠금
+- Bootloader 영역(섹터 0~1) STM32 WRP 쓰기보호 — 옵션바이트 설정 + 섹터0 erase 거부 on-target 검증(양 보드, [WRP-PROV-001](docs/test/WRP-PROV-001_Bootloader_WRP_Provisioning.md)). 무결성(변조 방지) 보장이며, PSK readout 기밀성은 RDP 후속
 
 ### OTA 보안
 
@@ -62,7 +62,7 @@ STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/
 | 항목 | 상태 | 내용 |
 |---|---|---|
 | 무결성 | ✅ on-target | SHA-256 이미지 해시 |
-| 인증성 | ✅ on-target | ECDSA-P256 서명 검증 (uECC 직접 포팅) |
+| 인증성 | ✅ on-target | ECDSA-P256 서명 검증 (오픈소스 uECC(P-256) 통합) |
 | Anti-rollback | ✅ on-target | 이미지 헤더 `fw_version` vs CONFIRMED 슬롯 기준선, 다운그레이드 거부 |
 | Fail-closed 검증 | ✅ on-target | 메타 `size` 비정상 시 검증 우회 차단 (deny-by-default, CWE-636) |
 | 3-strike 롤백 | ✅ on-target | 시험부팅 3회 초과 시 INVALID + 이전 CONFIRMED 자동 롤백 |
@@ -99,7 +99,7 @@ Gateway가 CAN heartbeat의 `driving_state`를 모니터링해 ECU가 IDLE일 �
 
 ## 검증
 
-**① 호스트 단위 테스트** (`ceedling gcov:all`) — 83개 · 라인 91% / 분기 79%(strict). HAL 의존부와 분리한 순수 코어(메타 상태머신·anti-rollback·검증 게이팅·crypto)를 양성 + **음성 테스트**(잘못된 SID·세션·시퀀스·`size` 위조·타 ECU 이미지 등 거부 경로)로 검증.
+**① 호스트 단위 테스트** (`ceedling gcov:all`) — 91개 · 라인 91% / 분기 79%(strict). HAL 의존부와 분리한 순수 코어(메타 상태머신·anti-rollback·검증 게이팅·crypto)를 양성 + **음성 테스트**(잘못된 SID·세션·시퀀스·`size` 위조·타 ECU 이미지 등 거부 경로)로 검증.
 
 **② On-target(실보드) 검증** — [SIT-001](docs/test/SIT-001_System_Integration_Test_Plan.md) · 실 ECU 2대·실 CAN·실 OTA
 
@@ -163,7 +163,7 @@ Gateway가 CAN heartbeat의 `driving_state`를 모니터링해 ECU가 IDLE일 �
 ├── Bootloader/           STM32 Custom Secure Bootloader
 ├── DriveECU/             Drive ECU 펌웨어 (App v1/v2, Slot A/B 링커)
 ├── SensorECU/            Sensor/Body ECU 펌웨어
-├── test/unit/            Ceedling 단위 테스트 83개 (gcov 커버리지)
+├── test/unit/            Ceedling 단위 테스트 91개 (gcov 커버리지)
 ├── fuzz/                 libFuzzer 호스트 하니스 (FH-1·FH-3, ASAN/UBSAN)
 ├── tools/                ota_client·sign_firmware·forge_meta·hil_runner·can_monitor
 ├── ci/                   build.sh(슬롯별 크로스컴파일) · read_slot.py
@@ -183,7 +183,7 @@ sudo apt install -y ruby-full gcc-arm-none-eabi cppcheck
 gem install ceedling && pip install python-can
 
 # 단위 테스트 + 커버리지
-ceedling test:all          # 83개 단위 테스트
+ceedling test:all          # 91개 단위 테스트
 ceedling gcov:all          # 라인/분기 커버리지
 
 # On-target(실보드) 검증 — 실 ECU·CAN 연결 후 (SIT-001)

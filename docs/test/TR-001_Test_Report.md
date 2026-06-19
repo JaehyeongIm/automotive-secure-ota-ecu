@@ -19,7 +19,7 @@
 
 | 캠페인 | 범위 | 결과 |
 |---|---|---|
-| ① 호스트 단위테스트(Ceedling) | HAL 분리 *순수 코어* 로직 | **83/83 PASS** · 라인 ~91%·분기 ~79% |
+| ① 호스트 단위테스트(Ceedling) | HAL 분리 *순수 코어* 로직 | **91/91 PASS** · 라인 ~91%·분기 ~79% |
 | ② On-target 벤치(SIT-001) | 실 ECU 2대·실 CAN·실 OTA | **8/8 PASS** (기본 4: 보안 3+안전 1 · 공격 4: SIT-TC-05~08) |
 | ③ CI/CD 파이프라인 E2E 배포(Jenkins) | git-push 트리거·빌드/ECDSA 서명·승인 게이트·양 ECU 실 OTA 배포 | **PASS** (v4 릴리스 양 ECU 슬롯전환·부팅 확인 — build #86; §4.1) |
 | ④ 호스트 퍼징(libFuzzer+ASAN/UBSAN) | 순수 파서(이미지헤더·UDS 0x36) | **신규 결함 2건 발굴·차단** — F-002(sha256 UB)·F-003(UDS 스택오버플로 CWE-121) → [FT-001](FT-001_Fuzz_Test_Plan_Report.md) |
@@ -40,7 +40,7 @@
 
 ---
 
-## 3. ① 호스트 단위테스트 결과 — 83/83 PASS
+## 3. ① 호스트 단위테스트 결과 — 91/91 PASS
 
 | 테스트 파일 | 케이스 | 결과 | 검증 대상(코어) |
 |---|---:|---|---|
@@ -49,9 +49,10 @@
 | `test_hmac` | 3 | PASS | HMAC-SHA256 RFC 4231 벡터(FR-CAN-010) |
 | `test_meta` | 7 | PASS | 메타 CRC32·`ota_meta_select`(FR-AB-005) |
 | `test_meta_lifecycle` | 8 | PASS | `plan_boot`(증가-먼저·3-strike)·`plan_confirm`(FR-AB-007) |
-| `test_ota_meta` | 10 | PASS | `write_pending`·`self_confirm`(RAM 하니스, FR-AB-004) |
+| `test_ota_meta` | 13 | PASS | `write_pending`·`self_confirm`·`get_active_slot`·`bump_seq`(RAM 하니스, FR-AB-004) |
 | `test_uds_state` | 30 | PASS | SecurityAccess·세션·시퀀스·**거부 분기**(음성)·endless-data 상한/완료·**per-block 상한(F-003)**·**S3 타임아웃**(FR-CAN-009~019) |
-| **합계** | **83** | **PASS (0 Failures)** | |
+| `test_sec_freshness` | 5 | PASS | SecurityAccess seed freshness·boot-epoch reboot-replay 차단(SR-ATK-005) |
+| **합계** | **91** | **PASS (0 Failures)** | |
 
 **커버리지(`gcov:all`, strict):** 라인 **~91%** · 분기 **~79%**. 코어별 실측 — `ota_flash` 98.3%L/73.7%B · `sha256` 94.4%L/83.3%B · `uds` 86.3%L/77.5%B · `hmac_sha256` 77.3%L/75.0%B. (HAL/페리페럴·startup 파일은 단위 범위 밖 — gcov "no coverage" 정상)
 
@@ -187,8 +188,8 @@
 
 ## 8. 결론
 
-구현 범위(보안 6종 + 안전 1종)는 **단위 83/83 + on-target 8/8(기본 4 + 공격 4) 전부 PASS**로 검증됐다. 추가로 **호스트 퍼징(④, [FT-001](FT-001_Fuzz_Test_Plan_Report.md))으로 신규 결함 2건(F-002 sha256 UB·F-003 UDS 스택오버플로 CWE-121)을 발굴·차단**했다. 미구현·미실행은 §19.1에 잔여 위험으로 명시·수용했다.
-**회귀(재현):** 단위는 `ceedling test:all`(83개)·`gcov:all`, on-target은 `tools/hil_runner.py --all`, 퍼징은 `fuzz/build.sh`+`fuzz/bin/<harness>`로 재현 가능. FAIL 발생 시 8D 트러블슈팅(ISS) 발행(PRC-006).
+구현 범위(보안 6종 + 안전 1종)는 **단위 91/91 + on-target 8/8(기본 4 + 공격 4) 전부 PASS**로 검증됐다. 추가로 **호스트 퍼징(④, [FT-001](FT-001_Fuzz_Test_Plan_Report.md))으로 신규 결함 2건(F-002 sha256 UB·F-003 UDS 스택오버플로 CWE-121)을 발굴·차단**했다. 미구현·미실행은 §19.1에 잔여 위험으로 명시·수용했다.
+**회귀(재현):** 단위는 `ceedling test:all`(91개)·`gcov:all`, on-target은 `tools/hil_runner.py --all`, 퍼징은 `fuzz/build.sh`+`fuzz/bin/<harness>`로 재현 가능. FAIL 발생 시 8D 트러블슈팅(ISS) 발행(PRC-006).
 
 ---
 
@@ -205,3 +206,4 @@
 | 1.6 | 2026-06-07 | **계획 테스트명세(TS-OTA-001, 28종) ↔ 실행 결과 매핑** 신설(§6.1) — 단위/on-target 두 채널의 실행 증거를 28개 계획 TC에 연결(✅16·🔶10·⬜2). ⬜ 2종(TC-DRV-004·TC-CI-004) §7 이연 추가. TS-OTA-001 §13 집계·포인터 정합 |
 | 1.7 | 2026-06-07 | **CI/CD 파이프라인 E2E 배포 on-target 실증(§4.1 신설)** — Jenkins build #86 v4 릴리스 전 구간 PASS(빌드·ECDSA 서명·승인 게이트·양 ECU UDS OTA·슬롯전환·재부팅 확인), build #85 git-push 자동트리거 + OTA 실패→FAILURE→fail-safe(FR-CICD-010) 실증. §1 캠페인 ③ 추가, §6.1 TC-CI-001·003·004 ✅ 승격(집계 ✅19·🔶8·⬜1), §7 TC-CI-004 이연 제거. TS-OTA-001 §13.1 동반 정합 |
 | 1.8 | 2026-06-08 | **호스트 퍼징(④) 추가 + 단위 82→83** — FH-1/FH-3(libFuzzer+ASAN/UBSAN)로 신규 결함 2건 발굴·차단: F-002(sha256 부호시프트 UB)·F-003(UDS TransferData per-block 스택오버플로 CWE-121). test_uds_state +1(oversized), 원 PoC 재생 클린·재퍼징 1.4M회 무크래시. §1 캠페인 ④·§3 합계 갱신, 상세 [FT-001](FT-001_Fuzz_Test_Plan_Report.md)·ISS-SEC-003/004 |
+| 1.9 | 2026-06-17 | **단위 83→91 정정** — §3 per-suite 표에 누락됐던 `test_sec_freshness` 5종(SecurityAccess seed freshness, SR-ATK-005, 커밋 4ddd16a/eac2919) 반영 + `test_ota_meta` 10→13(`get_active_slot`·`bump_seq`) 정정. §1·§3 합계·§8 결론·재현 명령(`ceedling test:all`)을 91로 정합. 커버리지(라인 ~91%·분기 ~79%) 수치는 gcov 재측정 전까지 유지 |

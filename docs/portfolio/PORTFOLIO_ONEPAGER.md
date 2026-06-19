@@ -13,7 +13,7 @@
 |---|---|
 | 🔐 보안 6종 | Secure Boot(ECDSA‑P256) · Anti‑rollback · Fail‑closed 검증게이팅 · SecurityAccess(HMAC) · 3‑strike 롤백 · 메타 이중화 원자성 |
 | 🛡️ 안전 1종 | 센서 staleness fail‑safe (ISO 26262 안전상태 전이) |
-| ✅ 단위 테스트 82개 | 라인 커버리지 91% · 분기 79%(strict) — 양성 + 음성(거부경로) |
+| ✅ 단위 테스트 91개 | 라인 커버리지 91% · 분기 79%(strict) — 양성 + 음성(거부경로) |
 | 🔬 On‑target 8/8 PASS | 실 OTA·실 CAN·실 RC차 — 기본 4(보안 3+안전 1) + 공격 4종(변조·미서명·endless-data·flood) |
 | 📄 표준 산출물 | SRS · SDD · HARA · TARA · SIT · TR + ADR×10 + 8D×14 (ASPICE SWE.1~6 추적) |
 
@@ -23,7 +23,7 @@
 
 | 기능 | 설계 핵심 | 표준 근거 | 검증 |
 |---|---|---|---|
-| Secure Boot | SHA‑256 + ECDSA‑P256(uECC 직접 포팅), WRP 잠금 부트로더 | ISO 24089, 신뢰 사슬 | 단위 + on-target |
+| Secure Boot | SHA‑256 + ECDSA‑P256(오픈소스 uECC(P-256)·SHA-256 통합), WRP 잠금 부트로더 | ISO 24089, 신뢰 사슬 | 단위 + on-target |
 | Anti‑rollback | 앞 서명헤더 `fw_version` vs CONFIRMED 기준선, 거부 시 graceful 롤백 | UNECE R155, AVB rollback index | **SIT TC‑01** |
 | 3‑strike 롤백 | 시험부팅(증가‑먼저‑점프) 3회 초과 → INVALID + 자동 롤백 | ISO 24089, FTTI | **SIT TC‑02** |
 | Fail‑closed 게이팅 | 메타 `size` 비정상 시 *검증 우회 차단*(허용 아닌 거부) | CWE‑636, deny‑by‑default | **SIT TC‑03** |
@@ -36,8 +36,8 @@
 
 ## 검증 전략 — V‑모델 양방향
 
-- **① 호스트 단위(`ceedling gcov:all`)** — HAL과 분리한 *순수 코어*(메타 상태머신·anti‑rollback·검증게이팅·crypto)를 82개 테스트로. *음성 테스트*로 거부 분기까지(분기 79%).
-- **② On‑target 벤치(SIT‑001)** — 실 ECU 2대·실 CAN·실 OTA로 보안 3 + 안전 1을 실증(4/4 PASS). *plant 시뮬레이터 기반 HIL이 아닌 실물 환경*임을 명시.
+- **① 호스트 단위(`ceedling gcov:all`)** — HAL과 분리한 *순수 코어*(메타 상태머신·anti‑rollback·검증게이팅·crypto)를 91개 테스트로. *음성 테스트*로 거부 분기까지(분기 79%).
+- **② On‑target 벤치(SIT‑001)** — 실 ECU 2대·실 CAN·실 OTA로 기본 4(보안 3+안전 1) + 공격 4종을 실증(8/8 PASS). *plant 시뮬레이터 기반 HIL이 아닌 실물 환경*임을 명시.
 
 ---
 

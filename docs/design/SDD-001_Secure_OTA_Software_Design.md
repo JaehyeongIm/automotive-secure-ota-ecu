@@ -257,7 +257,7 @@ select(metaA,metaB) → plan_boot(meta,max=3)
 ---
 
 ## 9. 검증 요약
-- **호스트 단위테스트 82개**(Ceedling, 라인 91%·분기 79% 커버리지 `ceedling gcov:all`) + gcc 독립검증(drive_sensor_fresh 6) — *순수 로직*.
+- **호스트 단위테스트 91개**(Ceedling, 라인 91%·분기 79% 커버리지 `ceedling gcov:all`) + gcc 독립검증(drive_sensor_fresh 6) — *순수 로직*.
 - **On-target 벤치 8종(SIT-001)** — 기본 4(fail-closed·anti-rollback·3-strike·staleness, 2026-06-04) + 공격 4(endless-data·변조·미서명·CAN flood no-brick, 2026-06-07), 전부 PASS.
 - 추적: §8로 *요구사항↔설계↔코드↔테스트* 양방향 연결.
 
@@ -267,3 +267,4 @@ select(metaA,metaB) → plan_boot(meta,max=3)
 | 1.0 | 2026-06-04 | 최초 — 구현·단위테스트·on-target 검증 완료 시점 기준 아키텍처(SWE.2)+상세설계(SWE.3) 기술, 추적성 매트릭스 포함 |
 | 1.1 | 2026-06-05 | ECU 식별 강제(FR-CAN-011) 구현 반영 — §6.6에 0x37 target_ecu_id 검사(NRC 0x31) 추가, 순수함수 `ota_meta_ecu_id_allowed`(§8 추적 행 신설), ADR-009 채택. 단위테스트 78개(라인 91%·분기 79%) |
 | 1.2 | 2026-06-07 | 세션 구현 반영 — endless-data(FR-CAN-012/013)·S3(FR-CAN-019)·ABOM(ISS-CAN-006)·공격 4종 on-target(SIT-TC-05~08). §8 추적행 4개 추가, §2.4 SID표에 미구현(0x22/0x31/0x11/0x3E) 표기, §9 on-target 8종, 단위 82(test_uds_state 29). 참조 SRS v2.13·ADR-010 동기화 |
+| 1.3 | 2026-06-17 | §9 검증 요약 단위테스트 82→91 정합 — SecurityAccess seed freshness(SR-ATK-005, `test_sec_freshness` 5)·`test_ota_meta` 10→13 반영(상세 [TR-001](../test/TR-001_Test_Report.md) v1.9) |
