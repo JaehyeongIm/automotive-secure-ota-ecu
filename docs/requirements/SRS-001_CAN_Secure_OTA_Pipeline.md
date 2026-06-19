@@ -927,7 +927,7 @@ TSR-001  (SUP.9)
 
 본 시스템은 가용 개발 플랫폼(STM32F446RE, Raspberry Pi 5) 기반의 축소형 전장 OTA 검증 시스템이다. 다음 한계 사항을 명시한다.
 
-1. STM32F446RE는 실제 차량용 HSM MCU가 아니므로 양산 ECU 수준의 키 보호와 Secure Boot ROM을 제공하지 않는다.
+1. STM32F446RE는 실제 차량용 HSM MCU가 아니므로 양산 ECU 수준의 키 보호와 Secure Boot ROM을 제공하지 않는다. Secure Boot 신뢰점(RoT)이 SW 설정 WRP 앵커에 의존하는 한계는 §19.1 L-8로 추적한다.
 2. F446RE는 하드웨어 Dual Bank Flash 구조가 아니므로, 단일 Flash를 논리적으로 분할한 A/B Slot 구조를 사용한다.
 3. UDS는 정식 상용 UDS 스택 전체 구현이 아니라, 리프로그래밍 절차를 참고한 UDS-style 구조이다.
 4. Uptane은 전체 표준 구현이 아니라, Manifest, ECU Inventory, Version Report, Rollback 방어, Partial Bundle 방어 개념을 참고한 Uptane-lite 구조이다.
@@ -952,8 +952,9 @@ TSR-001  (SUP.9)
 | L-5 | 보안 | Anti-rollback 기준선 = 메타 NV(CRC-only) | FR-BL-008, FR-AB-008 | 원격 다운그레이드 차단; CRC는 우발적 손상 검출용이라 *물리 위조*만 잔여 위험 | ATECC608A 보호 슬롯에 기준선 저장 | ADR-007, ADR-006 |
 | L-6 | 보안 | ECU-id 강제 = 앱 레벨만(UDS 우회 직접 플래시 미차단) | FR-CAN-011, FR-AB-008 | 원격 OTA 경로 차단(0x37 NRC 0x31); 직접 플래시는 물리 접근 필요(이미 더 큰 위협) | 부트로더 점프 직전 재검사(defense-in-depth) + per-ECU 정체성(ATECC608A) | ADR-009, ADR-006 |
 | L-7 | 제어/안전 | 직진 주행 안정화 불가(휠 엔코더·IMU 부재 → 개루프) | FR-DRV-001, §19(9) | 주행거리·헤딩 피드백 부재로 실시간 보정 불가 → 실행마다 좌·우 편차. **단 Secure OTA·A/B 전환·센서 staleness fail-safe(장애물 정지)는 직진성과 독립이며 정상 동작** | 휠 엔코더(주행거리) + IMU(헤딩) 입고 시 폐루프 헤딩 제어(PID 등) | §19(9) |
+| L-8 | 보안 | Secure Boot 신뢰점(RoT)이 SW 설정 Flash WRP 앵커 — 하드웨어 RoT(Secure Boot ROM·OTP 퓨즈·TrustZone) 부재 | FR-BL-013, FR-AB-003, §19(1) | 위협모델 1순위인 원격/OTA 경로는 ECDSA verify-before-execute(fail-closed)로 차단. 앵커(부트로더) 교체는 물리 SWD + WRP 옵션바이트 해제(또는 글리칭)를 요구 — 물리 디버그 접근은 이미 더 큰 위협으로 범위 밖(L-6·TARA T-2 동일 전제). WRP는 OTA·우발적 erase에 대해 부트로더를 불변화 | HSM 내장 자동차 MCU(STM32H5/L5 TrustZone+RSS, AURIX·S32K3·ST Stellar)로 교체 시 앵커가 실리콘 ROM/퓨즈로 하강(ADR-006 옵션 C). SE(ATECC608A) 추가는 키저장 RoT만 강화 — boot 앵커는 불변 1차 부트 필요 | ADR-006, §19(1), WRP-PROV-001 |
 
-> 위 항목은 모두 **두 하드웨어 입고 이벤트**(ATECC608A / 엔코더·IMU)로 해소되는 *하드웨어 의존 후속*이며, 각 근거 ADR에 상세 설계·트레이드오프가 기록돼 있다. 입고 지연으로 본 1차 범위에서는 위와 같이 잔여 위험을 명시·수용한다.
+> L-1~L-7은 **두 하드웨어 입고 이벤트**(ATECC608A / 엔코더·IMU)로, L-8(하드웨어 RoT 앵커)은 **HSM 내장 MCU로의 플랫폼 교체**(ADR-006 옵션 C)로 해소되는 *하드웨어 의존 후속*이며, 각 근거 ADR에 상세 설계·트레이드오프가 기록돼 있다. 입고·플랫폼 제약으로 본 1차 범위에서는 위와 같이 잔여 위험을 명시·수용한다.
 
 ---
 
@@ -1076,5 +1077,6 @@ TSR-001  (SUP.9)
 | 2.10 | 2026-06-05 | ECU 식별 강제 구현(FR-CAN-011) — 서명 헤더 `target_ecu_id`가 정의·서명만 되고 *아무도 거부하지 않던* 갭 해소. 앱 컴파일타임 ID(`OTA_ECU_ID` Drive=1/Sensor=2)로 RequestTransferExit(0x37)에서 헤더 ecu_id≠자기ID면 NRC 0x31 거부(메타 commit 전). FR-CAN-011은 0x34 *요청필드* 검사를 상정했으나, 구현은 *서명 헤더*(위조불가)를 0x37에서 검사해 의도를 더 강하게 충족. 순수함수 `ota_meta_ecu_id_allowed`(SSOT 3곳), test_anti_rollback 4 신규(총 10, 누적 78). UDS 우회(직접플래시) 차단=부트로더 defense-in-depth 후속, ADR-009 |
 | 2.11 | 2026-06-05 | **한계·잔여위험 통합 레지스터 신설(§19.1)** — 흩어져 있던 후속 항목을 한 표로 색인(ISO/SAE 21434 잔여위험 수용·ASPICE SWE.6): 보안 6항목(L-1 replay·L-2 hardware_id·L-3 잠금NV·L-4 seed·L-5 anti-rollback 기준선·L-6 ECU-id 앱레벨 — 대부분 ATECC608A 입고로 해소) + 제어 1항목(L-7 직진 안정화 — 엔코더·IMU 입고로 해소)을 *현재완화·후속트리거·근거ADR*과 함께 명시. FR-CAN-011에 `hardware_id` 후속 이연 표기, §19(9) 직진 이슈 근본원인 규명(엔코더·IMU 부재→개루프, 폐루프 제어로 해소). README에 레지스터 포인터 추가 |
 | 2.12 | 2026-06-05 | (1) 보안 공격 테스트 ID 충돌 해소 — SRS의 `TC-SEC-001~010`을 `TC-ATK-001~010`으로 개명(SR-ATK와 1:1 대응, TEST_SPEC의 `TC-SEC` 실행스펙(양성 테스트 포함)과 네임스페이스 분리). (2) §21.2·MS-004의 "공격 10종 통과/PASS" → "구현분 통과"로 calibrate(replay·campaign 등 미구현은 §19.1 후속과 정합). (3) 테스트 결과서 **TR-001** 신규 작성(단위 78/78·on-target 4/4 PASS 기록·공격 시나리오 커버리지 매핑). SDD 참조 v2.12 동기화 |
+| 2.14 | 2026-06-17 | §19.1 잔여위험 레지스터 **L-8 추가** — Secure Boot 신뢰점(RoT)이 SW 설정 Flash WRP 앵커이고 하드웨어 RoT(Secure Boot ROM·OTP 퓨즈·TrustZone)가 부재함을 잔여 위험으로 명시. 완화: 원격/OTA 경로는 ECDSA verify-before-execute(fail-closed)로 차단, 앵커(부트로더) 교체는 물리 SWD+WRP 옵션바이트 해제 필요로 범위 밖(L-6·TARA T-2 동일 전제). 트리거: HSM 내장 MCU 플랫폼 교체(ADR-006 옵션 C) — SE(ATECC608A) 추가만으론 키저장 RoT만 강화되고 boot 앵커는 미해소. §19(1)에 L-8 추적 링크 추가, 닫는 주석을 L-8 트리거(플랫폼 교체) 반영해 정합화 |
 | 2.13 | 2026-06-07 | **추적성 정합(구현 현황 주석 일괄)** — 문서-구현 divergence 명문화: (1) **Manifest→임베디드 서명 헤더(ADR-007) 대체**를 §8.1에 설계결정 note + SR-MF-001~008 필드별 충족/이연 매핑, §8.2·FR-GW-002/003·FR-CICD-006·FR-BL-006·FR-AB-008(헤더 4필드 subset)·SR-UP-002/004/005에 구현현황 주석. campaign_id·expiration(freshness)은 Uptane-lite 후속. (2) **FR-CAN-014(0x31)/015(0x11) 미구현→대체설계** 주석, **FR-CAN-019 S3 타임아웃 구현**(uds_process, 단위 2종), TC-FAIL-002 매핑 FR-CAN-006→012 정정 |
 

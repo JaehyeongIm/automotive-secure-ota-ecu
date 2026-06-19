@@ -61,9 +61,9 @@
 | ID | 자산 | 피해 시나리오 (CIA) | 위협 (STRIDE) | 공격 경로 | Impact | Feas | **Risk** | 처리 | CG | 검증 / 잔여 (SR-ATK) |
 |---|---|---|---|---|:--:|:--:|:--:|---|:--:|---|
 | **T-1** | A-1 펌웨어 무결성 | 변조 펌웨어 실행→모터 폭주→충돌(**S:Severe**,O:Major) | Tampering | CAN→0x34→0x36→슬롯 기록→재부팅 | Severe | Medium | **4** | Reduce | CG-1 | ✅ SIT-TC-06(ECDSA FAILED)·SR-ATK-001 |
-| T-2 | A-2 PSK | PSK 유출→인증 우회→임의 업데이트(C) | Info Disclosure | SWD/플래시 readout, 비보호영역 저장 | Severe | Low | **3** | Reduce | CG-2 | 🔶 WRP 영역 격리(SR-KEY-003, 칩 read 확인). **잔여:** RDP/Secure Element 미적용→물리 추출 가능, ADR-006 후속 |
+| T-2 | A-2 PSK | PSK 유출→인증 우회→임의 업데이트(C) | Info Disclosure | SWD/플래시 readout, 비보호영역 저장 | Severe | Low | **3** | Reduce | CG-2 | 🔶 PSK를 WRP 영역(섹터0~1)에 격리·옵션바이트 설정+검증 완료([WRP-PROV-001](../test/WRP-PROV-001_Bootloader_WRP_Provisioning.md))→OTA 경로 노출·변조 차단. **단 WRP는 쓰기보호라 readout 미차단** — T-2 핵심(SWD 덤프)은 **잔여**, RDP/Secure Element 후속(ADR-006) |
 | T-3 | A-5 버전 상태 | 취약 구버전 재설치(I) | Tampering | 낮은 fw_version 서명 이미지 주입 | Major | Medium | **3** | Reduce | CG-3 | ✅ SIT-TC-01(anti-rollback)·SR-ATK-003. **잔여:** 기준선 CRC 메타(변조 시 한계)→ATECC608A |
-| T-4 | A-2/A-1 | 캡처한 SecurityAccess/Transfer 재전송(I) | Spoofing/Replay | 이전 세션 Seed/Key·블록 캡처 후 재전송 | Major | Medium | **3** | **Reduce 목표→Retain** | CG-4 | ⬜ **미저감(잔여 수용)** — 강한 freshness=HW(TRNG/ATECC608A) 의존. 현완화: SW nonce·세션상태·S3. §19.1 L-1·ADR-004/006·SR-ATK-005 |
+| T-4 | A-2/A-1 | 캡처한 SecurityAccess/Transfer 재전송(I) | Spoofing/Replay | 이전 세션 Seed/Key·블록 캡처 후 재전송 | Major | Medium | **3** | Reduce | CG-4 | 🔶 **SecurityAccess reboot-replay 차단** — 영속 boot-epoch(seq_counter bump)로 seed 재부팅 비반복, **on-target TC-ATK-005 PASS(2026-06-13, 양 ECU)**: 옛 Key NRC 0x35. ADR-004 §6·SR-ATK-005. **잔여:** epoch가 CRC 메타라 물리(SWD) 카운터 변조·TransferData replay는 미저감 → ATECC608A(§19.1 L-1·ADR-006) |
 | T-5 | A-4 가용성 | CAN Flood로 OTA/주행 방해(A) | DoS | 버스 포화, Erase 구간 충돌 | Major(O) | Medium | **3** | Reduce | CG-5 | ✅ SIT-TC-08(no-brick)+S3 abort(FR-CAN-019)+ABOM(ISS-CAN-006)·SR-ATK-008 |
 | T-6 | A-1 | 타 ECU용 이미지 설치→오거동(S/O) | Tampering/Spoofing | Drive 이미지를 Sensor에 OTA | Major | Low | **2** | Reduce | CG-6 | ✅ 서명 헤더 target_ecu_id(ADR-009)·test_anti_rollback·SR-ATK-004. 잔여: 직접 플래시(UDS 우회)는 BL defense-in-depth 후속 |
 | T-7 | A-2 | 미인증/무차별 업데이트 시작(I) | Spoofing/EoP | SecurityAccess Key 추측·반복 시도 | Major | Low | **2** | Reduce | CG-7 | ✅ HMAC-SHA256(PSK,Seed)+3회 잠금(test_uds_state)·SR-ATK-006 |
@@ -77,7 +77,7 @@
 - → **Severe × Medium = Risk 4** → **Reduce** → CG-1 → CSR-1.x(§4) → SIT-TC-06 PASS로 검증.
 
 **잔여 위험(Retain) 결정 근거:**
-- **T-4 Replay (Risk 3):** 강한 freshness는 하드웨어 TRNG/단조 카운터 부재로 미달. SW nonce(UID+tick+ctr→SHA-256)+세션상태+S3로 *부분 완화*하나 재부팅 replay 창이 남음. **ATECC608A 입고 시 해소**(ADR-006) — 그 전까지 [SRS §19.1 L-1]로 수용.
+- **T-4 Replay (Risk 3) — 갱신(2026-06-13):** 재부팅 replay 창을 **영속 boot-epoch**(메타 `seq_counter`를 부팅당 1회 bump)로 닫았다 — seed가 재부팅을 가로질러 비반복이라 캡처 Key 무효. *replay 방어엔 freshness(비반복)면 충분*(Key=HMAC(PSK,Seed)이라 예측가능 seed도 PSK 없이 위조 불가). **on-target TC-ATK-005 PASS(양 ECU): Seed2≠Seed1 + 옛 Key NRC 0x35**(ADR-004 §6, `seed_probe.py`). **잔여(Retain):** epoch가 CRC-only 메타라 물리(SWD) 카운터 변조 + TransferData replay는 미저감 → 변조저항 단조 카운터 **ATECC608A**(ADR-006, [SRS §19.1 L-1]).
 - **T-10 Partial Campaign (Risk 2):** 다중 ECU 캠페인 조율(Uptane Director)은 단일 게이트웨이 벤치 범위 밖 → Uptane-lite 후속으로 수용. no-brick(T-5)로 *부분 설치 자체가 차량을 망가뜨리지 않음*은 보장.
 
 ---
@@ -106,9 +106,9 @@ T-1~T-10이 도출한 보안 목표를 기존 SR/FR 요구·검증과 연결(전
 | CG | 목표 | 주요 요구 | 검증 | 상태 |
 |---|---|---|---|:--:|
 | CG-1 | 미서명/변조 펌웨어 미실행 | FR-BL-007·SR-FW-002·FR-AB-003·SR-ATK-001/002 | SIT-TC-06/07·test_bootloader_slot | ✅ |
-| CG-2 | PSK 보호영역 격리 | SR-KEY-003·FR-BL-013(WRP) | 칩 read·코드리뷰 | 🔶 RDP/Secure Element 후속 |
+| CG-2 | PSK 보호영역 격리 | SR-KEY-003·FR-BL-013(WRP✅) | WRP-PROV-001·칩 read·코드리뷰 | 🔶 WRP 격리·검증 완료, readout 차단(RDP)·물리추출(SE) 후속 |
 | CG-3 | 다운그레이드 거부 | FR-BL-008·SR-FW-003·SR-ATK-003 | SIT-TC-01·test_anti_rollback | ✅ |
-| CG-4 | 세션 인증 재사용 거부 | FR-CAN-017·SR-ATK-005 | — | ⬜ 잔여(HW freshness) |
+| CG-4 | 세션 인증 재사용 거부 | FR-CAN-017·SR-ATK-005·ADR-004 §6 | SIT-TC-09·test_sec_freshness | 🔶 reboot-replay 차단(영속 epoch, on-target PASS) · 물리 변조 잔여(ATECC608A) |
 | CG-5 | 통신중단/포화 안전복구 | FR-CAN-019·NFR-REL-003·SR-ATK-008 | SIT-TC-08·test_uds_state(S3) | ✅ |
 | CG-6 | 타 ECU 이미지 거부 | SR-FW-004·FR-CAN-011·SR-ATK-004 | ADR-009·test_anti_rollback | ✅ |
 | CG-7 | 미인증 업데이트 차단 | FR-CAN-010·SR-ATK-006 | test_uds_state(3회 잠금) | ✅ |
