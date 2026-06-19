@@ -69,9 +69,17 @@ fixtures/
 # 개인 제출/지원용 발췌본 (로컬 보관, 저장소 제외)
 *제출발췌*
 
-# 포트폴리오 pptx (개인 산출물, 로컬 보관·저장소 제외)
+# 포트폴리오 pptx·발행본·스크립트 (개인 산출물, 로컬 보관·저장소 제외)
 docs/portfolio/*.pptx
+docs/portfolio/best/
+docs/portfolio/archive/
+docs/portfolio/GAMMA_PPT_SCRIPT.md
+docs/portfolio/PHASE2_ROADMAP.md
 
 # SIT-TC-08 CAN flood 측정 기록 (개인 캡처 포함, 로컬 보관·저장소 제외)
 docs/test/SIT-TC-08_CAN_flood_measurement.md
+
+# 정적분석·커버리지 캐시 (cppcheck CTU·gcov, 로컬 산출물)
+*.ctu-info
+*.gcov
 docs/test/SIT-TC-08_CAN_flood_*.png
