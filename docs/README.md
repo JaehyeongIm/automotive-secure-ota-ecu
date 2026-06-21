@@ -31,7 +31,7 @@ docs/
 |---|---|
 | [SDD-001](design/SDD-001_Secure_OTA_Software_Design.md) | 소프트웨어 아키텍처·상세설계 |
 | [diagram](design/diagram.md) | 시스템·시퀀스 다이어그램 |
-| [adr/](design/adr/) | 설계 결정 기록 10건 (MADR) — ADR-001~010 |
+| [adr/](design/adr/) | 설계 결정 기록 11건 (MADR) — ADR-001~011(채택 10·제안 1) |
 
 ### 🛡 안전 (Safety) — ISO 26262-3 HARA
 | 문서 | 내용 |
@@ -49,11 +49,11 @@ docs/
 | [TEST_SPEC_OTA](test/TEST_SPEC_OTA_v1.0.md) | 시험 계획·테스트 명세(TS-OTA-001) |
 | [SIT-001 Plan](test/SIT-001_System_Integration_Test_Plan.md) | on-target 시스템 통합시험 계획 |
 | [SIT-001 RUNBOOK](test/SIT-001_RUNBOOK.md) | 실차 벤치 실행 절차서 |
-| [TR-001](test/TR-001_Test_Report.md) | 시험 결과서 (단위 91 + on-target 8/8) |
+| [TR-001](test/TR-001_Test_Report.md) | 시험 결과서 (단위 91 + on-target 9/9) |
 | [FT-001](test/FT-001_Fuzz_Test_Plan_Report.md) | **퍼즈 테스트 계획·결과** (ASPICE-CS SEC.3) |
 
 ### 🧰 트러블슈팅 (8D) — [troubleshooting/](troubleshooting/)
-실측 이슈 14건(ISS-*) + 근본원인 실험 1건(EXP-001), 8D 형식.
+실측 이슈 17건(ISS-*) + 근본원인 실험 1건(EXP-001), 8D 형식.
 
 ### 📑 기타
 - [portfolio/](portfolio/) — 취업 포트폴리오 산출물

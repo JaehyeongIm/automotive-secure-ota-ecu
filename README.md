@@ -3,6 +3,8 @@
 CAN 버스 기반 Dual-ECU 환경에서 **UDS over ISO-TP Secure OTA 파이프라인**을 구현한 임베디드 시스템 프로젝트.
 STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/CD 서버로 구성해 전장 OTA의 핵심 기능을 실물 RC 차량으로 실증합니다.
 
+> **검증 핵심** — 실 RC 차량에서 CAN Secure OTA를 **end-to-end 실증**: 기본 4 + 공격 5 시나리오를 **9/9 on-target PASS** (시뮬레이션 0).
+
 **🎬 데모** — RC 차량 OTA + A/B 슬롯 전환 실증 → **[▶ YouTube](https://youtu.be/_RbVwU_nPHI)**
 
 [![Secure OTA 데모](https://img.youtube.com/vi/_RbVwU_nPHI/hqdefault.jpg)](https://youtu.be/_RbVwU_nPHI)
@@ -11,12 +13,12 @@ STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/
 
 ## 핵심 성과
 
-- **보안 기능 6종** — Secure Boot(ECDSA-P256) · Anti-rollback · Fail-closed 검증 게이팅 · SecurityAccess(HMAC) · 3-strike 롤백 · 메타 이중화 원자성
+- **보안 기능 7종** — Secure Boot(ECDSA-P256) · Anti-rollback · Fail-closed 검증 게이팅 · SecurityAccess(HMAC) · 3-strike 롤백 · 메타 이중화 원자성 · ECU 식별 강제(타 ECU 이미지 거부)
 - **안전 기능 1종** — 센서 staleness fail-safe (ISO 26262 안전상태 전이)
 - **단위 테스트 91개** — 라인 ~91% · 분기 ~79% 커버리지 (`ceedling gcov:all`, strict)
-- **On-target 8/8 PASS** — 실 OTA·실 CAN·실 RC차에서 정상 4 + 공격 4종(변조·미서명·endless-data·flood) 실증 → [SIT-001](docs/test/SIT-001_System_Integration_Test_Plan.md)
+- **On-target 9/9 PASS** — 실 OTA·실 CAN·실 RC차에서 기본 4 + 공격 5종(변조·미서명·endless-data·flood·replay) 실증 → [SIT-001](docs/test/SIT-001_System_Integration_Test_Plan.md)
 - **호스트 퍼징** — libFuzzer + ASAN/UBSAN으로 신규 결함 2건 발굴·차단(sha256 UB · UDS 스택 오버플로 CWE-121) → [FT-001](docs/test/FT-001_Fuzz_Test_Plan_Report.md)
-- **규모** — ~6.2K LOC C(부트로더 + 2앱) + ~2K Python · 130+ commits
+- **규모** — ~6.2K LOC C(부트로더 + 2앱) + ~2K Python · 170+ commits
 
 > 요구사항(SRS·HARA·TARA) → 설계(SDD·ADR) → TDD 구현 → 단위·on-target 검증까지 V-모델 추적성을 산출물로 닫았습니다.
 
@@ -57,7 +59,7 @@ STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/
 
 ### OTA 보안
 
-구현 상태를 정직하게 표기합니다 — ✅ 구현+on-target 검증, ⬜ 계획/로드맵.
+구현 상태를 정직하게 표기합니다 — ✅ 구현+on-target 검증, 🔶 부분 구현·검증, ⬜ 계획/로드맵.
 
 | 항목 | 상태 | 내용 |
 |---|---|---|
@@ -69,7 +71,7 @@ STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/
 | SecurityAccess | ✅ on-target | Key = HMAC-SHA256(PSK, Seed)[:4], 3회 실패 → 10초 잠금 |
 | 메타 이중화 원자성 | ✅ 단위 | 섹터 2·3 redundant + CRC32 + seq, ping-pong 원자적 갱신(전원차단 안전) |
 | ECU 식별 | ✅ 단위 | 서명 헤더 `target_ecu_id` ≠ 자기 ID면 OTA 거부 (NRC 0x31) |
-| Replay 방어 | ⬜ 계획 | Session / Sequence / Freshness |
+| Replay 방어 | 🔶 부분 | SecurityAccess seed = 영속 boot-epoch → 재부팅 후 seed 비반복(캡처 Key 거부, on-target). 세션 내 TransferData·물리(SWD) replay는 잔여(§19.1) |
 | Uptane-lite | ⬜ 계획 | Manifest 검증·ECU Inventory·Campaign |
 
 > SecurityAccess seed(SW nonce)·잠금(RAM)·anti-rollback 기준선(CRC 메타)은 F446 TRNG/Secure NV 부재에 따른 한계가 있으며, 정석은 Secure Element([ADR-006](docs/design/adr/ADR-006_Secure_Element_Adoption.md))로 해소합니다. 전 항목의 잔여 위험과 후속 해소 트리거는 [SRS §19.1 한계 및 잔여 위험 레지스터](docs/requirements/SRS-001_CAN_Secure_OTA_Pipeline.md)에 정리했습니다.
@@ -113,6 +115,7 @@ Gateway가 CAN heartbeat의 `driving_state`를 모니터링해 ECU가 IDLE일 �
 | TC-06 | firmware 변조 — 1바이트 변조 → `ECDSA FAILED` 부팅거부 | ✅ PASS |
 | TC-07 | 미서명 — 서명 64B=0 → `ECDSA FAILED`(우회 불가) | ✅ PASS |
 | TC-08 | CAN flood — 폭주 중 OTA 깨져도 brick 없이 known-good 유지 | ✅ PASS |
+| TC-09 | SecurityAccess replay — 재부팅 후 seed 비반복 → 캡처한 Key 거부(`NRC 0x35`) | ✅ PASS |
 
 > 실 RC차 on-target 벤치 테스트(실물 환경). plant를 실시간 시뮬레이션하는 엄밀한 의미의 HIL과는 구분됩니다.
 
@@ -208,4 +211,4 @@ git tag v2 && git push origin v2
 - **요구·설계** — [SRS-001](docs/requirements/SRS-001_CAN_Secure_OTA_Pipeline.md) · [SDD-001](docs/design/SDD-001_Secure_OTA_Software_Design.md) · [RTM-001](docs/requirements/RTM-001_Requirements_Traceability_Matrix.md)
 - **안전·보안 분석** — [HARA-001](docs/safety/HARA-001_Hazard_Analysis_Risk_Assessment.md) (ISO 26262) · [TARA-001](docs/security/TARA-001_Threat_Analysis_Risk_Assessment.md) (ISO/SAE 21434)
 - **테스트** — [SIT-001](docs/test/SIT-001_System_Integration_Test_Plan.md) · [TR-001](docs/test/TR-001_Test_Report.md) · [FT-001](docs/test/FT-001_Fuzz_Test_Plan_Report.md)
-- **설계 의사결정 / 트러블슈팅** — ADR 10건 → [docs/design/adr/](docs/design/adr/) · 8D 분석 17건 → [docs/troubleshooting/](docs/troubleshooting/)
+- **설계 의사결정 / 트러블슈팅** — ADR 11건(채택 10·제안 1) → [docs/design/adr/](docs/design/adr/) · 8D 분석 17건 → [docs/troubleshooting/](docs/troubleshooting/)

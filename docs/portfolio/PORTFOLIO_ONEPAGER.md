@@ -11,11 +11,11 @@
 
 | | |
 |---|---|
-| 🔐 보안 6종 | Secure Boot(ECDSA‑P256) · Anti‑rollback · Fail‑closed 검증게이팅 · SecurityAccess(HMAC) · 3‑strike 롤백 · 메타 이중화 원자성 |
+| 🔐 보안 7종 | Secure Boot(ECDSA‑P256) · Anti‑rollback · Fail‑closed 검증게이팅 · SecurityAccess(HMAC) · 3‑strike 롤백 · 메타 이중화 원자성 · ECU 식별 강제(타 ECU 이미지 거부) |
 | 🛡️ 안전 1종 | 센서 staleness fail‑safe (ISO 26262 안전상태 전이) |
 | ✅ 단위 테스트 91개 | 라인 커버리지 91% · 분기 79%(strict) — 양성 + 음성(거부경로) |
-| 🔬 On‑target 8/8 PASS | 실 OTA·실 CAN·실 RC차 — 기본 4(보안 3+안전 1) + 공격 4종(변조·미서명·endless-data·flood) |
-| 📄 표준 산출물 | SRS · SDD · HARA · TARA · SIT · TR + ADR×10 + 8D×14 (ASPICE SWE.1~6 추적) |
+| 🔬 On‑target 9/9 PASS | 실 OTA·실 CAN·실 RC차 — 기본 4(보안 3+안전 1) + 공격 5종(변조·미서명·endless-data·flood·replay) |
+| 📄 표준 산출물 | SRS · SDD · HARA · TARA · SIT · TR + ADR×11(채택10·제안1) + 8D×17 (ASPICE SWE.1~6 추적) |
 
 ---
 
@@ -25,19 +25,20 @@
 |---|---|---|---|
 | Secure Boot | SHA‑256 + ECDSA‑P256(오픈소스 uECC(P-256)·SHA-256 통합), WRP 잠금 부트로더 | ISO 24089, 신뢰 사슬 | 단위 + on-target |
 | Anti‑rollback | 앞 서명헤더 `fw_version` vs CONFIRMED 기준선, 거부 시 graceful 롤백 | UNECE R155, AVB rollback index | **SIT TC‑01** |
+| ECU 식별 강제 | 서명헤더 `target_ecu_id` ≠ 자기 ID면 OTA 거부(NRC 0x31) | ISO 14229, Uptane ECU‑targeting, ADR‑009 | 단위 |
 | 3‑strike 롤백 | 시험부팅(증가‑먼저‑점프) 3회 초과 → INVALID + 자동 롤백 | ISO 24089, FTTI | **SIT TC‑02** |
 | Fail‑closed 게이팅 | 메타 `size` 비정상 시 *검증 우회 차단*(허용 아닌 거부) | CWE‑636, deny‑by‑default | **SIT TC‑03** |
 | 메타 원자성 | 섹터 이중화 + CRC32 + seq, ping‑pong(전원차단 안전) | AUTOSAR Fee/NvM | 단위 |
 | SecurityAccess | Key=HMAC‑SHA256(PSK,Seed)[:4], 3회 실패 → 잠금 | ISO 14229 0x27, RFC 2104 | 단위 + on-target |
 | 센서 staleness | 0x200 수신 타임아웃(150ms) → fail‑safe 정지 | ISO 26262, AUTOSAR E2E | **SIT TC‑04** |
-| CI/배포 분리 | push=CI / 태그 vN + `input` 승인 게이트 → 배포 | UN R156 SUMS, Uptane Image/Director | Jenkins |
+| CI/배포 분리 | push=CI / 태그 vN + `input` 승인 게이트 → 배포 | UN R156 SUMS, 빌드/배포 권한 분리(SoD) | Jenkins |
 
 ---
 
 ## 검증 전략 — V‑모델 양방향
 
 - **① 호스트 단위(`ceedling gcov:all`)** — HAL과 분리한 *순수 코어*(메타 상태머신·anti‑rollback·검증게이팅·crypto)를 91개 테스트로. *음성 테스트*로 거부 분기까지(분기 79%).
-- **② On‑target 벤치(SIT‑001)** — 실 ECU 2대·실 CAN·실 OTA로 기본 4(보안 3+안전 1) + 공격 4종을 실증(8/8 PASS). *plant 시뮬레이터 기반 HIL이 아닌 실물 환경*임을 명시.
+- **② On‑target 벤치(SIT‑001)** — 실 ECU 2대·실 CAN·실 OTA로 기본 4(보안 3+안전 1) + 공격 5종을 실증(9/9 PASS). *plant 시뮬레이터 기반 HIL이 아닌 실물 환경*임을 명시.
 
 ---
 

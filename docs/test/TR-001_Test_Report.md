@@ -20,11 +20,11 @@
 | 캠페인 | 범위 | 결과 |
 |---|---|---|
 | ① 호스트 단위테스트(Ceedling) | HAL 분리 *순수 코어* 로직 | **91/91 PASS** · 라인 ~91%·분기 ~79% |
-| ② On-target 벤치(SIT-001) | 실 ECU 2대·실 CAN·실 OTA | **8/8 PASS** (기본 4: 보안 3+안전 1 · 공격 4: SIT-TC-05~08) |
+| ② On-target 벤치(SIT-001) | 실 ECU 2대·실 CAN·실 OTA | **9/9 PASS** (기본 4: 보안 3+안전 1 · 공격 5: SIT-TC-05~09) |
 | ③ CI/CD 파이프라인 E2E 배포(Jenkins) | git-push 트리거·빌드/ECDSA 서명·승인 게이트·양 ECU 실 OTA 배포 | **PASS** (v4 릴리스 양 ECU 슬롯전환·부팅 확인 — build #86; §4.1) |
 | ④ 호스트 퍼징(libFuzzer+ASAN/UBSAN) | 순수 파서(이미지헤더·UDS 0x36) | **신규 결함 2건 발굴·차단** — F-002(sha256 UB)·F-003(UDS 스택오버플로 CWE-121) → [FT-001](FT-001_Fuzz_Test_Plan_Report.md) |
 
-**판정: 구현 범위 PASS.** 미구현·미실행(replay·campaign·SIT 음성대조 등)은 **§19.1 잔여 위험으로 명시·수용**한다(과대 PASS 주장 없음).
+**판정: 구현 범위 PASS.** 미구현·미실행(campaign·물리/TransferData replay·SIT 음성대조 등)은 **§19.1 잔여 위험으로 명시·수용**한다(과대 PASS 주장 없음).
 실행일 — 단위: 2026-06-05(본 결과서 작성 시 재실행 확인), on-target: 2026-06-04, CI/CD E2E 배포: 2026-06-07(Jenkins build #86, §4.1).
 
 ---
@@ -58,7 +58,7 @@
 
 ---
 
-## 4. ② On-target 벤치 결과 (SIT-001) — 8/8 PASS (기본 4 + 공격 4)
+## 4. ② On-target 벤치 결과 (SIT-001) — 9/9 PASS (기본 4 + 공격 5)
 
 | TC | 요구사항 | 핵심 관측 로그 | 결과 | 일시 |
 |---|---|---|---|---|
@@ -70,7 +70,7 @@
 - 실증 경로: 실 OTA(35400 B, ISO-TP/UDS)로 전달 → 부트로더 검증·전이·거부 사유를 UART/CAN heartbeat로 자동 대조(SIT-001 §6).
 - **재검증(2026-06-07):** ABOM(ISS-CAN-006)·endless-data(FR-CAN-012/013) 펌웨어 변경 후 SIT-TC-01~04 on-target **4/4 재통과(회귀 없음)**. OTA 전송은 cf-delay 0.02로 수행(ISS-OTA-006 완화). 진단 중 발견·해결 이슈: ISS-CAN-006·ISS-HW-001·ISS-SEC-002.
 
-**공격 시나리오 on-target (SIT-TC-05~08, 2026-06-07):**
+**공격 시나리오 on-target (SIT-TC-05~08 @2026-06-07 · SIT-TC-09 @2026-06-13):**
 
 | TC | 시나리오 | 핵심 관측 | 결과 |
 |---|---|---|---|
@@ -78,6 +78,7 @@
 | SIT-TC-06 | firmware 변조 | `forge_image --tamper`(1B 변조) → `ECDSA FAILED … refusing` → Safe State | **PASS** |
 | SIT-TC-07 | 미서명/서명무효 | `forge_image --unsign`(서명 64B=0) → REQUIRED 경로 `ECDSA FAILED`(우회 불가) | **PASS** |
 | SIT-TC-08 | CAN flood(no-brick) | cangen 폭주 중 OTA → `Receive timeout` → 메타 미commit → known-good v2(ESR=0) | **PASS** |
+| SIT-TC-09 | SecurityAccess replay | 캡처→리셋→재전송: `Seed2 ≠ Seed1`(영속 boot-epoch) → 옛 Key `NRC 0x35` 거부, Unlock 정상(회귀 없음) | **PASS**(2026-06-13, 양 ECU) |
 
 - **미실행:** SIT-TC-00(베이스라인)·SIT-TC-01b/03b/04b(음성 대조) → 후속(SIT-001 §6 기록과 일치).
 
@@ -176,7 +177,7 @@
 
 | 항목 | 사유 | 연결 |
 |---|---|---|
-| TC-ATK-005 replay | 미구현(강한 freshness=HW 의존) | §19.1 L-1 |
+| TC-ATK-005 물리/TransferData replay | reboot-replay는 §4 on-target PASS(2026-06-13); 물리(SWD)·세션 내 TransferData replay는 HW(ATECC608A) 후속 | §19.1 L-1 |
 | TC-ATK-010 campaign partial | Uptane-lite 로드맵 | §19.1 계열·README |
 | SIT-TC-00 / -01b / -03b / -04b | 베이스라인·음성 대조 | SIT-001 §6 후속 |
 | FR-CAN-018 RDBID(0x22, Should) | 미구현(Should) | — |
@@ -188,7 +189,7 @@
 
 ## 8. 결론
 
-구현 범위(보안 6종 + 안전 1종)는 **단위 91/91 + on-target 8/8(기본 4 + 공격 4) 전부 PASS**로 검증됐다. 추가로 **호스트 퍼징(④, [FT-001](FT-001_Fuzz_Test_Plan_Report.md))으로 신규 결함 2건(F-002 sha256 UB·F-003 UDS 스택오버플로 CWE-121)을 발굴·차단**했다. 미구현·미실행은 §19.1에 잔여 위험으로 명시·수용했다.
+구현 범위(보안 7종 + 안전 1종)는 **단위 91/91 + on-target 9/9(기본 4 + 공격 5) 전부 PASS**로 검증됐다. 추가로 **호스트 퍼징(④, [FT-001](FT-001_Fuzz_Test_Plan_Report.md))으로 신규 결함 2건(F-002 sha256 UB·F-003 UDS 스택오버플로 CWE-121)을 발굴·차단**했다. 미구현·미실행은 §19.1에 잔여 위험으로 명시·수용했다.
 **회귀(재현):** 단위는 `ceedling test:all`(91개)·`gcov:all`, on-target은 `tools/hil_runner.py --all`, 퍼징은 `fuzz/build.sh`+`fuzz/bin/<harness>`로 재현 가능. FAIL 발생 시 8D 트러블슈팅(ISS) 발행(PRC-006).
 
 ---
@@ -207,3 +208,5 @@
 | 1.7 | 2026-06-07 | **CI/CD 파이프라인 E2E 배포 on-target 실증(§4.1 신설)** — Jenkins build #86 v4 릴리스 전 구간 PASS(빌드·ECDSA 서명·승인 게이트·양 ECU UDS OTA·슬롯전환·재부팅 확인), build #85 git-push 자동트리거 + OTA 실패→FAILURE→fail-safe(FR-CICD-010) 실증. §1 캠페인 ③ 추가, §6.1 TC-CI-001·003·004 ✅ 승격(집계 ✅19·🔶8·⬜1), §7 TC-CI-004 이연 제거. TS-OTA-001 §13.1 동반 정합 |
 | 1.8 | 2026-06-08 | **호스트 퍼징(④) 추가 + 단위 82→83** — FH-1/FH-3(libFuzzer+ASAN/UBSAN)로 신규 결함 2건 발굴·차단: F-002(sha256 부호시프트 UB)·F-003(UDS TransferData per-block 스택오버플로 CWE-121). test_uds_state +1(oversized), 원 PoC 재생 클린·재퍼징 1.4M회 무크래시. §1 캠페인 ④·§3 합계 갱신, 상세 [FT-001](FT-001_Fuzz_Test_Plan_Report.md)·ISS-SEC-003/004 |
 | 1.9 | 2026-06-17 | **단위 83→91 정정** — §3 per-suite 표에 누락됐던 `test_sec_freshness` 5종(SecurityAccess seed freshness, SR-ATK-005, 커밋 4ddd16a/eac2919) 반영 + `test_ota_meta` 10→13(`get_active_slot`·`bump_seq`) 정정. §1·§3 합계·§8 결론·재현 명령(`ceedling test:all`)을 91로 정합. 커버리지(라인 ~91%·분기 ~79%) 수치는 gcov 재측정 전까지 유지 |
+| 1.10 | 2026-06-20 | **on-target replay 반영 8/8→9/9** — SIT-TC-09(SecurityAccess reboot-replay, TC-ATK-005) on-target PASS(2026-06-13, 양 ECU: `Seed2≠Seed1`+옛 Key NRC 0x35)를 §4 결과표·§1·§8 카운트에 반영. §7의 "TC-ATK-005 replay 미구현"을 **물리/TransferData replay 잔여**로 정정(reboot-replay는 실행·PASS). SR-ATK-005 상태 ⬜→🔶(부분), §19.1 L-1·FR-CAN-017(boot-epoch 대체설계) 정합 동반 |
+| 1.11 | 2026-06-21 | §8 결론 **보안 6종→7종 정정** — ECU 식별 강제(FR-CAN-011·ADR-009)를 포함한 검증된 7종으로 정합(README·PORTFOLIO·GAMMA·§3~5 일치). 안전 1종·단위 91·on-target 9/9·퍼징 2건은 유지 |
