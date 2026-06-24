@@ -46,6 +46,7 @@ jenkins_workspace/
 *.ioc
 Release/
 Debug/
+SlotB/
 *.launch
 .cproject
 .project
@@ -68,6 +69,8 @@ fixtures/
 
 # 개인 제출/지원용 발췌본 (로컬 보관, 저장소 제외)
 *제출발췌*
+*면접*
+*원본백업*
 
 # 포트폴리오 pptx·발행본·스크립트 (개인 산출물, 로컬 보관·저장소 제외)
 docs/portfolio/*.pptx
