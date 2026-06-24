@@ -5,7 +5,7 @@
 | 문서 ID | SRS-001 |
 | 문서명 | CAN 기반 UDS over ISO-TP Secure OTA 파이프라인 요구사항 명세서 |
 | 프로젝트명 | Dual ECU 버튼 트리거 직진 주행 Secure OTA 시스템 |
-| 버전 | 2.13 |
+| 버전 | 2.15 |
 | 작성일 | 2026-05-25 |
 | 작성 목적 | Dual ECU 버튼 트리거 직진 주행 + 장애물 회피 OTA 데모 시스템 소프트웨어 요구사항 정의 |
 | 주요 대상 | Raspberry Pi 5 Gateway, STM32F446RE ECU 2대, CAN Bus, Custom Bootloader, RC 차량 데모 플랫폼 |
@@ -88,7 +88,7 @@
 | 제외 항목 | 제외 사유 |
 |---|---|
 | Delta Update / 차분 업데이트 | 1차 구현에서는 안정성 검증을 우선하며, Full Image 기반 A/B OTA에 집중하기 위함 |
-| 상용 Uptane 전체 구현 | 개인 프로젝트 범위에서 과도하므로 Uptane-lite 개념 참고 수준으로 제한 |
+| 상용 Uptane 전체 구현 | 단일 게이트웨이·단일 MCU 벤치 범위 — Uptane의 2-repository/TUF 메타데이터 모델은 미채택하고 full-verification 원칙만 차용(§9) |
 | AUTOSAR Classic/Adaptive 정식 스택 | 상용 스택 없이 개념 연결 수준으로 제한 |
 | ISO-TP 멀티 세션 동시 처리 | 단일 ECU당 단일 OTA 세션만 운용하므로 동시 세션 관리는 제외 |
 | HSM 기반 키 저장 | F446RE의 하드웨어 한계로 양산 ECU 수준 구현 불가 |
@@ -235,7 +235,7 @@
 ### 6.3 프로젝트 범위 제약
 
 - 본 프로젝트는 개인 사이드 프로젝트이며, 상용 OTA 시스템을 완전 대체하지 않는다.
-- Uptane, AUTOSAR, UDS는 전체 표준 구현이 아니라 개념을 참고한 축소 구현으로 제한한다.
+- AUTOSAR·UDS는 전체 표준이 아니라 개념을 참고한 축소 구현이며, Uptane은 디바이스단을 MCUboot 계열로 구현하고 full-verification 원칙만 차용한다(§9).
 - ISO-TP는 OTA에 필요한 SF/FF/CF/FC 핵심 기능을 구현하며, ISO 15765-2 전체 규격 준수를 목표로 하지 않는다.
 - 보안 공격 시나리오는 자체 제작한 테스트 환경 내부에서만 수행한다.
 
@@ -358,7 +358,7 @@ Jenkins 기반 CI/CD 파이프라인은 Raspberry Pi 5에서 운용되며, Git p
 | FR-CICD-003 | Stage 1에서 arm-none-eabi-gcc를 통해 Drive ECU 및 Sensor ECU 펌웨어를 크로스컴파일해야 한다. | Must | 빌드 오류 발생 시 이후 Stage가 실행되지 않고 파이프라인이 중단되어야 한다. |
 | FR-CICD-004 | Stage 2에서 cppcheck를 통해 펌웨어 소스코드 정적 분석을 수행해야 한다. | Should | error 등급 이상의 결함 검출 시 파이프라인이 중단되고 결함 목록이 로그에 기록되어야 한다. |
 | FR-CICD-005 | Stage 3에서 빌드된 펌웨어 바이너리 크기가 App Slot 크기(128KB)를 초과하는지 검사해야 한다. | Must | 초과 시 파이프라인이 중단되고 실제 크기와 한계 크기가 로그에 기록되어야 한다. |
-| FR-CICD-006 | Stage 4에서 ECDSA 개인키로 펌웨어에 서명하고 Manifest를 생성해야 한다. | Must | 서명된 펌웨어 바이너리와 Manifest 파일이 Jenkins 아티팩트로 저장되어야 한다. **구현 현황:** 별도 Manifest 파일은 미생성(§8.1) — `sign_firmware.py`가 서명 헤더+ECDSA를 이미지에 내장한 *서명 바이너리*만 산출(이게 Manifest의 무결성·인증성 기능을 흡수). campaign_id/expiration 메타는 Uptane-lite 후속. |
+| FR-CICD-006 | Stage 4에서 ECDSA 개인키로 펌웨어에 서명하고 Manifest를 생성해야 한다. | Must | 서명된 펌웨어 바이너리와 Manifest 파일이 Jenkins 아티팩트로 저장되어야 한다. **구현 현황:** 별도 Manifest 파일은 미생성(§8.1) — `sign_firmware.py`가 서명 헤더+ECDSA를 이미지에 내장한 *서명 바이너리*만 산출(이게 Manifest의 무결성·인증성 기능을 흡수). campaign_id/expiration 메타는 후속(§9). |
 | FR-CICD-007 | Stage 5에서 OTA 배포 스크립트는 ECU가 IDLE(정차) 상태임을 heartbeat로 확인한 뒤 다운로드를 시작하고, TransferExit 완료 시 ECU가 즉시 재부팅하여 펌웨어를 활성화한다. | Must | OTA 배포 스크립트(`tools/ota_client.py`)는 UDS over ISO-TP 절차(0x10→0x27→0x34→0x36→0x37) 시작 전에 heartbeat(CAN 0x100) driving_state==0(IDLE)을 확인한다(`wait_for_idle`, `--idle-timeout` 기본 120초·미충족 시 OTA 중단). IDLE 확인 후 비활성 슬롯에 펌웨어 기록을 완료하므로 Flash Erase가 정차 구간에서 수행된다. TransferExit(0x37) 완료 시 ECU는 즉시 NVIC_SystemReset()으로 재부팅하고, Jenkins는 heartbeat(CAN 0x100) byte[1] 슬롯 전환을 확인한다. (ADR-001 옵션 C, FR-DRV-008 연계) |
 | FR-CICD-008 | 각 Stage의 실행 결과와 로그가 Jenkins 빌드 이력에 기록되어야 한다. | Must | 성공/실패 여부, 실패 원인, 각 Stage 소요 시간이 Jenkins UI에서 확인 가능해야 한다. |
 | FR-CICD-009 | ECDSA 개인키는 Jenkins Credentials로 관리되어야 하며 Jenkinsfile에 평문 노출되지 않아야 한다. | Must | Jenkinsfile 소스코드에 키 값이 존재하지 않아야 한다. |
@@ -374,7 +374,7 @@ Jenkins 기반 CI/CD 파이프라인은 Raspberry Pi 5에서 운용되며, Git p
 > 본 구현은 별도 Manifest 파일을 생성·전송·파싱하지 않고, 펌웨어 이미지 맨 앞(offset 0)에
 > **ECDSA로 보호되는 Image Header**(`[헤더][코드][서명 64B]`, FR-AB-008)를 임베드한다. ECDSA가
 > (헤더+코드)를 통째로 덮어 헤더 필드가 위조 불가하며, ECU는 게이트웨이를 신뢰하지 않고 헤더+서명을
-> 독립 검증한다(SR-UP-004, Uptane 핵심 원칙). 이미지↔메타 불일치가 구조적으로 불가능한 MCUboot 정석 포맷.
+> 독립 검증한다(SR-UP-004, Uptane 핵심 원칙). 앞-헤더 배치는 MCUboot에서 착안(TLV·security counter 등 실제 포맷 세부는 자체 단순화)했고, 버전이 서명 이미지 안에 있어 이미지↔메타 불일치가 구조적으로 불가능하다.
 > 아래 SR-MF 필드별 충족 현황:
 > - **001** 패키지에 Manifest 포함 → 🔁 **서명 헤더로 대체**(별도 Manifest 파일 없음)
 > - **002** target_ecu_id → ✅ 헤더 `target_ecu_id`(ADR-009, 0x37에서 강제)
@@ -382,10 +382,10 @@ Jenkins 기반 CI/CD 파이프라인은 Raspberry Pi 5에서 운용되며, Git p
 > - **004** image_size → ✅ Boot Metadata `slot size` + RequestDownload(0x34) size(FR-CAN-011/012)
 > - **005** image_hash → ✅ 별도 hash 필드 없이 **ECDSA가 SHA-256(헤더+코드)을 흡수**(부트로더 `uECC_verify`)
 > - **006** signature → ✅ 이미지 ECDSA-P256 서명(헤더+코드 64B)
-> - **007** campaign_id → ⬜ 미구현 — 다중 ECU 캠페인은 **Uptane-lite 후속**(§19.1, TC-ATK-010)
+> - **007** campaign_id → ⬜ 미구현 — 다중 ECU 캠페인은 **후속 과제**(§19.1, TC-ATK-010)
 > - **008** expiration/metadata_version → ⬜ 미구현 — freshness(Uptane Timestamp/Snapshot 상당)는 후속(replay 방어 SR-ATK-005 연계)
 >
-> Uptane 상위 메타데이터 계층(Director/Image repo 분리, TUF roles, freshness)은 *Uptane-lite* 범위 제한(§1).
+> Uptane 상위 메타데이터 계층(Director/Image repo 분리, TUF roles, freshness)은 범위 외 — 본 설계는 디바이스단 MCUboot 계열에 한정(§9).
 
 | ID | 요구사항 | 우선순위 | 수용 기준 |
 |---|---|---:|---|
@@ -419,7 +419,7 @@ Jenkins 기반 CI/CD 파이프라인은 Raspberry Pi 5에서 운용되며, Git p
 | SR-ATK-002 | Arbitrary Software | Signature 검증 | 개인이 임의 생성한 unsigned image가 거부되어야 한다. |
 | SR-ATK-003 | Downgrade Attack | Anti-rollback | 낮은 version image가 거부되어야 한다. |
 | SR-ATK-004 | ECU Mismatch | target_ecu_id 검증 | 다른 ECU용 image가 거부되어야 한다. |
-| SR-ATK-005 | Replay Attack | session_id, sequence number, freshness counter | 이전 Transfer Data 재전송이 거부되어야 한다. |
+| SR-ATK-005 | Replay Attack | session_id, sequence number, freshness counter | 이전 Transfer Data 재전송이 거부되어야 한다. **구현 현황:** 🔶 부분 — SecurityAccess reboot-replay는 영속 boot-epoch로 차단·on-target 검증(SIT-TC-09/TC-ATK-005, 2026-06-13); 세션 내 TransferData·물리(SWD) replay는 잔여(§19.1 L-1, ADR-006). |
 | SR-ATK-006 | Unauthorized Update Start / Brute Force | Security Access, 시도 횟수 제한 | 인증되지 않은 update command가 거부되어야 하며, 연속 3회 Key 오류 시 10초간 Security Access가 잠금되어야 한다. |
 | SR-ATK-007 | Endless Data Attack | image_size, chunk_count 제한 | Manifest size 초과 수신 시 세션이 종료되어야 한다. |
 | SR-ATK-008 | CAN Flood / DoS | timeout, abort, rollback | 업데이트 중단 후 기존 App으로 복구되어야 한다. |
@@ -437,35 +437,36 @@ Jenkins 기반 CI/CD 파이프라인은 Raspberry Pi 5에서 운용되며, Git p
 
 ---
 
-## 9. Uptane-lite 참고 요구사항
+## 9. 업데이트 오케스트레이션 요구사항 (SR-UP) 및 참고 아키텍처
 
-### 9.1 적용 범위
+### 9.1 참고 아키텍처와 범위 결정
 
-본 프로젝트는 Uptane 전체 표준을 구현하지 않는다. 대신 자동차 OTA 보안에서 중요한 메타데이터 기반 검증 개념을 참고하여 Uptane-lite 구조로 축소 적용한다.
+디바이스단 업데이트 검증은 **MCUboot 계열 설계**(offset 0 서명 이미지 헤더 + ECDSA-P256 + A/B 슬롯 + anti-rollback + fail-closed 검증, §8.1)를 따른다. 자동차 OTA 보안 프레임워크인 **Uptane**(TUF 기반 플릿/백엔드 메타데이터 모델)은 레퍼런스로 검토했으나, 단일 게이트웨이·단일 MCU 벤치 범위에서 그 핵심 구조(2-repository 분리, TUF 메타데이터 역할, 차량 version manifest)는 **의식적으로 채택하지 않았다**. Uptane에서 유지한 단 하나의 원칙은 **end-ECU full verification** — 게이트웨이를 신뢰하지 않고 ECU가 서명을 독립 검증하는 신뢰 경계(SR-UP-004)다.
 
-### 9.2 개념 매핑
+### 9.2 채택 / 제외 결정
 
-| Uptane 개념 | 본 프로젝트 대응 |
-|---|---|
-| Primary ECU | Raspberry Pi 5 OTA Gateway |
-| Secondary ECU | STM32F446RE Drive ECU, Sensor ECU |
-| Image Repository | 개발 PC 또는 Raspberry Pi 5의 펌웨어 저장소 |
-| Director Repository | Raspberry Pi 5의 ECU별 업데이트 지시 로직 |
-| Targets Metadata | manifest.json |
-| ECU Inventory | ECU ID, version, active slot, boot state 보고 |
-| Version Report | 각 ECU의 현재 펌웨어 버전 보고 |
-| Rollback 방어 | firmware_version, metadata_version, campaign_id 검증 |
-| Partial Bundle 방어 | ECU별 업데이트 결과 수집 및 Campaign 상태 관리 |
+| 영역 | 본 프로젝트 | 레퍼런스 |
+|---|---|---|
+| 디바이스단 이미지 검증 | ✅ 서명 헤더 + ECDSA-P256 + A/B + anti-rollback | MCUboot |
+| 신뢰 경계 (full verification) | ✅ ECU가 게이트웨이와 무관하게 서명 독립 검증 (SR-UP-004) | Uptane 핵심 원칙 |
+| 게이트웨이 / ECU 역할 | RPi5=업데이트 전달, STM32=수신·검증·부팅 | Uptane Primary/Secondary와 역할은 유사하나 메타데이터 계층 없음 |
+| 2-repository 분리 (Image / Director) | ❌ 미채택 — 단일 게이트웨이·단일 서명키 | Uptane |
+| TUF 메타데이터 역할 (Root/Targets/Snapshot/Timestamp) | ❌ 미채택 | Uptane / TUF |
+| 별도 Manifest 파일 / 차량 version manifest | ❌ 미사용 — 서명 헤더로 대체 (§8.1) | Uptane / 일반 OTA |
+| freshness (expiration / metadata_version) | ⬜ 후속 — SR-UP-005, §19.1 L-1 | Uptane Timestamp/Snapshot |
+| 다중 ECU 캠페인 추적 | ⬜ 후속 — SR-UP-003, TARA T-10 | Uptane Director |
 
-### 9.3 Uptane-lite 요구사항
+> ECU Inventory·Version Report(SR-UP-001, 0x22 RDBID)는 freshness·campaign과 묶이는 후속 항목으로, 현재는 ECU가 heartbeat로 version/slot을 보고하는 수준이다.
+
+### 9.3 업데이트 오케스트레이션 요구사항 (SR-UP)
 
 | ID | 요구사항 | 우선순위 | 수용 기준 |
 |---|---|---:|---|
 | SR-UP-001 | Gateway는 ECU Inventory를 수집해야 한다. | Must | 각 ECU의 version, slot, state가 기록되어야 한다. |
 | SR-UP-002 | Manifest는 ECU별 대상 이미지를 명확히 구분해야 한다. | Must | Drive ECU와 Sensor ECU 이미지가 구분되어야 한다. **구현 현황:** Manifest 대신 **서명 헤더 `target_ecu_id`**(1=Drive/2=Sensor)로 구분, 0x37에서 강제(ADR-009, §8.1). |
-| SR-UP-003 | Gateway는 Campaign 단위 업데이트 결과를 관리해야 한다. | Should | 전체 성공, 일부 성공, 전체 실패 상태가 구분되어야 한다. **구현 현황:** ⬜ 미구현 — Uptane-lite 캠페인 후속(§19.1, TC-ATK-010). |
+| SR-UP-003 | Gateway는 Campaign 단위 업데이트 결과를 관리해야 한다. | Should | 전체 성공, 일부 성공, 전체 실패 상태가 구분되어야 한다. **구현 현황:** ⬜ 미구현 — 캠페인 추적 후속(§19.1, TC-ATK-010). |
 | SR-UP-004 | ECU는 Gateway 검증 결과만 신뢰하지 않고 자체 검증을 수행해야 한다. | Must | Gateway가 변조되었다는 가정에서도 unsigned image가 설치되지 않아야 한다. **구현 현황:** ✅ 충족 — 부트로더가 게이트웨이 무관 ECDSA(헤더+코드) 독립 검증(SIT-TC-06/07 PASS). Uptane "ECU 자체검증" 핵심 원칙. |
-| SR-UP-005 | Manifest 재사용 공격을 방어해야 한다. | Should | metadata_version 또는 expiration 기반으로 오래된 Manifest를 거부해야 한다. **구현 현황:** ⬜ 미구현 — freshness(expiration/metadata_version)는 서명 헤더에 없음; replay 방어(SR-ATK-005/FR-CAN-017)와 함께 Uptane-lite freshness 후속(§19.1 L-1). |
+| SR-UP-005 | Manifest 재사용 공격을 방어해야 한다. | Should | metadata_version 또는 expiration 기반으로 오래된 Manifest를 거부해야 한다. **구현 현황:** ⬜ 미구현 — freshness(expiration/metadata_version)는 서명 헤더에 없음; replay 방어(SR-ATK-005/FR-CAN-017)와 함께 freshness 후속(§19.1 L-1). |
 
 ---
 
@@ -544,7 +545,7 @@ Jenkins 기반 CI/CD 파이프라인은 Raspberry Pi 5에서 운용되며, Git p
 | SR-FW-002 | Signature Verification | boot_verify_signature() | TC-ATK-002 | PASS/FAIL 기록 |
 | FR-AB-004 | Rollback State Machine | boot_select_slot() | TC-FAIL-004 | PASS/FAIL 기록 |
 | FR-CAN-012 | TransferData Sequence Check | uds_transfer_data_handler() | TC-FAIL-002 | PASS/FAIL 기록 |
-| SR-ATK-005 | Replay Defense | session_counter_check() | TC-ATK-005 | PASS/FAIL 기록 |
+| SR-ATK-005 | Replay Defense | boot-epoch seed freshness (seq_counter) | TC-ATK-005 | reboot-replay PASS(on-target); TransferData/물리 잔여 |
 | PRC-006 | Troubleshooting Record | TSR-001 | TC-DBG-001~ | PASS/FAIL 기록 |
 
 ---
@@ -820,7 +821,7 @@ STM32F446RE Linker Script 및 실제 구현 기준으로 확정된 파티션.
 | Sensor ECU App | FR-SEN-001 ~ FR-SEN-005 | TC-NOR-005, TC-NOR-006, TC-NOR-007 |
 | Manifest / Firmware Security | SR-MF-001 ~ SR-MF-008, SR-FW-001 ~ SR-FW-006 | TC-ATK-001 ~ TC-ATK-004 |
 | Attack Defense | SR-ATK-001 ~ SR-ATK-010 | TC-ATK-001 ~ TC-ATK-010 |
-| Uptane-lite | SR-UP-001 ~ SR-UP-005 | TC-NOR-001, TC-ATK-003, TC-ATK-010 |
+| 업데이트 오케스트레이션(SR-UP) | SR-UP-001 ~ SR-UP-005 | TC-NOR-001, TC-ATK-003, TC-ATK-010 |
 | Flash Partition | FR-FL-001 ~ FR-FL-005 | TC-NOR-002, TC-FAIL-005 |
 | 개발 프로세스 | PRC-001 ~ PRC-007 | TC-PRC-001, TC-PRC-002 |
 | 추적성 관리 | RTM-001 ~ RTM-005 | TC-PRC-001, TC-PRC-002 |
@@ -930,7 +931,7 @@ TSR-001  (SUP.9)
 1. STM32F446RE는 실제 차량용 HSM MCU가 아니므로 양산 ECU 수준의 키 보호와 Secure Boot ROM을 제공하지 않는다. Secure Boot 신뢰점(RoT)이 SW 설정 WRP 앵커에 의존하는 한계는 §19.1 L-8로 추적한다.
 2. F446RE는 하드웨어 Dual Bank Flash 구조가 아니므로, 단일 Flash를 논리적으로 분할한 A/B Slot 구조를 사용한다.
 3. UDS는 정식 상용 UDS 스택 전체 구현이 아니라, 리프로그래밍 절차를 참고한 UDS-style 구조이다.
-4. Uptane은 전체 표준 구현이 아니라, Manifest, ECU Inventory, Version Report, Rollback 방어, Partial Bundle 방어 개념을 참고한 Uptane-lite 구조이다.
+4. 디바이스단은 MCUboot 계열 서명 헤더 검증으로 구현했고, Uptane 전체 표준은 구현하지 않는다 — 2-repository/TUF 메타데이터 모델은 미채택하고 end-ECU full verification 원칙만 차용한다(§9).
 5. Delta Update는 1차 구현 범위에서 제외하고, Full Image 기반 A/B Secure OTA에 집중한다.
 6. ASPICE는 공식 준수 또는 평가가 아니라, 요구사항 기반 개발과 추적성 개념을 참고한 수준으로 적용한다.
 7. 공격자 시나리오는 자체 제작한 CAN 테스트 네트워크 내부에서만 수행한다.
@@ -945,7 +946,7 @@ TSR-001  (SUP.9)
 
 | ID | 범주 | 한계 | 영향 요구사항 | 현재 영향 / 완화 (왜 지금 수용 가능한가) | 후속 해소 트리거 | 근거 |
 |---|---|---|---|---|---|---|
-| L-1 | 보안 | Replay 방어(session/sequence/freshness) 미구현 | FR-CAN-017(Should), SR-ATK-005 | 정상 OTA는 SecurityAccess(HMAC-SHA256) 인증 + CAN 물리 접근 필요 → 원격 무인증 replay 차단. 단 세션 내 freshness 카운터는 부재 | ATECC608A TRNG로 강한 seed freshness 확보 후 구현 | ADR-004, ADR-006 |
+| L-1 | 보안 | replay 방어 **부분** — reboot-replay만 차단, 물리/TransferData replay 미저감 | FR-CAN-017(Should), SR-ATK-005 | reboot-replay는 영속 boot-epoch로 차단·on-target 검증(SIT-TC-09/TC-ATK-005, 2026-06-13). 정상 OTA는 SecurityAccess(HMAC-SHA256) 인증 + CAN 물리 접근 필요. 단 물리(SWD) 카운터 변조·세션 내 TransferData replay는 잔여 | ATECC608A 변조저항 단조 카운터로 강한 freshness 확보 후 완전 차단 | ADR-004 §6, ADR-006 |
 | L-2 | 보안 | `hardware_id` 호환성 검사 미구현(`target_ecu_id`만 강제) | FR-CAN-011(Must) | 단일 보드종(F446) + 2-ECU 구성에서 `target_ecu_id`(Drive/Sensor)가 식별을 충족 → 핵심 위협(타 ECU 이미지 설치) 차단. HW revision 검사는 현 구성에선 잉여 | 다(多)-보드/리비전 확장 또는 ATECC608A 프로비저닝 시 추가 | ADR-009 |
 | L-3 | 보안 | SecurityAccess 잠금 RAM 기반(전원 리셋 시 해제) | FR-CAN-010 | 10s 잠금 + HMAC Key 필요, 리셋마다 seed 재발급되어 무차별 대입 비용 존재. 단 리셋으로 잠금 카운터 우회 가능 | ATECC608A monotonic counter로 NV 잠금 | ADR-003, ADR-006 |
 | L-4 | 보안 | Seed = SW nonce(TRNG 부재, 약 엔트로피) | FR-CAN-010, §13.6 | UID+SysTick+카운터 SHA-256 혼합 — 원격 위협모델엔 충분, 물리 관측·재부팅 replay는 모델 밖 | ATECC608A TRNG → HMAC_DRBG seed | ADR-004, ADR-006 |
@@ -1043,7 +1044,8 @@ TSR-001  (SUP.9)
 | Anti-rollback | 취약한 구버전 펌웨어 재설치를 방지하는 정책 |
 | UDS | Unified Diagnostic Services. 차량 진단 서비스 표준 |
 | UDS-style | 본 프로젝트에서 UDS 개념을 참고하여 축소 구현한 명령 구조 |
-| Uptane-lite | Uptane의 메타데이터/위협 모델 개념을 참고한 축소형 OTA 보안 구조 |
+| Uptane | TUF 기반 자동차 OTA 보안 프레임워크. 본 프로젝트는 2-repository/TUF 메타데이터는 미채택하고 full-verification 원칙만 차용(§9) |
+| MCUboot | 서명 이미지 헤더·A/B 슬롯·anti-rollback 기반 디바이스단 secure boot/update 포맷. 본 프로젝트 검증 설계의 참고 모델(§8.1) |
 | CAN | Controller Area Network. 차량용 네트워크 프로토콜 |
 | DTC | Diagnostic Trouble Code. 진단 고장 코드 |
 | ASPICE-inspired | Automotive SPICE를 공식 준수하지는 않지만 요구사항 기반 개발, 추적성, 검증 연계 개념을 참고하는 방식 |
@@ -1079,4 +1081,6 @@ TSR-001  (SUP.9)
 | 2.12 | 2026-06-05 | (1) 보안 공격 테스트 ID 충돌 해소 — SRS의 `TC-SEC-001~010`을 `TC-ATK-001~010`으로 개명(SR-ATK와 1:1 대응, TEST_SPEC의 `TC-SEC` 실행스펙(양성 테스트 포함)과 네임스페이스 분리). (2) §21.2·MS-004의 "공격 10종 통과/PASS" → "구현분 통과"로 calibrate(replay·campaign 등 미구현은 §19.1 후속과 정합). (3) 테스트 결과서 **TR-001** 신규 작성(단위 78/78·on-target 4/4 PASS 기록·공격 시나리오 커버리지 매핑). SDD 참조 v2.12 동기화 |
 | 2.14 | 2026-06-17 | §19.1 잔여위험 레지스터 **L-8 추가** — Secure Boot 신뢰점(RoT)이 SW 설정 Flash WRP 앵커이고 하드웨어 RoT(Secure Boot ROM·OTP 퓨즈·TrustZone)가 부재함을 잔여 위험으로 명시. 완화: 원격/OTA 경로는 ECDSA verify-before-execute(fail-closed)로 차단, 앵커(부트로더) 교체는 물리 SWD+WRP 옵션바이트 해제 필요로 범위 밖(L-6·TARA T-2 동일 전제). 트리거: HSM 내장 MCU 플랫폼 교체(ADR-006 옵션 C) — SE(ATECC608A) 추가만으론 키저장 RoT만 강화되고 boot 앵커는 미해소. §19(1)에 L-8 추적 링크 추가, 닫는 주석을 L-8 트리거(플랫폼 교체) 반영해 정합화 |
 | 2.13 | 2026-06-07 | **추적성 정합(구현 현황 주석 일괄)** — 문서-구현 divergence 명문화: (1) **Manifest→임베디드 서명 헤더(ADR-007) 대체**를 §8.1에 설계결정 note + SR-MF-001~008 필드별 충족/이연 매핑, §8.2·FR-GW-002/003·FR-CICD-006·FR-BL-006·FR-AB-008(헤더 4필드 subset)·SR-UP-002/004/005에 구현현황 주석. campaign_id·expiration(freshness)은 Uptane-lite 후속. (2) **FR-CAN-014(0x31)/015(0x11) 미구현→대체설계** 주석, **FR-CAN-019 S3 타임아웃 구현**(uds_process, 단위 2종), TC-FAIL-002 매핑 FR-CAN-006→012 정정 |
+| 2.15 | 2026-06-20 | **Uptane 과대표현 정정** — §9를 "Uptane-lite 참고 요구사항"→"업데이트 오케스트레이션 요구사항(SR-UP)+참고 아키텍처"로 재작성: 강제 개념매핑표(펌웨어 저장소=Image Repository 등) 제거→채택/제외 결정표로 교체, 디바이스단 레퍼런스를 **MCUboot**로 명시, Uptane은 2-repository/TUF 메타데이터 미채택·**end-ECU full verification 원칙(SR-UP-004)만 차용**으로 정직화. 범위(§6.3·제외표)·한계(§19 4항)·용어집(Uptane/MCUboot)·§8.1 주석·PORTFOLIO_ONEPAGER CI/배포 근거(SoD) 동기화, "Uptane-lite" 브랜딩 제거(개정이력 제외). SR-UP-001~005·manifest divergence(§8.1)·campaign/freshness 후속 라벨은 유지 |
+| 2.16 | 2026-06-20 | **on-target replay 정합 8/8→9/9** — SIT-TC-09(SecurityAccess reboot-replay, TC-ATK-005) on-target PASS(2026-06-13, 양 ECU: `Seed2≠Seed1`+옛 Key NRC 0x35) 반영: SR-ATK-005 §3 구현현황 ⬜→🔶(reboot-replay 차단·검증; 세션 내 TransferData·물리 replay 잔여), 시험명세 함수명(seq_counter) 정정, §19.1 L-1을 "미구현"→"부분 구현(완화 갱신)", FR-CAN-017을 boot-epoch 대체설계로 정합. TR-001 9/9·RTM·SDD·README·PORTFOLIO·제출발췌 카운트 동기화 |
 

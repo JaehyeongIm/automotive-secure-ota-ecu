@@ -258,7 +258,7 @@ select(metaA,metaB) → plan_boot(meta,max=3)
 
 ## 9. 검증 요약
 - **호스트 단위테스트 91개**(Ceedling, 라인 91%·분기 79% 커버리지 `ceedling gcov:all`) + gcc 독립검증(drive_sensor_fresh 6) — *순수 로직*.
-- **On-target 벤치 8종(SIT-001)** — 기본 4(fail-closed·anti-rollback·3-strike·staleness, 2026-06-04) + 공격 4(endless-data·변조·미서명·CAN flood no-brick, 2026-06-07), 전부 PASS.
+- **On-target 벤치 9종(SIT-001)** — 기본 4(fail-closed·anti-rollback·3-strike·staleness, 2026-06-04) + 공격 5(endless-data·변조·미서명·CAN flood no-brick, 2026-06-07; SecurityAccess reboot-replay, 2026-06-13), 전부 PASS.
 - 추적: §8로 *요구사항↔설계↔코드↔테스트* 양방향 연결.
 
 ## 10. 개정 이력

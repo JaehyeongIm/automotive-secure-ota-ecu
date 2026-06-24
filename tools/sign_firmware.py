@@ -6,7 +6,8 @@ Usage:
     python sign_firmware.py <firmware.bin> <private_key.pem> \
         [--version N] [--ecu-id ID] [--out signed.bin]
 
-Signed image layout (front header / MCUboot 정석, ADR-007):
+Signed image layout (front header — inspired by MCUboot; TLV trailer/security
+counter not adopted, simplified custom format — ADR-007):
 
     [ Image Header (IMG_HEADER_SIZE=0x200) ][ firmware (vector table+code) ][ ECDSA sig 64B ]
       magic, fw_version, ecu_id ...padding...   ← app linked at slot+0x200

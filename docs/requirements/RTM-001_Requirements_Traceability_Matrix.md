@@ -17,14 +17,14 @@
 
 | 영역 | ✅ | 🔶 | ⬜/🔁 | 비고 |
 |---|---|---|---|---|
-| 보안 핵심(FR-AB·SR-FW·SR-ATK·SR-KEY) | 다수 | 일부 | replay·campaign·fake-complete | on-target 8/8 PASS |
+| 보안 핵심(FR-AB·SR-FW·SR-ATK·SR-KEY) | 다수 | 일부(+reboot-replay) | campaign·fake-complete·물리/TransferData replay | on-target 9/9 PASS |
 | UDS/CAN(FR-CAN) | 009~013·016·019 | 011(hw_id) | **014(0x31)·015(0x11)·017·018** | 미구현은 대체설계 or Should |
 | Manifest(SR-MF·SR-UP) | 002·004·006 | — | **001🔁·007·008·UP-003/005** | 서명 헤더로 대체(§8.1) |
 | 부트로더/Flash(FR-BL·FR-FL) | 대부분 | 004/005·009 | — | OTA 수신은 앱(아래) |
 | 앱/게이트웨이/CI(FR-DRV·SEN·GW·CICD) | staleness 등 | 대부분(on-target/수동) | GW-008·CICD-006🔁 | 단위 범위 밖 |
 | NFR | REL 전부·SAFE·MNT | PERF-003 | MNT-004(Should) | REL-003=S3 구현 |
 
-**핵심 미구현/이연(⬜):** FR-CAN-014(0x31 Verify)·015(0x11 Reset)·017(replay nonce)·018(RDBID) · SR-MF-007(campaign)·008(freshness) · SR-UP-003/005 · SR-ATK-005(replay)·010(campaign) · FR-GW-008 — 대부분 **Should** 또는 **대체설계/HW(ATECC608A)·Uptane-lite 로드맵**(§19.1).
+**핵심 미구현/이연(⬜):** FR-CAN-014(0x31 Verify)·015(0x11 Reset)·017(replay nonce)·018(RDBID) · SR-MF-007(campaign)·008(freshness) · SR-UP-003/005 · SR-ATK-010(campaign) · FR-GW-008 — 대부분 **Should** 또는 **대체설계/HW(ATECC608A)·Uptane-lite 로드맵**(§19.1). *SR-ATK-005(replay)는 reboot-replay 차단·on-target 검증으로 🔶 부분(물리/TransferData replay만 잔여).*
 
 ---
 
@@ -85,7 +85,7 @@
 | FR-CAN-014 | RoutineControl-Verify(0x31) | §6.2 | — | (부팅 검증으로 대체) | ⬜ **0x31 미구현** — 부팅 fail-closed 대체(SR §FR-CAN-014 주석) |
 | FR-CAN-015 | ECU Reset(0x11) | — | (자동리셋 대체) | — | ⬜ **0x11 미구현** — 0x37 후 자동리셋 대체 |
 | FR-CAN-016 | NRC 정의 | §13.5 | uds.c nrc() | test_uds_state(거부분기) | ✅ |
-| FR-CAN-017 | Replay nonce(session_id)(Should) | — | — | — | ⬜ freshness HW 의존(§19.1 L-1) |
+| FR-CAN-017 | Replay nonce(session_id)(Should) | ADR-004 §6 | boot-epoch seq_counter(uds.c) | test_sec_freshness·SIT-TC-09 | 🔁 SecurityAccess seed replay는 boot-epoch(대체설계)로 차단·on-target 검증; 세션 내 TransferData session_id replay는 잔여(§19.1 L-1) |
 | FR-CAN-018 | ReadDataByIdentifier(0x22)(Should) | — | — | — | ⬜ 미구현 |
 | FR-CAN-019 | S3 세션 타임아웃(5s) | §2.5,6.6 | uds.c uds_process | test_uds_state(2)·SIT-TC-08 | ✅ |
 
@@ -168,7 +168,7 @@
 | SR-ATK-002 | Arbitrary(unsigned) | Sig | SIT-TC-07(미서명→ECDSA FAILED) | ✅ |
 | SR-ATK-003 | Downgrade | Anti-rollback | SIT-TC-01·test_anti_rollback | ✅ |
 | SR-ATK-004 | ECU Mismatch | target_ecu_id | test_anti_rollback·ADR-009 | ✅(단위) |
-| SR-ATK-005 | Replay | session_id/freshness | — | ⬜ HW 의존(§19.1 L-1·ADR-004/006) |
+| SR-ATK-005 | Replay | boot-epoch seed freshness | test_sec_freshness(5)·SIT-TC-09 on-target PASS | 🔶 reboot-replay 차단·검증(2026-06-13); 물리(SWD)·TransferData replay 잔여(L-1·ADR-006) |
 | SR-ATK-006 | Unauthorized/Brute Force | SecurityAccess+잠금 | test_uds_state(잠금) | ✅(단위) |
 | SR-ATK-007 | Endless Data | size/cap | SIT-TC-05·test_uds_state(2) | ✅ ISS-SEC-001 |
 | SR-ATK-008 | CAN Flood/DoS | timeout/abort/rollback | SIT-TC-08(no-brick)·S3 | ✅ |
