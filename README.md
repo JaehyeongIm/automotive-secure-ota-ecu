@@ -7,7 +7,7 @@ STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/
 
 **🎬 데모** — RC 차량 OTA + A/B 슬롯 전환 실증 → **[▶ YouTube](https://youtu.be/_RbVwU_nPHI)**
 
-[![Secure OTA 데모](https://img.youtube.com/vi/_RbVwU_nPHI/hqdefault.jpg)](https://youtu.be/_RbVwU_nPHI)
+<!-- [![Secure OTA 데모](https://img.youtube.com/vi/_RbVwU_nPHI/hqdefault.jpg)](https://youtu.be/_RbVwU_nPHI) -->
 
 ---
 
