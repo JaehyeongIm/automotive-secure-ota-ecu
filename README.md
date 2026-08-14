@@ -4,10 +4,11 @@ CAN 버스 기반 Dual-ECU 환경에서 **UDS over ISO-TP Secure OTA 파이프�
 STM32F446RE 2대를 대상 ECU로, Raspberry Pi 5를 OTA Gateway 겸 Jenkins CI/CD 서버로 구성해 전장 OTA의 핵심 기능을 실물 RC 차량으로 실증합니다.
 
 > **검증 핵심** — 실 RC 차량에서 CAN Secure OTA를 **end-to-end 실증**: 기본 4 + 공격 5 시나리오를 **9/9 on-target PASS** (시뮬레이션 0).
-
+> 
+<!--
 **🎬 데모** — RC 차량 OTA + A/B 슬롯 전환 실증 → **[▶ YouTube](https://youtu.be/_RbVwU_nPHI)**
 
-<!-- [![Secure OTA 데모](https://img.youtube.com/vi/_RbVwU_nPHI/hqdefault.jpg)](https://youtu.be/_RbVwU_nPHI) -->
+ [![Secure OTA 데모](https://img.youtube.com/vi/_RbVwU_nPHI/hqdefault.jpg)](https://youtu.be/_RbVwU_nPHI) -->
 
 ---
 
